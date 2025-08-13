@@ -7,45 +7,7 @@ A Loopack4 based component to integrate a basic Langgraph.js based endpoint in y
 Install AIIntegrationsComponent using `npm`;
 
 ```sh
-$ [npm install | yarn add] @local/ai-integration
-```
-
-### Query Generation Flow
-
-```mermaid
----
-title: Query Generation Flow
----
-graph TD
-    A[User Query Input] --> B[Query Generation Tool]
-    B --> C[Datasets Store]
-    C --> D[API Response]
-    C --> DB
-    B5 --> LLM
-
-    subgraph "Query Generation Tool"
-        B5[Context Compression]
-        B1[Intent Analysis]
-        B2[SQL Generation]
-        B3[Semantic Validation]
-        B4[Syntactic Validation]
-        B6[Memory Retriever]
-    end
-
-    B6 --> Cache
-
-    subgraph "External Systems"
-        LLM[Model Connector]
-        DB[Database]
-        Cache[Vector Store]
-    end
-
-
-    B1 --> LLM
-    B2 --> LLM
-    B3 --> LLM
-    B --> Cache
-
+$ [npm install | yarn add] @arc/llm-chat-component
 ```
 
 ### Basic Usage
@@ -54,7 +16,7 @@ Configure and load the AIIntegrations component in the application constructor
 as shown below.
 
 ```ts
-import {AiIntegrationsComponent} from '@local/ai-integration';
+import {AiIntegrationsComponent} from '@arc/llm-chat-component';
 // ...
 export class MyApplication extends BootMixin(
   ServiceMixin(RepositoryMixin(RestApplication)),
@@ -144,6 +106,44 @@ This component provides a set of pre-build tools that can be plugged into any Lo
 - improve-query - this tool takes a `DataSet`'s id and a feedback or suggestion from the user, and uses it to modify the existing `DataSet` query.
 - ask-about-dataset - this tools takes a `DataSet`'s id and a user prompt, and tries to answer user's question about the database query. Note that it can not run the query.
 
+### Query Generation Flow
+
+```mermaid
+---
+title: Query Generation Flow
+---
+graph TD
+    A[User Query Input] --> B[Query Generation Tool]
+    B --> C[Datasets Store]
+    C --> D[API Response]
+    C --> DB
+    B5 --> LLM
+
+    subgraph "Query Generation Tool"
+        B5[Context Compression]
+        B1[Intent Analysis]
+        B2[SQL Generation]
+        B3[Semantic Validation]
+        B4[Syntactic Validation]
+        B6[Memory Retriever]
+    end
+
+    B6 --> Cache
+
+    subgraph "External Systems"
+        LLM[Model Connector]
+        DB[Database]
+        Cache[Vector Store]
+    end
+
+
+    B1 --> LLM
+    B2 --> LLM
+    B3 --> LLM
+    B --> Cache
+
+```
+
 ## Usage
 
 You just need to register your models in the configuration of the component, and if the Models have proper and detailed descriptions, the tools should be able to answer the user's prompts based on those descriptions.
@@ -179,7 +179,7 @@ You can register your own tools by simply using the `@graphTool()` decorator and
 ```ts
 import {tool} from '@langchain/core/tools';
 import z from 'zod';
-import {graphTool, IGraphTool} from '@local/ai-integration';
+import {graphTool, IGraphTool} from '@arc/llm-chat-component';
 
 ...
 @graphTool()
