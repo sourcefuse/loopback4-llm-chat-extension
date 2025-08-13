@@ -1,0 +1,26 @@
+%%{init: {'flowchart': {'curve': 'linear'}}}%%
+graph TD;
+	__start__([<p>__start__</p>]):::first
+	trim_messages(trim_messages)
+	call_llm(call_llm)
+	run_tool(run_tool)
+	summarise_file(summarise_file)
+	user_review(user_review)
+	init_session(init_session)
+	end_session(end_session)
+	__end__([<p>__end__</p>]):::last
+	__start__ --> init_session;
+	end_session --> __end__;
+	init_session --> summarise_file;
+	run_tool --> trim_messages;
+	trim_messages --> call_llm;
+	summarise_file -.-> call_llm;
+	call_llm -.-> run_tool;
+	call_llm -.-> user_review;
+	call_llm -.-> end_session;
+	user_review -.-> run_tool;
+	user_review -.-> call_llm;
+	summarise_file -.-> summarise_file;
+	classDef default fill:#f2f0ff,line-height:1.2;
+	classDef first fill-opacity:0;
+	classDef last fill:#bfb6fc;

@@ -1,0 +1,36 @@
+%%{init: {'flowchart': {'curve': 'linear'}}}%%
+graph TD;
+	__start__([<p>__start__</p>]):::first
+	get_tables(get_tables)
+	check_permissions(check_permissions)
+	check_cache(check_cache)
+	sql_generation(sql_generation)
+	pg_explain_validator(pg_explain_validator)
+	llm_validator(llm_validator)
+	is_improvement(is_improvement)
+	failed(failed)
+	save_dataset(save_dataset)
+	__end__(<p>__end__</p>)
+	__start__ --> is_improvement;
+	is_improvement --> check_cache;
+	save_dataset --> __end__;
+	check_cache -. &nbsp;AsIs&nbsp; .-> __end__;
+	check_cache -. &nbsp;Similar&nbsp; .-> get_tables;
+	check_cache -. &nbsp;NoRelevantQueries&nbsp; .-> get_tables;
+	get_tables -. &nbsp;Failed&nbsp; .-> failed;
+	get_tables -. &nbsp;CheckPermissions&nbsp; .-> check_permissions;
+	check_permissions -. &nbsp;MissingPermission&nbsp; .-> failed;
+	check_permissions -. &nbsp;Accepted&nbsp; .-> sql_generation;
+	sql_generation -. &nbsp;Validator&nbsp; .-> pg_explain_validator;
+	sql_generation -. &nbsp;Failed&nbsp; .-> failed;
+	pg_explain_validator -. &nbsp;Accepted&nbsp; .-> llm_validator;
+	pg_explain_validator -. &nbsp;FixSQL&nbsp; .-> sql_generation;
+	pg_explain_validator -. &nbsp;ReselectTables&nbsp; .-> get_tables;
+	pg_explain_validator -. &nbsp;Failed&nbsp; .-> failed;
+	llm_validator -. &nbsp;Accepted&nbsp; .-> save_dataset;
+	llm_validator -. &nbsp;Rejected&nbsp; .-> sql_generation;
+	llm_validator -. &nbsp;Failed&nbsp; .-> failed;
+	pg_explain_validator -. &nbsp;Retry&nbsp; .-> pg_explain_validator;
+	classDef default fill:#f2f0ff,line-height:1.2;
+	classDef first fill-opacity:0;
+	classDef last fill:#bfb6fc;
