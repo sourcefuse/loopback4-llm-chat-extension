@@ -21,7 +21,7 @@ export class SemanticValidatorNode implements IGraphNode<DbQueryState> {
     private readonly llm: LLMProvider,
     @service(DbSchemaHelperService)
     private readonly schemaHelper: DbSchemaHelperService,
-    @inject(DbQueryAIExtensionBindings.Checks, {optional: true})
+    @inject(DbQueryAIExtensionBindings.GlobalContext, {optional: true})
     private readonly checks?: string[],
   ) {}
 

@@ -62,7 +62,7 @@ Keep these feedbacks in mind while generating the new query or improving this on
     private readonly config: DbQueryConfig,
     @service(DbSchemaHelperService)
     private readonly schemaHelper: DbSchemaHelperService,
-    @inject(DbQueryAIExtensionBindings.Checks, {optional: true})
+    @inject(DbQueryAIExtensionBindings.GlobalContext, {optional: true})
     private readonly checks?: string[],
   ) {}
   async execute(

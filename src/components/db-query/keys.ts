@@ -6,8 +6,8 @@ export namespace DbQueryAIExtensionBindings {
     'services.ai-integration.db-query.dataset-store',
   );
 
-  export const Checks = BindingKey.create<string[]>(
-    'services.ai-integration.db-query.checks',
+  export const GlobalContext = BindingKey.create<string[]>(
+    'services.ai-integration.db-query.globalcontext',
   );
 
   export const Config = BindingKey.create<DbQueryConfig>(

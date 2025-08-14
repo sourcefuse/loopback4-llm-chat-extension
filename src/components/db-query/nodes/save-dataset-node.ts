@@ -25,7 +25,7 @@ export class SaveDataSetNode implements IGraphNode<DbQueryState> {
     private readonly store: IDataSetStore,
     @inject(AuthenticationBindings.CURRENT_USER)
     private readonly user: IAuthUserWithPermissions,
-    @inject(DbQueryAIExtensionBindings.Checks, {optional: true})
+    @inject(DbQueryAIExtensionBindings.GlobalContext, {optional: true})
     private readonly checks?: string[],
   ) {}
 

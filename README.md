@@ -144,6 +144,79 @@ graph TD
 
 ```
 
+## Providing Context
+
+There are two ways to provide context to the LLM -
+
+### Global Context
+
+Global context can be provided as an array of strings through a binding on key `DbQueryAIExtensionBindings.GlobalContext`. This binding can be a constant or come through a dynamic provider, something like this -
+
+```ts
+export class ChecksProvider implements Provider<string[]> {
+  constructor(
+    @repository(CurrencyRepository)
+    private readonly currencyRepository: CurrencyRepository,
+  ) {}
+  async value(): Promise<string[]> {
+    return [`Current date is ${new Date().toISOString().split('T')[0]}`];
+  }
+}
+```
+
+in application.ts -
+
+```ts
+...
+this.bind(DbQueryAIExtensionBindings.GlobalContext).toProvider(ChecksProvider);
+...
+```
+
+### Model Context
+
+Each model can have associated context in 3 ways -
+
+```ts
+@model({
+  name: 'employees', // Use plural form for table name
+  settings: {
+    description: 'Model representing an employee in the system.',
+    context: [
+      'employee salary must be converted to USD, using the currency_id column and the exchange rate table',
+    ],
+  },
+})
+export class Employee extends Entity {
+  ...
+  @property({
+    type: 'string',
+    required: true,
+    description: 'Name of the employee',
+  })
+  name: string;
+
+  @property({
+    type: 'string',
+    required: true,
+    description: 'Unique code for the employee, used for identification',
+  })
+  code: string;
+
+  @property({
+    type: 'number',
+    required: true,
+    description:
+      'The salary of the employee in the currency stored in currency_id column',
+  })
+  salary: number;
+  ...
+}
+```
+
+- Model description - this is the primary description of the model, it is used to select model for generation, so it should only define the purpose of the model itself.
+- Model context - this is secondary information about the model, usually defining some specific details about the model that must be kept in mind while using it. NOTE - These values should always include the model name.
+- Property description - this is the description for a property of a model, providing context for the LLM on how to use and understand a particular property.
+
 ## Usage
 
 You just need to register your models in the configuration of the component, and if the Models have proper and detailed descriptions, the tools should be able to answer the user's prompts based on those descriptions.

@@ -26,7 +26,7 @@ export class AskAboutDatasetTool implements IGraphTool {
     private readonly dbSchemaHelper: DbSchemaHelperService,
     @service(SchemaStore)
     private readonly schemaStore: SchemaStore,
-    @inject(DbQueryAIExtensionBindings.Checks, {optional: true})
+    @inject(DbQueryAIExtensionBindings.GlobalContext, {optional: true})
     private readonly checks?: string[],
   ) {}
 

@@ -26,7 +26,7 @@ export class GetTablesNode implements IGraphNode<DbQueryState> {
     private readonly schemaStore: SchemaStore,
     @service(TableSearchService)
     private readonly tableSearchService: TableSearchService,
-    @inject(DbQueryAIExtensionBindings.Checks, {optional: true})
+    @inject(DbQueryAIExtensionBindings.GlobalContext, {optional: true})
     private readonly checks?: string[],
   ) {}
   prompt = PromptTemplate.fromTemplate(`

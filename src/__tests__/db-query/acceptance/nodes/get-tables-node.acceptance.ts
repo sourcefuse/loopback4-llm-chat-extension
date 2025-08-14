@@ -25,7 +25,7 @@ describe('GetTablesNode Acceptance', function () {
 
   before('setupApplication', async () => {
     ({app} = await setupApplication({}));
-    app.bind(DbQueryAIExtensionBindings.Checks).to([]);
+    app.bind(DbQueryAIExtensionBindings.GlobalContext).to([]);
     const schemaService = await app.get<SchemaStore>(`services.SchemaStore`);
     schema = schemaService.get();
   });

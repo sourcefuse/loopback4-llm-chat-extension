@@ -36,7 +36,7 @@ describe(`DB Query Graph Acceptance`, () => {
     await seedCurrencies(app);
     await seedExchangeRates(app);
     app
-      .bind(DbQueryAIExtensionBindings.Checks)
+      .bind(DbQueryAIExtensionBindings.GlobalContext)
       .to([
         `Every value with currency_id should be converted to USD before returning to the user.`,
       ]);

@@ -44,7 +44,7 @@ export class Employee extends Entity {
     type: 'number',
     required: true,
     description:
-      'The salary of the employee in the currency stored in currency_id column, convert it to USD before sending to user',
+      'The salary of the employee in the currency stored in currency_id column',
   })
   salary: number;
 
