@@ -190,7 +190,7 @@ export class ChatStore {
         content: messageContent,
       });
     } else if (message.metadata?.type === MessageMetadataType.AI) {
-      const newMessage = new AIMessage(message.body);
+      const newMessage = new AIMessage(message.body.trim() ?? undefined);
       newMessage.tool_calls =
         message.messages
           ?.filter(

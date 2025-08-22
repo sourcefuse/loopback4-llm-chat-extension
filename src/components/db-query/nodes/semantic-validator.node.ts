@@ -34,9 +34,6 @@ export class SemanticValidatorNode implements IGraphNode<DbQueryState> {
     Here is the user query -
     {prompt}
 
-    and here is the database schema for which the query is generated -
-    {schema}
-
     {checks}
 
     {feedbacks}
@@ -75,7 +72,6 @@ export class SemanticValidatorNode implements IGraphNode<DbQueryState> {
         ...(this.checks ?? []),
         ...this.schemaHelper.getTablesContext(state.schema),
       ].join('\n'),
-      schema: this.schemaHelper.asString(state.schema),
       feedbacks: await this.getFeedbacks(state),
     });
     const response = stripThinkingTokens(output);

@@ -134,8 +134,8 @@ export class PgConnector implements IDbConnector {
   }
 
   protected mapColumnToDbType(name: string, column: ColumnSchema): string {
-    if (column.metadata?.postgres?.dataType) {
-      return column.metadata.postgres.dataType.toUpperCase();
+    if (column.metadata?.postgresql?.dataType) {
+      return column.metadata.postgresql.dataType.toUpperCase();
     }
     const {type, id} = column;
     const isId = !!id || name.endsWith('_id') || name.endsWith('Id');
