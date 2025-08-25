@@ -1,5 +1,5 @@
 {
-  "name": "@arc/llm-chat-component",
+  "name": "@arc/lb4-llm-chat-component",
   "version": "0.0.1",
   "description": "Package to integrate LLM based capabilities into any loopback4 application",
   "keywords": [
