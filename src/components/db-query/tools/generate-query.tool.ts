@@ -5,6 +5,8 @@ import {graphTool} from '../../../decorators';
 import {IGraphTool, ToolStatus} from '../../../graphs';
 import {DbQueryGraph} from '../db-query.graph';
 import {Errors, GenerationError} from '../types';
+import {StructuredToolInterface} from '@langchain/core/tools';
+import {RunnableToolLike} from '@langchain/core/runnables';
 
 @graphTool()
 export class GenerateQueryTool implements IGraphTool {
@@ -32,7 +34,7 @@ export class GenerateQueryTool implements IGraphTool {
     };
   }
 
-  async build() {
+  async build(): Promise<StructuredToolInterface | RunnableToolLike> {
     const graph = await this.queryPipeline.build();
     const schema = z.object({
       prompt: z

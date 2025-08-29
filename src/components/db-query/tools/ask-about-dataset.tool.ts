@@ -1,6 +1,6 @@
 import {PromptTemplate} from '@langchain/core/prompts';
-import {RunnableSequence} from '@langchain/core/runnables';
-import {tool} from '@langchain/core/tools';
+import {RunnableSequence, RunnableToolLike} from '@langchain/core/runnables';
+import {StructuredToolInterface, tool} from '@langchain/core/tools';
 import {inject} from '@loopback/context';
 import {service} from '@loopback/core';
 import {AnyObject} from '@loopback/repository';
@@ -48,7 +48,7 @@ export class AskAboutDatasetTool implements IGraphTool {
   and here is the user's question -
   {question}`);
 
-  async build() {
+  async build(): Promise<StructuredToolInterface | RunnableToolLike> {
     const chain = RunnableSequence.from([
       this.prompt,
       this.sqlllm,

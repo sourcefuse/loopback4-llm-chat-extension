@@ -1,4 +1,4 @@
-import {tool} from '@langchain/core/tools';
+import {StructuredToolInterface, tool} from '@langchain/core/tools';
 import {VectorStore} from '@langchain/core/vectorstores';
 import {inject} from '@loopback/context';
 import {AnyObject} from '@loopback/repository';
@@ -8,6 +8,7 @@ import {IGraphTool} from '../../../graphs';
 import {AiIntegrationBindings} from '../../../keys';
 import {DbQueryAIExtensionBindings} from '../keys';
 import {DbQueryStoredTypes, IDataSetStore} from '../types';
+import {RunnableToolLike} from '@langchain/core/runnables';
 
 @graphTool()
 export class MarkDatasetAsValidTool implements IGraphTool {
@@ -21,7 +22,7 @@ export class MarkDatasetAsValidTool implements IGraphTool {
   key = 'mark-dataset-as-valid';
   needsReview = false;
 
-  async build() {
+  async build(): Promise<StructuredToolInterface | RunnableToolLike> {
     const schema = z.object({
       datasetId: z.string().describe('uuid ID of the dataset to mark as valid'),
     }) as AnyObject[string];
