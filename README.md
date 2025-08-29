@@ -7,7 +7,7 @@ A Loopack4 based component to integrate a basic Langgraph.js based endpoint in y
 Install AIIntegrationsComponent using `npm`;
 
 ```sh
-$ [npm install | yarn add] @arc/llm-chat-component
+$ [npm install | yarn add] lb4-llm-chat-component
 ```
 
 ### Basic Usage
@@ -16,7 +16,7 @@ Configure and load the AIIntegrations component in the application constructor
 as shown below.
 
 ```ts
-import {AiIntegrationsComponent} from '@arc/llm-chat-component';
+import {AiIntegrationsComponent} from 'lb4-llm-chat-component';
 // ...
 export class MyApplication extends BootMixin(
   ServiceMixin(RepositoryMixin(RestApplication)),
@@ -252,7 +252,7 @@ You can register your own tools by simply using the `@graphTool()` decorator and
 ```ts
 import {tool} from '@langchain/core/tools';
 import z from 'zod';
-import {graphTool, IGraphTool} from '@arc/llm-chat-component';
+import {graphTool, IGraphTool} from 'lb4-llm-chat-component';
 
 ...
 @graphTool()
