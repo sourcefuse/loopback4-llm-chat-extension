@@ -50,6 +50,7 @@ import {GenerationService} from './services';
 import {TokenCounter} from './services/token-counter.service';
 import {SSETransport} from './transports';
 import {AIIntegrationConfig} from './types';
+import {PgVectorStore} from './sub-modules/db/postgresql';
 
 export class AiIntegrationsComponent implements Component {
   constructor(
@@ -71,6 +72,7 @@ export class AiIntegrationsComponent implements Component {
     ];
 
     this.providers = {
+      [AiIntegrationBindings.VectorStore.key]: PgVectorStore,
       [AiIntegrationBindings.Tools.key]: ToolsProvider,
     };
 
