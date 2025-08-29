@@ -27,6 +27,7 @@ config();
 
 export async function setupApplication(options: {
   noKnowledgeGraph?: boolean;
+  llmStub?: sinon.SinonStub;
 }): Promise<AppWithClient> {
   const restConfig = givenHttpServerConfig({
     // Customize the server configuration here.

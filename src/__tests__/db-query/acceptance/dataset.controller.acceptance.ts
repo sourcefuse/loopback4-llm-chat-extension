@@ -6,7 +6,7 @@ import {DataSet} from '../../../components/db-query/models';
 import {DataSetRepository} from '../../../components/db-query/repositories';
 import {AiIntegrationBindings} from '../../../keys';
 import {PermissionKey} from '../../../permissions';
-import {EmbeddingProvider, LLMProvider} from '../../../types';
+import {EmbeddingProvider} from '../../../types';
 import {TestApp} from '../../fixtures/test-app';
 import {buildToken, seedEmployees, setupApplication} from '../../test-helper';
 
@@ -19,6 +19,7 @@ describe('DatasetController', () => {
   before('setupApplication', async () => {
     ({app, client} = await setupApplication({
       noKnowledgeGraph: true,
+      llmStub: sinon.stub(),
     }));
     llmStub = sinon.stub();
     llmStub.resolves([[0.1, 0.2, 0.3]]);
@@ -26,15 +27,6 @@ describe('DatasetController', () => {
     app.bind(AiIntegrationBindings.EmbeddingModel).to({
       embedDocuments: llmStub,
     } as unknown as EmbeddingProvider);
-    app
-      .bind(AiIntegrationBindings.SmartLLM)
-      .to(llmStub as unknown as LLMProvider);
-    app
-      .bind(AiIntegrationBindings.CheapLLM)
-      .to(llmStub as unknown as LLMProvider);
-    app
-      .bind(AiIntegrationBindings.FileLLM)
-      .to(llmStub as unknown as LLMProvider);
     await seedEmployees(app);
     await seedDataset(app);
   });

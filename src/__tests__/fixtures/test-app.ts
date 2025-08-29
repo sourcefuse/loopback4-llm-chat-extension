@@ -44,12 +44,22 @@ export class TestApp extends BootMixin(
       this.bind(AiIntegrationBindings.CheapLLM).toProvider(Ollama);
       this.bind(AiIntegrationBindings.SmartLLM).toProvider(Ollama);
       this.bind(AiIntegrationBindings.FileLLM).toProvider(Ollama);
-    } else {
+      this.bind(AiIntegrationBindings.EmbeddingModel).toProvider(
+        OllamaEmbedding,
+      );
+    } else if (process.env.CEREBRAS === '1') {
       this.bind(AiIntegrationBindings.CheapLLM).toProvider(Cerebras);
       this.bind(AiIntegrationBindings.SmartLLM).toProvider(Cerebras);
       this.bind(AiIntegrationBindings.FileLLM).toProvider(Cerebras);
+      this.bind(AiIntegrationBindings.EmbeddingModel).toProvider(
+        OllamaEmbedding,
+      );
+    } else if (options.llmStub) {
+      this.bind(AiIntegrationBindings.CheapLLM).to(options.llmStub);
+      this.bind(AiIntegrationBindings.SmartLLM).to(options.llmStub);
+      this.bind(AiIntegrationBindings.FileLLM).to(options.llmStub);
+      this.bind(AiIntegrationBindings.EmbeddingModel).to(options.llmStub);
     }
-    this.bind(AiIntegrationBindings.EmbeddingModel).toProvider(OllamaEmbedding);
     this.bind('datasources.db').to(
       new juggler.DataSource({
         connector: 'sqlite3',
