@@ -214,7 +214,7 @@ export class Employee extends Entity {
 ```
 
 - Model description - this is the primary description of the model, it is used to select model for generation, so it should only define the purpose of the model itself.
-- Model context - this is secondary information about the model, usually defining some specific details about the model that must be kept in mind while using it. NOTE - These values should always include the model name.
+- Model context - this is secondary information about the model, usually defining some specific details about the model that must be kept in mind while using it. NOTE - These values should always include the model name. This must be information that is applicable to overall model usage, or atleast to multiple columns, and not related to any single field of the model.
 - Property description - this is the description for a property of a model, providing context for the LLM on how to use and understand a particular property.
 
 ## Usage
