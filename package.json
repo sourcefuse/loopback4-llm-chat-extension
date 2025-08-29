@@ -157,6 +157,9 @@
       "path": "cz-format-extension"
     }
   },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/"
+  },
   "release": {
     "branches": [
       "main",
