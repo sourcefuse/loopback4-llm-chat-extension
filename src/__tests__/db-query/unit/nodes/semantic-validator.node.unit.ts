@@ -111,6 +111,9 @@ describe('SemanticValidatorNode Unit', function () {
     Here is the user query -
     ${state.prompt}
 
+    and here is the database schema for which the query is generated -
+    ${schemaHelper.asString(state.schema)}
+
     It is really important that the query follows all the following context information -
 test context
 
@@ -164,6 +167,9 @@ test context
 
     Here is the user query -
     ${state.prompt}
+
+    and here is the database schema for which the query is generated -
+    ${schemaHelper.asString(state.schema)}
 
     It is really important that the query follows all the following context information -
 test context
