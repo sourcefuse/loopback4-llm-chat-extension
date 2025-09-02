@@ -1,5 +1,6 @@
 import {Annotation} from '@langchain/langgraph';
 import {DatabaseSchema, Status} from './types';
+import {AnyObject} from '@loopback/repository';
 
 export const DbQueryGraphStateAnnotation = Annotation.Root({
   prompt: Annotation<string>,
@@ -14,6 +15,7 @@ export const DbQueryGraphStateAnnotation = Annotation.Root({
   sampleSql: Annotation<string | undefined>,
   fromCache: Annotation<boolean | undefined>,
   done: Annotation<boolean | undefined>,
+  resultArray: Annotation<AnyObject[string][] | undefined>,
 });
 
 export type DbQueryState = typeof DbQueryGraphStateAnnotation.State;

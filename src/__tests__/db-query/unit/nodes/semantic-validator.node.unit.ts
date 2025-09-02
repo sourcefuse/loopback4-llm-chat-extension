@@ -56,6 +56,7 @@ describe('SemanticValidatorNode Unit', function () {
       sampleSqlPrompt: '',
       sampleSql: '',
       fromCache: false,
+      resultArray: undefined,
     };
     llmStub.resolves({content: 'valid'});
 
@@ -91,6 +92,7 @@ describe('SemanticValidatorNode Unit', function () {
       sampleSqlPrompt: '',
       sampleSql: '',
       fromCache: false,
+      resultArray: undefined,
     };
     llmStub.resolves({
       content: 'invalid: table `invalid_table` does not exist',
@@ -152,6 +154,7 @@ test context
       sampleSqlPrompt: '',
       sampleSql: '',
       fromCache: false,
+      resultArray: undefined,
     };
     llmStub.resolves({content: 'valid'});
 

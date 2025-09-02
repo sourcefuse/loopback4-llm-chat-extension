@@ -1,12 +1,14 @@
-import {service} from '@loopback/core';
+import {inject, service} from '@loopback/core';
 import {AnyObject} from '@loopback/repository';
 import {z} from 'zod';
 import {graphTool} from '../../../decorators';
 import {IGraphTool, ToolStatus} from '../../../graphs';
 import {DbQueryGraph} from '../db-query.graph';
-import {Errors, GenerationError} from '../types';
+import {DbQueryConfig, Errors, GenerationError} from '../types';
 import {StructuredToolInterface} from '@langchain/core/tools';
 import {RunnableToolLike} from '@langchain/core/runnables';
+import {DbQueryAIExtensionBindings} from '../keys';
+import {DEFAULT_MAX_READ_ROWS_FOR_AI} from '../constant';
 
 @graphTool()
 export class ImproveQueryTool implements IGraphTool {
@@ -15,16 +17,22 @@ export class ImproveQueryTool implements IGraphTool {
   constructor(
     @service(DbQueryGraph)
     private readonly queryPipeline: DbQueryGraph,
+    @inject(DbQueryAIExtensionBindings.Config)
+    private readonly config: DbQueryConfig,
   ) {}
 
   getValue(result: Record<string, string>): string {
     if (result.status === Errors.PermissionError) {
       return `Can not generate query: ${result.replyToUser ?? 'Unknown reason'}`;
     }
-    if (result.status === GenerationError.Failed) {
+    if (result.status === GenerationError.Failed || !result.datasetId) {
       return `Can not generate query: ${result.replyToUser ?? 'Unknown reason'}`;
     }
-    return `Dataset generated and has been rendered for the user. The dataset ID is ${result.datasetId}, and here is the description of the query of the dataset - \n${result.replyToUser ?? 'No description provided'}`;
+    let resultSetString = '';
+    if (result.resultArray) {
+      resultSetString = ` First ${this.config.maxRowsForAI ?? DEFAULT_MAX_READ_ROWS_FOR_AI} results from the query are: ${JSON.stringify(result.resultArray)}`;
+    }
+    return `Dataset generated and has been rendered for the user. The dataset ID is ${result.datasetId}. Just tell the user that it is done.${resultSetString}`;
   }
 
   getMetadata(result: Record<string, string>): AnyObject {

@@ -96,6 +96,8 @@ export type DbQueryConfig = {
     schema?: string;
     dialect: SupportedDBs;
   };
+  readAccessForAI?: boolean;
+  maxRowsForAI?: number;
   noKnowledgeGraph?: boolean;
   knowledgeGraph?: {
     // value between 0 and 1 indicating the weight of the knowledge graph in the query evaluation

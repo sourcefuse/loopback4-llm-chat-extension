@@ -72,6 +72,7 @@ describe('SqlGenerationNode Unit', function () {
       replyToUser: undefined,
       datasetId: undefined,
       fromCache: false,
+      resultArray: undefined,
     };
 
     const result = await node.execute(state, {});
@@ -142,6 +143,7 @@ The output should be a valid SQL query that can run on the database schema provi
       replyToUser: undefined,
       datasetId: undefined,
       fromCache: false,
+      resultArray: undefined,
     };
 
     const result = await node.execute(state, {});
@@ -227,6 +229,7 @@ The output should be a valid SQL query that can run on the database schema provi
       replyToUser: undefined,
       datasetId: undefined,
       fromCache: false,
+      resultArray: undefined,
     };
 
     const result = await node.execute(state, {});

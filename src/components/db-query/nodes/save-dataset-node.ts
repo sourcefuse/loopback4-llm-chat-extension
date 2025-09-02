@@ -14,7 +14,9 @@ import {stripThinkingTokens} from '../../../utils';
 import {DbQueryAIExtensionBindings} from '../keys';
 import {DbQueryNodes} from '../nodes.enum';
 import {DbQueryState} from '../state';
-import {DatabaseSchema, IDataSetStore} from '../types';
+import {DatabaseSchema, DbQueryConfig, IDataSetStore} from '../types';
+import {DEFAULT_MAX_READ_ROWS_FOR_AI} from '../constant';
+import {AnyObject} from '@loopback/repository';
 
 @graphNode(DbQueryNodes.SaveDataset)
 export class SaveDataSetNode implements IGraphNode<DbQueryState> {
@@ -23,6 +25,8 @@ export class SaveDataSetNode implements IGraphNode<DbQueryState> {
     private readonly llm: LLMProvider,
     @inject(DbQueryAIExtensionBindings.DatasetStore)
     private readonly store: IDataSetStore,
+    @inject(DbQueryAIExtensionBindings.Config)
+    private readonly config: DbQueryConfig,
     @inject(AuthenticationBindings.CURRENT_USER)
     private readonly user: IAuthUserWithPermissions,
     @inject(DbQueryAIExtensionBindings.GlobalContext, {optional: true})
@@ -90,11 +94,20 @@ export class SaveDataSetNode implements IGraphNode<DbQueryState> {
       },
     });
 
+    let result: undefined | AnyObject[] = undefined;
+    if (this.config.readAccessForAI && dataset.id) {
+      result = await this.store.getData(
+        dataset.id,
+        this.config.maxRowsForAI ?? DEFAULT_MAX_READ_ROWS_FOR_AI,
+      );
+    }
+
     return {
       ...state,
       datasetId: dataset.id,
       replyToUser,
       done: true,
+      resultArray: result,
     };
   }
 

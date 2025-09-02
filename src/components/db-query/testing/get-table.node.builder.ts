@@ -23,6 +23,7 @@ export function getTableNodeTests(cases: GetTableNodeTestCase[]) {
           sampleSqlPrompt: undefined,
           fromCache: undefined,
           done: false,
+          resultArray: undefined,
         },
         {
           writer: (event: AnyObject[string]) => {},
