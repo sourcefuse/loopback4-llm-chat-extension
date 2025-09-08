@@ -76,7 +76,6 @@
     "test:dev": "lb-mocha --timeout=500000 --allow-console-logs dist/__tests__/**/*.js && npm run posttest",
     "clean": "lb-clean dist *.tsbuildinfo .eslintcache",
     "rebuild": "npm run clean && npm run build",
-    "postinstall": "npm run build",
     "prune": "npm prune --production",
     "coverage": "nyc npm run test"
   },
@@ -97,6 +96,7 @@
   },
   "dependencies": {
     "@langchain/community": "^0.3.50",
+    "@langchain/core": "^0.3.75",
     "@langchain/langgraph": "^0.4.4",
     "@loopback/repository": "^7.0.14",
     "@sourceloop/chat-service": "^15.0.0",
