@@ -31,9 +31,11 @@ export class CheckCacheNode implements IGraphNode<DbQueryState> {
   ) {}
   prompt = PromptTemplate.fromTemplate(`
     You are expect SQL analyser, you will be given a prompt and a list of queries, and you need to return the most relevant query from the list and in which of the following ways is it relevant - 
-    - return '${CacheResults.AsIs}' if the query exactly answers the question in the prompt
-    - return '${CacheResults.Similar}' if the query is similar to the question in the prompt but not exactly the same
-    - return '${CacheResults.NotRelevant}' if the query is not relevant to the
+    - return '${CacheResults.AsIs}' if the query exactly answers the question in the prompt.
+    - return '${CacheResults.Similar}' if the query is similar to the question in the prompt but not exactly the same.
+    - return '${CacheResults.NotRelevant}' if the query is not relevant to the prompt at all.
+
+    Remember that if the cached query has extra information, then still the query could be considered exactly same as long as it does not contradict the prompt.
 
     This is the user prompt: {prompt}
     This is the list of queries:
@@ -106,6 +108,12 @@ export class CheckCacheNode implements IGraphNode<DbQueryState> {
         type: LLMStreamEventType.Log,
         data: `Found relevant query in cache, using it as is`,
       });
+      config.writer?.({
+        type: LLMStreamEventType.ToolStatus,
+        data: {
+          status: `Found relevant query in cache`,
+        },
+      });
       const datasetId = relevantDocs[indexNum].metadata.datasetId;
       config.writer?.({
         type: LLMStreamEventType.ToolStatus,
@@ -132,6 +140,12 @@ export class CheckCacheNode implements IGraphNode<DbQueryState> {
         type: LLMStreamEventType.ToolStatus,
         data: {
           status: `Found similar query in cache, using it as example`,
+        },
+      });
+      config.writer?.({
+        type: LLMStreamEventType.ToolStatus,
+        data: {
+          status: `Found relevant query in cache`,
         },
       });
       return {
