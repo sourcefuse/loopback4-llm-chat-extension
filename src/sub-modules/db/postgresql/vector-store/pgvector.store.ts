@@ -1,4 +1,7 @@
-import {PGVectorStore as PGStore} from '@langchain/community/vectorstores/pgvector';
+import {
+  PGVectorStore as PGStore,
+  PGVectorStoreArgs,
+} from '@langchain/community/vectorstores/pgvector';
 import {VectorStore} from '@langchain/core/vectorstores';
 import {
   BindingScope,
@@ -35,11 +38,12 @@ export class PgVectorStore implements Provider<VectorStore> {
       database: process.env.DB_DATABASE!,
     });
 
-    const config = {
+    const config: PGVectorStoreArgs = {
       pool: reusablePool,
       tableName: 'context',
       collectionName: 'knowledge_base',
       collectionTableName: 'embeddings_collections',
+      extensionSchemaName: process.env.DB_SCHEMA || 'public',
       columns: {
         idColumnName: 'id',
         vectorColumnName: 'vector',
