@@ -26,35 +26,44 @@ export class SemanticValidatorNode implements IGraphNode<DbQueryState> {
   ) {}
 
   prompt = PromptTemplate.fromTemplate(`
-    You are an AI assistant that judges whether the generated and syntactically verified SQL query will satisfy the user's query and the additional checks provided.
-    The query has already been validated for syntax and correctness, so you only need to check if it satisfies the user's query and all the additional checks provided.
-    Here is the latest generated SQL query -
-    {query}
+<instructions>
+You are an AI assistant that judges whether the generated and syntactically verified SQL query will satisfy the user's query and the additional checks provided.
+The query has already been validated for syntax and correctness, so you only need to check if it satisfies the user's query and all the additional checks provided.
+</instructions>
 
-    Here is the user query -
-    {prompt}
+<latest-query>
+{query}
+</latest-query>
 
-    and here is the database schema for which the query is generated -
-    {schema}
+<user-question>
+{prompt}
+</user-question>
 
-    {checks}
+<database-schema>
+{schema}
+</database-schema>
 
-    {feedbacks}
+{checks}
 
-    If the query is valid and will satisfy the user's query, then return valid, else return invalid followed by the reason why it is invalid.
-    The format in case of invalid query should be -
-    invalid: <reason>
-    The format in case of valid query should just be the string 'valid' with no other explanation -
-    valid`);
+{feedbacks}
+
+<output-instructions>
+If the query is valid and will satisfy the user's query, then return valid, else return invalid followed by the reason why it is invalid.
+The format in case of invalid query should be -
+invalid: <reason>
+The format in case of valid query should just be the string 'valid' with no other explanation -
+valid
+</output-instructions>`);
 
   feedbackPrompt = PromptTemplate.fromTemplate(`
-    We also need to consider the users feedback on the last attempt at query generation.
+<feedback-instructions>
+We also need to consider the users feedback on the last attempt at query generation.
 
-    But was rejected by validator with the following errors -
-    {feedback}
+But was rejected by validator with the following errors -
+{feedback}
 
-    Keep these feedbacks in mind while validating the new query.
-`);
+Keep these feedbacks in mind while validating the new query.
+</feedback-instructions>`);
 
   async execute(
     state: DbQueryState,

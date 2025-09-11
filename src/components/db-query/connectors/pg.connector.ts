@@ -48,13 +48,16 @@ export class PgConnector implements IDbConnector {
         const column = columns[columnName];
         const dataType = this.mapColumnToDbType(columnName, column);
         const notNull = column.required || column.id ? ' NOT NULL' : '';
-        return `  ${columnName} ${dataType}${notNull}`;
+        let descriptionString = '';
+        if (column.description) {
+          descriptionString = ` -- ${column.description.replace(/'/g, "''")}\n`;
+        }
+        return `${descriptionString}  ${columnName} ${dataType}${notNull}`;
       });
       if (primaryKeys.length > 0) {
         columnDefinitions.push(`  PRIMARY KEY (${primaryKeys.join(', ')})`);
       }
       this._addTable(table, tableName, ddlStatements, columnDefinitions);
-      this._addColumnDescriptions(ddlStatements, tableName, columns);
     }
 
     // Create Foreign Keys
@@ -92,24 +95,6 @@ export class PgConnector implements IDbConnector {
           "''",
         )}';`,
       );
-    }
-  }
-
-  private _addColumnDescriptions(
-    ddlStatements: string[],
-    tableName: string,
-    columns: Record<string, ColumnSchema>,
-  ) {
-    for (const columnName in columns) {
-      const column = columns[columnName];
-      if (column.description) {
-        ddlStatements.push(
-          `COMMENT ON COLUMN ${tableName}.${columnName} IS '${column.description.replace(
-            /'/g,
-            "''",
-          )}';`,
-        );
-      }
     }
   }
 

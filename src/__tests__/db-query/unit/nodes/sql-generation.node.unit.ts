@@ -82,7 +82,7 @@ describe('SqlGenerationNode Unit', function () {
     sinon.assert.calledOnce(llmStub);
     const prompt = llmStub.firstCall.args[0];
     expect(prompt.value).to.eql(`
-### Instructions:
+<instructions>
 You are an expert AI assistant that generates SQL queries based on user questions and a given database schema.
 You try to following the instructions carefully to generate the SQL query that answers the question.
 Do not hallucinate details or make up information.
@@ -93,23 +93,31 @@ Adhere to these rules:
 - Never query for all the columns from a specific table, only ask for the relevant columns for the given the question.
 - You can only generate a single query, so if you need multiple results you can use JOINs, subqueries, CTEs or UNIONS.
 - Do not make any assumptions about the user's intent beyond what is explicitly provided in the prompt.
+<instructions>
 
 
-### Input:
-Generate an SQL query that answers the question -
-'${state.prompt}'
-This query will run on a database whose schema is represented in this string:
+<context>
+<user-question>
+${state.prompt}
+</user-question>
+
+<database-schema>
 ${schemaHelper.asString(state.schema)}
+</database-schema>
 
+<must-follow-rules>
 You must keep these additional details in mind while writing the query -
 - test context
+/<must-follow-rules>
 
 
 
 
-### Output:
+<output-instructions>
 Return the SQL query as a string, without any additional text, quotations, code block, comments or any other non sql token.
-The output should be a valid SQL query that can run on the database schema provided.`);
+The output should be a valid SQL query that can run on the database schema provided.
+</output-instructions>
+</context>`);
   });
 
   it('should generate SQL query based on the provided prompt with a single feedback from some validation stage', async () => {
@@ -154,7 +162,7 @@ The output should be a valid SQL query that can run on the database schema provi
     sinon.assert.calledOnce(llmStub);
     const prompt = llmStub.firstCall.args[0];
     expect(prompt.value).to.eql(`
-### Instructions:
+<instructions>
 You are an expert AI assistant that generates SQL queries based on user questions and a given database schema.
 You try to following the instructions carefully to generate the SQL query that answers the question.
 Do not hallucinate details or make up information.
@@ -165,34 +173,49 @@ Adhere to these rules:
 - Never query for all the columns from a specific table, only ask for the relevant columns for the given the question.
 - You can only generate a single query, so if you need multiple results you can use JOINs, subqueries, CTEs or UNIONS.
 - Do not make any assumptions about the user's intent beyond what is explicitly provided in the prompt.
+<instructions>
 
 
-### Input:
-Generate an SQL query that answers the question -
-'${state.prompt}'
-This query will run on a database whose schema is represented in this string:
+<context>
+<user-question>
+${state.prompt}
+</user-question>
+
+<database-schema>
 ${schemaHelper.asString(state.schema)}
+</database-schema>
 
+<must-follow-rules>
 You must keep these additional details in mind while writing the query -
 - test context
+/<must-follow-rules>
 
 
 
 
+<feedback-instructions>
 We also need to consider the users feedback on the last attempt at query generation.
 Make sure you do not repeat the mistakes made in the last attempt.
 In the last attempt, you generated this SQL query -
+<last-generated-query>
 ${state.sql}
+</last-generated-query>
 
+<last-feedback>
 This was the error in the latest query you generated - \n${state.feedbacks[0]}
+</last-feedback>
 
+<past-feedbacks>
 
+</past-feedbacks>
 
 Keep these feedbacks in mind while generating the new query or improving this one SQL query.
-
-### Output:
+</feedback-instructions>
+<output-instructions>
 Return the SQL query as a string, without any additional text, quotations, code block, comments or any other non sql token.
-The output should be a valid SQL query that can run on the database schema provided.`);
+The output should be a valid SQL query that can run on the database schema provided.
+</output-instructions>
+</context>`);
   });
 
   it('should generate SQL query based on the provided prompt with a multiple feedbacks from from previous loops', async () => {
@@ -241,7 +264,7 @@ The output should be a valid SQL query that can run on the database schema provi
     sinon.assert.calledOnce(llmStub);
     const prompt = llmStub.firstCall.args[0];
     expect(prompt.value).to.eql(`
-### Instructions:
+<instructions>
 You are an expert AI assistant that generates SQL queries based on user questions and a given database schema.
 You try to following the instructions carefully to generate the SQL query that answers the question.
 Do not hallucinate details or make up information.
@@ -252,35 +275,50 @@ Adhere to these rules:
 - Never query for all the columns from a specific table, only ask for the relevant columns for the given the question.
 - You can only generate a single query, so if you need multiple results you can use JOINs, subqueries, CTEs or UNIONS.
 - Do not make any assumptions about the user's intent beyond what is explicitly provided in the prompt.
+<instructions>
 
 
-### Input:
-Generate an SQL query that answers the question -
-'${state.prompt}'
-This query will run on a database whose schema is represented in this string:
+<context>
+<user-question>
+${state.prompt}
+</user-question>
+
+<database-schema>
 ${schemaHelper.asString(state.schema)}
+</database-schema>
 
+<must-follow-rules>
 You must keep these additional details in mind while writing the query -
 - test context
+/<must-follow-rules>
 
 
 
 
+<feedback-instructions>
 We also need to consider the users feedback on the last attempt at query generation.
 Make sure you do not repeat the mistakes made in the last attempt.
 In the last attempt, you generated this SQL query -
+<last-generated-query>
 ${state.sql}
+</last-generated-query>
 
+<last-feedback>
 This was the error in the latest query you generated - \n${state.feedbacks[2]}
+</last-feedback>
 
+<past-feedbacks>
 You already faced following issues in the past -
 ${state.feedbacks[0]}
 ${state.feedbacks[1]}
+</past-feedbacks>
 
 Keep these feedbacks in mind while generating the new query or improving this one SQL query.
-
-### Output:
+</feedback-instructions>
+<output-instructions>
 Return the SQL query as a string, without any additional text, quotations, code block, comments or any other non sql token.
-The output should be a valid SQL query that can run on the database schema provided.`);
+The output should be a valid SQL query that can run on the database schema provided.
+</output-instructions>
+</context>`);
   });
 });

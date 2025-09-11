@@ -16,7 +16,7 @@ import {DbQueryConfig, EvaluationResult} from '../types';
 @graphNode(DbQueryNodes.SqlGeneration)
 export class SqlGenerationNode implements IGraphNode<DbQueryState> {
   sqlGenerationPrompt = PromptTemplate.fromTemplate(`
-### Instructions:
+<instructions>
 You are an expert AI assistant that generates SQL queries based on user questions and a given database schema.
 You try to following the instructions carefully to generate the SQL query that answers the question.
 Do not hallucinate details or make up information.
@@ -27,35 +27,48 @@ Adhere to these rules:
 - Never query for all the columns from a specific table, only ask for the relevant columns for the given the question.
 - You can only generate a single query, so if you need multiple results you can use JOINs, subqueries, CTEs or UNIONS.
 - Do not make any assumptions about the user's intent beyond what is explicitly provided in the prompt.
+<instructions>
 
 
-### Input:
-Generate an SQL query that answers the question -
-'{question}'
-This query will run on a database whose schema is represented in this string:
+<context>
+<user-question>
+{question}
+</user-question>
+
+<database-schema>
 {dbschema}
+</database-schema>
 
 {checks}
 
 {exampleQueries}
 
 {feedbacks}
-### Output:
+<output-instructions>
 Return the SQL query as a string, without any additional text, quotations, code block, comments or any other non sql token.
-The output should be a valid SQL query that can run on the database schema provided.`);
+The output should be a valid SQL query that can run on the database schema provided.
+</output-instructions>
+</context>`);
 
   feedbackPrompt = PromptTemplate.fromTemplate(`
+<feedback-instructions>
 We also need to consider the users feedback on the last attempt at query generation.
 Make sure you do not repeat the mistakes made in the last attempt.
 In the last attempt, you generated this SQL query -
+<last-generated-query>
 {query}
+</last-generated-query>
 
+<last-feedback>
 {feedback}
+</last-feedback>
 
+<past-feedbacks>
 {pastFeedbacks}
+</past-feedbacks>
 
 Keep these feedbacks in mind while generating the new query or improving this one SQL query.
-`);
+</feedback-instructions>`);
   constructor(
     @inject(AiIntegrationBindings.SmartLLM)
     private readonly sqlLLM: LLMProvider,
@@ -87,11 +100,13 @@ Keep these feedbacks in mind while generating the new query or improving this on
       question: state.prompt,
       dbschema: this.schemaHelper.asString(state.schema),
       checks: [
+        '<must-follow-rules>',
         'You must keep these additional details in mind while writing the query -',
         ...(this.checks ?? []).map(check => `- ${check}`),
         ...this.schemaHelper
           .getTablesContext(state.schema)
           .map(check => `- ${check}`),
+        '/<must-follow-rules>',
       ].join('\n'),
       feedbacks: await this.getFeedbacks(state),
       exampleQueries: state.feedbacks?.length

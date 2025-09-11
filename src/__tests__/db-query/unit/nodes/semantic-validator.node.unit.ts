@@ -105,27 +105,35 @@ describe('SemanticValidatorNode Unit', function () {
     const prompt = llmStub.firstCall.args[0];
 
     expect(prompt.value).to.eql(`
-    You are an AI assistant that judges whether the generated and syntactically verified SQL query will satisfy the user's query and the additional checks provided.
-    The query has already been validated for syntax and correctness, so you only need to check if it satisfies the user's query and all the additional checks provided.
-    Here is the latest generated SQL query -
-    ${state.sql}
+<instructions>
+You are an AI assistant that judges whether the generated and syntactically verified SQL query will satisfy the user's query and the additional checks provided.
+The query has already been validated for syntax and correctness, so you only need to check if it satisfies the user's query and all the additional checks provided.
+</instructions>
 
-    Here is the user query -
-    ${state.prompt}
+<latest-query>
+${state.sql}
+</latest-query>
 
-    and here is the database schema for which the query is generated -
-    ${schemaHelper.asString(state.schema)}
+<user-question>
+${state.prompt}
+</user-question>
 
-    It is really important that the query follows all the following context information -
+<database-schema>
+${schemaHelper.asString(state.schema)}
+</database-schema>
+
+It is really important that the query follows all the following context information -
 test context
 
-    
 
-    If the query is valid and will satisfy the user's query, then return valid, else return invalid followed by the reason why it is invalid.
-    The format in case of invalid query should be -
-    invalid: <reason>
-    The format in case of valid query should just be the string 'valid' with no other explanation -
-    valid`);
+
+<output-instructions>
+If the query is valid and will satisfy the user's query, then return valid, else return invalid followed by the reason why it is invalid.
+The format in case of invalid query should be -
+invalid: <reason>
+The format in case of valid query should just be the string 'valid' with no other explanation -
+valid
+</output-instructions>`);
   });
 
   it('should include feedbacks and context in the prompt', async () => {
@@ -163,34 +171,43 @@ test context
     sinon.assert.calledOnce(llmStub);
     const prompt = llmStub.firstCall.args[0];
     expect(prompt.value).to.eql(`
-    You are an AI assistant that judges whether the generated and syntactically verified SQL query will satisfy the user's query and the additional checks provided.
-    The query has already been validated for syntax and correctness, so you only need to check if it satisfies the user's query and all the additional checks provided.
-    Here is the latest generated SQL query -
-    ${state.sql}
+<instructions>
+You are an AI assistant that judges whether the generated and syntactically verified SQL query will satisfy the user's query and the additional checks provided.
+The query has already been validated for syntax and correctness, so you only need to check if it satisfies the user's query and all the additional checks provided.
+</instructions>
 
-    Here is the user query -
-    ${state.prompt}
+<latest-query>
+${state.sql}
+</latest-query>
 
-    and here is the database schema for which the query is generated -
-    ${schemaHelper.asString(state.schema)}
+<user-question>
+${state.prompt}
+</user-question>
 
-    It is really important that the query follows all the following context information -
+<database-schema>
+${schemaHelper.asString(state.schema)}
+</database-schema>
+
+It is really important that the query follows all the following context information -
 test context
 employee salary must be converted to USD
 
-    
-    We also need to consider the users feedback on the last attempt at query generation.
 
-    But was rejected by validator with the following errors -
-    ${state.feedbacks.join('\n')}
+<feedback-instructions>
+We also need to consider the users feedback on the last attempt at query generation.
 
-    Keep these feedbacks in mind while validating the new query.
+But was rejected by validator with the following errors -
+${state.feedbacks.join('\n')}
 
+Keep these feedbacks in mind while validating the new query.
+</feedback-instructions>
 
-    If the query is valid and will satisfy the user's query, then return valid, else return invalid followed by the reason why it is invalid.
-    The format in case of invalid query should be -
-    invalid: <reason>
-    The format in case of valid query should just be the string 'valid' with no other explanation -
-    valid`);
+<output-instructions>
+If the query is valid and will satisfy the user's query, then return valid, else return invalid followed by the reason why it is invalid.
+The format in case of invalid query should be -
+invalid: <reason>
+The format in case of valid query should just be the string 'valid' with no other explanation -
+valid
+</output-instructions>`);
   });
 });
