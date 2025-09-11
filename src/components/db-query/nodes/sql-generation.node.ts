@@ -26,6 +26,7 @@ Adhere to these rules:
 - **DO NOT make any DML statements** (INSERT, UPDATE, DELETE, DROP etc.) to the database.
 - Never query for all the columns from a specific table, only ask for the relevant columns for the given the question.
 - You can only generate a single query, so if you need multiple results you can use JOINs, subqueries, CTEs or UNIONS.
+- Do not make any assumptions about the user's intent beyond what is explicitly provided in the prompt.
 
 
 ### Input:
@@ -87,8 +88,10 @@ Keep these feedbacks in mind while generating the new query or improving this on
       dbschema: this.schemaHelper.asString(state.schema),
       checks: [
         'You must keep these additional details in mind while writing the query -',
-        ...(this.checks ?? []),
-        ...this.schemaHelper.getTablesContext(state.schema),
+        ...(this.checks ?? []).map(check => `- ${check}`),
+        ...this.schemaHelper
+          .getTablesContext(state.schema)
+          .map(check => `- ${check}`),
       ].join('\n'),
       feedbacks: await this.getFeedbacks(state),
       exampleQueries: state.feedbacks?.length

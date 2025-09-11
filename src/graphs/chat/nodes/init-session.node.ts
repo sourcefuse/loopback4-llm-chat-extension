@@ -50,6 +50,7 @@ export class InitSessionNode implements IGraphNode<ChatState> {
           If you are not sure about the result, you can ask the user to review the result and provide feedback.
           If the user provides feedback, you can use that feedback to improve the result.
           Do not hallucinate details or make up information.
+          Do not make assumptions about user's intent beyond what is explicitly provided in the prompt, and keep this in mind while calling tools.
           Do not use technical jargon in the response, show any internal IDs, or implementation details to the user.`,
         }),
         ...(await this._formatMessage(chat.messages)),
