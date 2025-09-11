@@ -28,7 +28,16 @@ describe('SemanticValidatorNode Unit', function () {
       ),
     );
 
+    // Mock the getTablesContext method
+    sinon
+      .stub(schemaHelper, 'getTablesContext')
+      .returns(['employee salary must be converted to USD']);
+
     node = new SemanticValidatorNode(llm, schemaHelper, ['test context']);
+  });
+
+  afterEach(() => {
+    sinon.restore();
   });
   it('should return the same query if it is valid', async () => {
     const state = {
@@ -58,7 +67,11 @@ describe('SemanticValidatorNode Unit', function () {
       fromCache: false,
       resultArray: undefined,
     };
-    llmStub.resolves({content: 'valid'});
+    llmStub.resolves({
+      content: {
+        toString: () => 'valid',
+      },
+    });
 
     const result = await node.execute(state, {});
 
@@ -95,7 +108,9 @@ describe('SemanticValidatorNode Unit', function () {
       resultArray: undefined,
     };
     llmStub.resolves({
-      content: 'invalid: table `invalid_table` does not exist',
+      content: {
+        toString: () => 'invalid: table `invalid_table` does not exist',
+      },
     });
 
     const result = await node.execute(state, {});
@@ -122,8 +137,11 @@ ${state.prompt}
 ${schemaHelper.asString(state.schema)}
 </database-schema>
 
+<must-follow-rules>
 It is really important that the query follows all the following context information -
 test context
+employee salary must be converted to USD
+</must-follow-rules>
 
 
 
@@ -131,9 +149,17 @@ test context
 If the query is valid and will satisfy the user's query, then return valid, else return invalid followed by the reason why it is invalid.
 The format in case of invalid query should be -
 invalid: <reason>
-The format in case of valid query should just be the string 'valid' with no other explanation -
+
+The format in case of valid query should just be the string 'valid' with no other explanation or string, the output should just be -
 valid
-</output-instructions>`);
+</output-instructions>
+<valid-output-example>
+valid
+</valid-output-example>
+<invalid-output-example>
+invalid: the query does not follow the additional checks provided
+</invalid-output-example>
+`);
   });
 
   it('should include feedbacks and context in the prompt', async () => {
@@ -164,7 +190,11 @@ valid
       fromCache: false,
       resultArray: undefined,
     };
-    llmStub.resolves({content: 'valid'});
+    llmStub.resolves({
+      content: {
+        toString: () => 'valid',
+      },
+    });
 
     await node.execute(state, {});
 
@@ -188,9 +218,11 @@ ${state.prompt}
 ${schemaHelper.asString(state.schema)}
 </database-schema>
 
+<must-follow-rules>
 It is really important that the query follows all the following context information -
 test context
 employee salary must be converted to USD
+</must-follow-rules>
 
 
 <feedback-instructions>
@@ -206,8 +238,16 @@ Keep these feedbacks in mind while validating the new query.
 If the query is valid and will satisfy the user's query, then return valid, else return invalid followed by the reason why it is invalid.
 The format in case of invalid query should be -
 invalid: <reason>
-The format in case of valid query should just be the string 'valid' with no other explanation -
+
+The format in case of valid query should just be the string 'valid' with no other explanation or string, the output should just be -
 valid
-</output-instructions>`);
+</output-instructions>
+<valid-output-example>
+valid
+</valid-output-example>
+<invalid-output-example>
+invalid: the query does not follow the additional checks provided
+</invalid-output-example>
+`);
   });
 });

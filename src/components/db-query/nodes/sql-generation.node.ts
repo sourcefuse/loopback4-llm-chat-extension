@@ -106,7 +106,7 @@ Keep these feedbacks in mind while generating the new query or improving this on
         ...this.schemaHelper
           .getTablesContext(state.schema)
           .map(check => `- ${check}`),
-        '/<must-follow-rules>',
+        '</must-follow-rules>',
       ].join('\n'),
       feedbacks: await this.getFeedbacks(state),
       exampleQueries: state.feedbacks?.length

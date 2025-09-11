@@ -51,9 +51,17 @@ The query has already been validated for syntax and correctness, so you only nee
 If the query is valid and will satisfy the user's query, then return valid, else return invalid followed by the reason why it is invalid.
 The format in case of invalid query should be -
 invalid: <reason>
-The format in case of valid query should just be the string 'valid' with no other explanation -
+
+The format in case of valid query should just be the string 'valid' with no other explanation or string, the output should just be -
 valid
-</output-instructions>`);
+</output-instructions>
+<valid-output-example>
+valid
+</valid-output-example>
+<invalid-output-example>
+invalid: the query does not follow the additional checks provided
+</invalid-output-example>
+`);
 
   feedbackPrompt = PromptTemplate.fromTemplate(`
 <feedback-instructions>
@@ -80,9 +88,11 @@ Keep these feedbacks in mind while validating the new query.
       query: state.sql,
       prompt: state.prompt,
       checks: [
+        `<must-follow-rules>`,
         'It is really important that the query follows all the following context information -',
         ...(this.checks ?? []),
         ...this.schemaHelper.getTablesContext(state.schema),
+        `</must-follow-rules>`,
       ].join('\n'),
       schema: this.schemaHelper.asString(state.schema),
       feedbacks: await this.getFeedbacks(state),

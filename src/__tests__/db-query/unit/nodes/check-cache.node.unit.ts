@@ -33,7 +33,11 @@ describe('CheckCacheNode Unit', function () {
   });
 
   it('should return state as it is if no relevant query found in cache', async () => {
-    llmStub.resolves({content: 'no-relevant-queries'});
+    llmStub.resolves({
+      content: {
+        toString: () => 'no-relevant-queries',
+      },
+    });
     cacheStub.resolves([]);
     const state = {
       prompt: 'What is the salary of Akshat?',
@@ -45,7 +49,11 @@ describe('CheckCacheNode Unit', function () {
   });
 
   it('should return state with sampleSql if relevant query found in cache', async () => {
-    llmStub.resolves({content: 'similar 0'});
+    llmStub.resolves({
+      content: {
+        toString: () => 'similar 1',
+      },
+    });
     cacheStub.resolves([
       {
         pageContent: 'What is the salary of Akshat?',
@@ -66,7 +74,11 @@ describe('CheckCacheNode Unit', function () {
   });
 
   it('should return state with datasetId and fromCache true if exact query found in cache with matching permissions', async () => {
-    llmStub.resolves({content: 'as-is 0'});
+    llmStub.resolves({
+      content: {
+        toString: () => 'as-is 1',
+      },
+    });
     datasetHelperStub.stubs.checkPermissions.resolves([]);
     cacheStub.resolves([
       {
@@ -92,7 +104,11 @@ describe('CheckCacheNode Unit', function () {
   });
 
   it('should return existing state if exact query found in cache but with missing permissions', async () => {
-    llmStub.resolves({content: 'as-is 0'});
+    llmStub.resolves({
+      content: {
+        toString: () => 'as-is 1',
+      },
+    });
     datasetHelperStub.stubs.checkPermissions.resolves(['some permission']);
     cacheStub.resolves([
       {
@@ -112,5 +128,90 @@ describe('CheckCacheNode Unit', function () {
     expect(result).to.deepEqual({
       ...state,
     });
+  });
+
+  it('should return state as is if sampleSql already exists', async () => {
+    const state = {
+      prompt: 'What is the salary of Akshat?',
+      sampleSql: 'SELECT salary FROM employees WHERE name = "existing"',
+    } as unknown as DbQueryState;
+
+    const result = await node.execute(state, {});
+
+    expect(result).to.deepEqual(state);
+    sinon.assert.notCalled(cacheStub);
+    sinon.assert.notCalled(llmStub);
+  });
+
+  it('should return state as is if LLM returns invalid index', async () => {
+    llmStub.resolves({
+      content: {
+        toString: () => 'as-is 5',
+      },
+    }); // Index out of bounds
+    cacheStub.resolves([
+      {
+        pageContent: 'What is the salary of Akshat?',
+        metadata: {
+          query: `SELECT * FROM employees WHERE name = 'Akshat'`,
+          datasetId: '123',
+        },
+      },
+    ]);
+    const state = {
+      prompt: 'What is the salary of Akshat?',
+    } as unknown as DbQueryState;
+
+    const result = await node.execute(state, {});
+
+    expect(result).to.deepEqual(state);
+  });
+
+  it('should return state as is if LLM returns non-numeric index', async () => {
+    llmStub.resolves({
+      content: {
+        toString: () => 'as-is abc',
+      },
+    });
+    cacheStub.resolves([
+      {
+        pageContent: 'What is the salary of Akshat?',
+        metadata: {
+          query: `SELECT * FROM employees WHERE name = 'Akshat'`,
+          datasetId: '123',
+        },
+      },
+    ]);
+    const state = {
+      prompt: 'What is the salary of Akshat?',
+    } as unknown as DbQueryState;
+
+    const result = await node.execute(state, {});
+
+    expect(result).to.deepEqual(state);
+  });
+
+  it('should return state as is if LLM returns not-relevant', async () => {
+    llmStub.resolves({
+      content: {
+        toString: () => 'not-relevant 1',
+      },
+    });
+    cacheStub.resolves([
+      {
+        pageContent: 'What is the salary of Akshat?',
+        metadata: {
+          query: `SELECT * FROM employees WHERE name = 'Akshat'`,
+          datasetId: '123',
+        },
+      },
+    ]);
+    const state = {
+      prompt: 'What is the salary of Dhruv?',
+    } as unknown as DbQueryState;
+
+    const result = await node.execute(state, {});
+
+    expect(result).to.deepEqual(state);
   });
 });

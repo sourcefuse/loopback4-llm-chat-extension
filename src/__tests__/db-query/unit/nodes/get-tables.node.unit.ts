@@ -66,31 +66,45 @@ describe('GetTablesNode Unit', function () {
       schema: originalSchema,
     } as unknown as DbQueryState;
 
-    llmStub.resolves({content: 'employees'});
+    llmStub.resolves({
+      content: {
+        toString: () => 'employees',
+      },
+    });
 
     const result = await node.execute(state, {});
 
     expect(llmStub.getCalls()[0].args[0].value.trim()).equal(
-      `You are an AI assistant that extracts table names that are relevant to the users query that will be used to generate an SQL query later.,
-    here is the list of all the tables available with their descriptions:
-    employees: ${Employee.definition.settings.description}
+      `<instructions>
+You are an AI assistant that extracts table names that are relevant to the users query that will be used to generate an SQL query later.
+Please extract the relevant table names and return them as a comma separated list. Note there should be nothing else other than a comma separated list of exact same table names as in the input.
+Ensure that table names are exact and match the names in the input including schema if given.
+Use only and only the tables that are relevant to the query.
+If you are not sure about the tables to select from the given schema, just return your doubt asking the user for more details or to rephrase the question in the following format -
+failed attempt: <reason for failure>
+</instructions>
+
+<tables-with-description>
+employees: ${Employee.definition.settings.description}
 
 exchange_rates: ${ExchangeRate.definition.settings.description}
+</tables-with-description>
 
-    and here is the user query:
-    Get me the employee with name Akshat
+<user-question>
+Get me the employee with name Akshat
+</user-question>
 
-    You must keep these additional details in consideration -
+<must-follow-rules>
+You must keep these additional details in consideration -
 test context
 employee salary must be converted to USD, using the currency_id column and the exchange rate table
+</must-follow-rules>
 
-    
 
-    Please extract the relevant table names and return them as a comma separated list. Note there should be nothing else other than a comma separated list of exact same table names as in the input.
-    Ensure that table names are exact and match the names in the input including schema if given.
-    Use only and only the tables that are relevant to the query.
-    If you are not sure about the tables to select from the given schema, just return your doubt asking the user for more details or to rephrase the question in the following format - 
-    failed attempt: <reason for failure>`,
+
+<output-format>
+table1, table2, table3
+</output-format>`,
     );
 
     expect(result.schema).to.deepEqual(
@@ -114,7 +128,11 @@ employee salary must be converted to USD, using the currency_id column and the e
       schema: originalSchema,
     } as unknown as DbQueryState;
 
-    llmStub.resolves({content: 'employees'});
+    llmStub.resolves({
+      content: {
+        toString: () => 'employees',
+      },
+    });
 
     await expect(node.execute(state, {})).to.be.rejectedWith(
       'No tables found in the provided database schema. Please ensure the schema is valid.',

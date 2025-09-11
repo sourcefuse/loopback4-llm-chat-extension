@@ -30,33 +30,43 @@ export class GetTablesNode implements IGraphNode<DbQueryState> {
     private readonly checks?: string[],
   ) {}
   prompt = PromptTemplate.fromTemplate(`
-    You are an AI assistant that extracts table names that are relevant to the users query that will be used to generate an SQL query later.,
-    here is the list of all the tables available with their descriptions:
-    {tables}
+<instructions>
+You are an AI assistant that extracts table names that are relevant to the users query that will be used to generate an SQL query later.
+Please extract the relevant table names and return them as a comma separated list. Note there should be nothing else other than a comma separated list of exact same table names as in the input.
+Ensure that table names are exact and match the names in the input including schema if given.
+Use only and only the tables that are relevant to the query.
+If you are not sure about the tables to select from the given schema, just return your doubt asking the user for more details or to rephrase the question in the following format -
+failed attempt: <reason for failure>
+</instructions>
 
-    and here is the user query:
-    {query}
+<tables-with-description>
+{tables}
+</tables-with-description>
 
-    {checks}
+<user-question>
+{query}
+</user-question>
 
-    {feedbacks}
+{checks}
 
-    Please extract the relevant table names and return them as a comma separated list. Note there should be nothing else other than a comma separated list of exact same table names as in the input.
-    Ensure that table names are exact and match the names in the input including schema if given.
-    Use only and only the tables that are relevant to the query.
-    If you are not sure about the tables to select from the given schema, just return your doubt asking the user for more details or to rephrase the question in the following format - 
-    failed attempt: <reason for failure>`);
+{feedbacks}
+
+<output-format>
+table1, table2, table3
+</output-format>`);
 
   feedbackPrompt = PromptTemplate.fromTemplate(`
-    We also need to consider the errors from last attempt at query generation.
+<feedback-instructions>
+We also need to consider the errors from last attempt at query generation.
 
-    In the last attempt, these were the last tables selected:
-    {lastTables}
+In the last attempt, these were the last tables selected:
+{lastTables}
 
-    But it was rejected with the following errors:
-    {feedback}
+But it was rejected with the following errors:
+{feedback}
 
-    Use these if they are relevant to the table selection, otherwise ignore them, they would be considered again during the SQL generation step.
+Use these if they are relevant to the table selection, otherwise ignore them, they would be considered again during the SQL generation step.
+</feedback-instructions>
 `);
   async execute(
     state: DbQueryState,
@@ -88,9 +98,11 @@ export class GetTablesNode implements IGraphNode<DbQueryState> {
       query: state.prompt,
       feedbacks: await this.getFeedbacks(state),
       checks: [
+        `<must-follow-rules>`,
         'You must keep these additional details in consideration -',
         ...(this.checks ?? []),
         ...this.schemaHelper.getTablesContext(dbSchema),
+        `</must-follow-rules>`,
       ].join('\n'),
     });
 
@@ -108,7 +120,8 @@ export class GetTablesNode implements IGraphNode<DbQueryState> {
       };
     }
 
-    const requiredTables = output.split(',').map(t => t.trim());
+    const lastLine = output.split('\n').pop() ?? '';
+    const requiredTables = lastLine.split(',').map(t => t.trim());
 
     config.writer?.({
       type: LLMStreamEventType.Log,

@@ -27,6 +27,11 @@ describe('SqlGenerationNode Unit', function () {
       ),
     );
 
+    // Mock the getTablesContext method
+    sinon
+      .stub(schemaHelper, 'getTablesContext')
+      .returns(['Table employees contains employee information']);
+
     node = new SqlGenerationNode(
       llm,
       {
@@ -40,9 +45,16 @@ describe('SqlGenerationNode Unit', function () {
     );
   });
 
+  afterEach(() => {
+    sinon.restore();
+  });
+
   it('should generate SQL query based on the provided prompt', async () => {
     llmStub.resolves({
-      content: '<think>thinking about it</think>SELECT * FROM employees;',
+      content: {
+        toString: () =>
+          '<think>thinking about it</think>SELECT * FROM employees;',
+      },
     });
 
     const state = {
@@ -108,7 +120,8 @@ ${schemaHelper.asString(state.schema)}
 <must-follow-rules>
 You must keep these additional details in mind while writing the query -
 - test context
-/<must-follow-rules>
+- Table employees contains employee information
+</must-follow-rules>
 
 
 
@@ -122,7 +135,10 @@ The output should be a valid SQL query that can run on the database schema provi
 
   it('should generate SQL query based on the provided prompt with a single feedback from some validation stage', async () => {
     llmStub.resolves({
-      content: '<think>thinking about it</think>SELECT * FROM employees;',
+      content: {
+        toString: () =>
+          '<think>thinking about it</think>SELECT * FROM employees;',
+      },
     });
 
     const state = {
@@ -188,7 +204,8 @@ ${schemaHelper.asString(state.schema)}
 <must-follow-rules>
 You must keep these additional details in mind while writing the query -
 - test context
-/<must-follow-rules>
+- Table employees contains employee information
+</must-follow-rules>
 
 
 
@@ -220,7 +237,10 @@ The output should be a valid SQL query that can run on the database schema provi
 
   it('should generate SQL query based on the provided prompt with a multiple feedbacks from from previous loops', async () => {
     llmStub.resolves({
-      content: '<think>thinking about it</think>SELECT * FROM employees;',
+      content: {
+        toString: () =>
+          '<think>thinking about it</think>SELECT * FROM employees;',
+      },
     });
 
     const state = {
@@ -290,7 +310,8 @@ ${schemaHelper.asString(state.schema)}
 <must-follow-rules>
 You must keep these additional details in mind while writing the query -
 - test context
-/<must-follow-rules>
+- Table employees contains employee information
+</must-follow-rules>
 
 
 
@@ -320,5 +341,111 @@ Return the SQL query as a string, without any additional text, quotations, code 
 The output should be a valid SQL query that can run on the database schema provided.
 </output-instructions>
 </context>`);
+  });
+
+  it('should generate SQL query with sample queries when no feedbacks but has sample SQL', async () => {
+    llmStub.resolves({
+      content: {
+        toString: () =>
+          '<think>thinking about it</think>SELECT * FROM employees;',
+      },
+    });
+
+    const state = {
+      prompt: 'Generate a SQL query to select all employees',
+      schema: {
+        tables: {
+          employees: {
+            columns: {
+              id: {type: 'number', required: true, id: true},
+              name: {type: 'string', required: true, id: false},
+            },
+            primaryKey: ['id'],
+            description: 'Employee table',
+            context: [],
+            hash: 'hash1',
+          },
+        },
+        relations: [],
+      },
+      feedbacks: [],
+      sampleSql: 'SELECT name FROM employees WHERE id = 1',
+      sampleSqlPrompt: 'Get employee name by id',
+      done: false,
+      sql: undefined,
+      status: undefined,
+      id: '123',
+      replyToUser: undefined,
+      datasetId: undefined,
+      fromCache: true,
+      resultArray: undefined,
+    };
+
+    const result = await node.execute(state, {});
+
+    expect(result.sql).to.equal('SELECT * FROM employees;');
+
+    sinon.assert.calledOnce(llmStub);
+    const prompt = llmStub.firstCall.args[0];
+    expect(prompt.value).to.match(
+      /Here is an example query for reference that is similar to the question asked and has been validated by the user/,
+    );
+    expect(prompt.value).to.match(/SELECT name FROM employees WHERE id = 1/);
+    expect(prompt.value).to.match(
+      /This was generated for the following question - \nGet employee name by id/,
+    );
+  });
+
+  it('should generate SQL query with baseline sample queries when no feedbacks and not from cache', async () => {
+    llmStub.resolves({
+      content: {
+        toString: () =>
+          '<think>thinking about it</think>SELECT * FROM employees;',
+      },
+    });
+
+    const state = {
+      prompt: 'Generate a SQL query to select all employees',
+      schema: {
+        tables: {
+          employees: {
+            columns: {
+              id: {type: 'number', required: true, id: true},
+              name: {type: 'string', required: true, id: false},
+            },
+            primaryKey: ['id'],
+            description: 'Employee table',
+            context: [],
+            hash: 'hash1',
+          },
+        },
+        relations: [],
+      },
+      feedbacks: [],
+      sampleSql: 'SELECT name FROM employees WHERE id = 1',
+      sampleSqlPrompt: 'Get employee name by id',
+      done: false,
+      sql: undefined,
+      status: undefined,
+      id: '123',
+      replyToUser: undefined,
+      datasetId: undefined,
+      fromCache: false,
+      resultArray: undefined,
+    };
+
+    const result = await node.execute(state, {});
+
+    expect(result.sql).to.equal('SELECT * FROM employees;');
+
+    sinon.assert.calledOnce(llmStub);
+    const prompt = llmStub.firstCall.args[0];
+    expect(prompt.value).to.match(
+      /Here is the last running SQL query that was generated by user that is supposed to be used as the base line for the next query generation\./,
+    );
+    expect(prompt.value).to.match(/SELECT name FROM employees WHERE id = 1/);
+    expect(prompt.value).to.match(
+      /This was generated for the following question - \nGet employee name by id/,
+    );
   });
 });
