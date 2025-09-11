@@ -92,6 +92,7 @@ Adhere to these rules:
 - **DO NOT make any DML statements** (INSERT, UPDATE, DELETE, DROP etc.) to the database.
 - Never query for all the columns from a specific table, only ask for the relevant columns for the given the question.
 - You can only generate a single query, so if you need multiple results you can use JOINs, subqueries, CTEs or UNIONS.
+- Do not make any assumptions about the user's intent beyond what is explicitly provided in the prompt.
 
 
 ### Input:
@@ -101,7 +102,7 @@ This query will run on a database whose schema is represented in this string:
 ${schemaHelper.asString(state.schema)}
 
 You must keep these additional details in mind while writing the query -
-test context
+- test context
 
 
 
@@ -163,6 +164,7 @@ Adhere to these rules:
 - **DO NOT make any DML statements** (INSERT, UPDATE, DELETE, DROP etc.) to the database.
 - Never query for all the columns from a specific table, only ask for the relevant columns for the given the question.
 - You can only generate a single query, so if you need multiple results you can use JOINs, subqueries, CTEs or UNIONS.
+- Do not make any assumptions about the user's intent beyond what is explicitly provided in the prompt.
 
 
 ### Input:
@@ -172,7 +174,7 @@ This query will run on a database whose schema is represented in this string:
 ${schemaHelper.asString(state.schema)}
 
 You must keep these additional details in mind while writing the query -
-test context
+- test context
 
 
 
@@ -249,6 +251,7 @@ Adhere to these rules:
 - **DO NOT make any DML statements** (INSERT, UPDATE, DELETE, DROP etc.) to the database.
 - Never query for all the columns from a specific table, only ask for the relevant columns for the given the question.
 - You can only generate a single query, so if you need multiple results you can use JOINs, subqueries, CTEs or UNIONS.
+- Do not make any assumptions about the user's intent beyond what is explicitly provided in the prompt.
 
 
 ### Input:
@@ -258,7 +261,7 @@ This query will run on a database whose schema is represented in this string:
 ${schemaHelper.asString(state.schema)}
 
 You must keep these additional details in mind while writing the query -
-test context
+- test context
 
 
 

@@ -43,7 +43,7 @@ export class PgVectorStore implements Provider<VectorStore> {
       tableName: 'context',
       collectionName: 'knowledge_base',
       collectionTableName: 'embeddings_collections',
-      extensionSchemaName: process.env.EXTENSION_DB_SCHEMA || 'public',
+      extensionSchemaName: process.env.EXTENSION_DB_SCHEMA ?? 'public',
       columns: {
         idColumnName: 'id',
         vectorColumnName: 'vector',
