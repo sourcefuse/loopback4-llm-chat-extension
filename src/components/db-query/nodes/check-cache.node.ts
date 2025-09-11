@@ -54,7 +54,7 @@ relevance query index
 
 <output-instructions>
 Do not return any other text or explanation, just the output in the above format.
-If no queries are relevant, return 'no-relevant-queries' and nothing else.
+If no queries are relevant, return '${CacheResults.NotRelevant}' and nothing else.
 </output-instructions>`);
   async execute(
     state: DbQueryState,
