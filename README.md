@@ -86,6 +86,16 @@ this.bind(AiIntegrationBindings.SmartLLM).toProvider(Anthropic);
 this.bind(AiIntegrationBindings.FileLLM).toProvider(Anthropic);
 ```
 
+### OpenAI
+
+To use the `OpenAI` models, install the package - `@langchain/openai` and update your application.ts -
+
+```ts
+this.bind(AiIntegrationBindings.CheapLLM).toProvider(OpenAI);
+this.bind(AiIntegrationBindings.SmartLLM).toProvider(OpenAI);
+this.bind(AiIntegrationBindings.FileLLM).toProvider(OpenAI);
+```
+
 ### Bedrock
 
 To use the `Bedrock` based models, install the package - `@langchain/aws` and update your application.ts -

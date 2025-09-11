@@ -33,6 +33,10 @@
       "type": "./dist/sub-modules/providers/cerebras/index.d.ts",
       "default": "./dist/sub-modules/providers/cerebras/index.js"
     },
+    "./openai": {
+      "type": "./dist/sub-modules/providers/openai/index.d.ts",
+      "default": "./dist/sub-modules/providers/openai/index.js"
+    },
     "./pg": {
       "type": "./dist/sub-modules/providers/pg/index.d.ts",
       "default": "./dist/sub-modules/providers/pg/index.js"
@@ -54,6 +58,9 @@
       ],
       "cerebras": [
         "dist/sub-modules/providers/cerebras/index.d.ts"
+      ],
+      "openai": [
+        "dist/sub-modules/providers/openai/index.d.ts"
       ],
       "pg": [
         "dist/sub-modules/providers/pg/index.d.ts"
@@ -118,6 +125,7 @@
     "@langchain/cerebras": "^0.0.2",
     "@langchain/google-genai": "^0.2.16",
     "@langchain/ollama": "^0.2.3",
+    "@langchain/openai": "^0.6.11",
     "@loopback/build": "^11.0.9",
     "@loopback/eslint-config": "^15.0.5",
     "@loopback/testlab": "^7.0.9",
