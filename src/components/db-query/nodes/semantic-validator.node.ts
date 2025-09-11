@@ -99,7 +99,8 @@ Keep these feedbacks in mind while validating the new query.
     });
     const response = stripThinkingTokens(output);
 
-    const isValid = response.startsWith('valid');
+    const lastLine = response.split('\n').pop() ?? '';
+    const isValid = lastLine.startsWith('valid');
     if (isValid) {
       return {
         ...state,
@@ -110,7 +111,7 @@ Keep these feedbacks in mind while validating the new query.
         status: EvaluationResult.Pass,
       };
     } else {
-      const reason = response.replace('invalid: ', '').trim();
+      const reason = lastLine.replace('invalid: ', '').trim();
       config.writer?.({
         type: LLMStreamEventType.Log,
         data: `Query Validation Failed by LLM: ${reason}`,
