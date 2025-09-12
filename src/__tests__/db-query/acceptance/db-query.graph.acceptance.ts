@@ -6,7 +6,6 @@ import {
   DataSetHelper,
   DbQueryAIExtensionBindings,
   DbQueryGraph,
-  dbQueryToolTests,
   SchemaStore,
 } from '../../../components';
 import {TestApp} from '../../fixtures/test-app';
@@ -16,6 +15,7 @@ import {
   seedExchangeRates,
   setupApplication,
 } from '../../test-helper';
+import {dbQueryToolTests} from '../../../components/db-query/testing/db-query.graph.builder';
 
 describe(`DB Query Graph Acceptance`, () => {
   let app: TestApp;

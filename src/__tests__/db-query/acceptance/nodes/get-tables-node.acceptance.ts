@@ -4,12 +4,12 @@ import {IAuthUserWithPermissions} from 'loopback4-authorization';
 import {
   DatabaseSchema,
   DbQueryAIExtensionBindings,
-  getTableNodeTests,
   GetTablesNode,
   SchemaStore,
 } from '../../../../components';
 import {TestApp} from '../../../fixtures/test-app';
 import {setupApplication} from '../../../test-helper';
+import {getTableNodeTests} from '../../../../components/db-query/testing/get-table.node.builder';
 
 describe('GetTablesNode Acceptance', function () {
   let app: TestApp;

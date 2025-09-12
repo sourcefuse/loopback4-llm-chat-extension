@@ -10,6 +10,5 @@ export * from './nodes';
 export * from './nodes.enum';
 export * from './services';
 export * from './state';
-export * from './testing';
 export * from './tools';
 export * from './types';
