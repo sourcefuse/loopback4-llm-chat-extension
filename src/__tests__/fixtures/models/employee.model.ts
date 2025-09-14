@@ -51,6 +51,9 @@ export class Employee extends Entity {
   @property({
     type: 'string',
     required: true,
+    postgresql: {
+      dataType: 'date',
+    },
     description: 'The date when the employee joined the company',
   })
   joiningDate: string;

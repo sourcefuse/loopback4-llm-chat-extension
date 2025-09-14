@@ -31,27 +31,21 @@ export class CheckCacheNode implements IGraphNode<DbQueryState> {
   ) {}
   prompt = PromptTemplate.fromTemplate(`
 <instructions>
-You are expect SQL analyser, you will be given a prompt and a list of queries, and you need to return the most relevant query from the list and in which of the following ways is it relevant - 
-- return '${CacheResults.AsIs}' if the query exactly answers the question in the prompt.
-- return '${CacheResults.Similar}' if the query is similar to the question in the prompt but not exactly the same and can be used as an example to generate a new query.
-- return '${CacheResults.NotRelevant}' if the query is not relevant to the prompt at all.
-Remember that if the cached query has extra information, then still the query could be considered exactly same as long as it does not contradict the prompt.
+You are an expert Semantic analyser, you will be given a prompt and a list of past prompts that were successfully processed, and you need to return the most relevant prompt from the list and in which of the following ways is it relevant - 
+- return '${CacheResults.AsIs}' if the prompt result would contain the information the user is looking for without any changes in the result (though it could have additional details).
+- return '${CacheResults.Similar}' if the prompt result would be similar to the question in the new prompt but not exactly, and can be modified to get the data user needs.
+- return '${CacheResults.NotRelevant}' if the prompt is not relevant to the new prompt at all.
+Remember that if the cached prompt has extra information, then still the old prompt could be considered exactly same as long as it does not contradict the new prompt.
 </instructions>
-
-
 <user-question>
 {prompt}
 </user-question>
-
 <queries>
 {queries}
 </queries>
-
-
 <output-format>
 relevance query index
 </output-format>
-
 <output-instructions>
 Do not return any other text or explanation, just the output in the above format.
 If no queries are relevant, return '${CacheResults.NotRelevant}' and nothing else.

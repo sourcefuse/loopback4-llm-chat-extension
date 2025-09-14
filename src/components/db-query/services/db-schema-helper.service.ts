@@ -106,7 +106,7 @@ export class DbSchemaHelperService {
           required: property.required || false,
           description: property.description || '',
           id: (property.id ?? foreignKeysSet.has(prop) ?? false) as boolean,
-          metadata: property.metadata || {},
+          metadata: property || {},
         };
         if (property.id) {
           schemaDDL.tables[modelName].primaryKey.push(prop);

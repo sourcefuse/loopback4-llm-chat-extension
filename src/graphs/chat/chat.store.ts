@@ -103,7 +103,7 @@ export class ChatStore {
       body: message,
       metadata,
       channelType: ChannelType.Chat,
-      toUserId: fromAi ? currentUser.id : undefined,
+      toUserId: fromAi ? currentUser.userTenantId : undefined,
       parentMessageId,
     });
     return newMessage;

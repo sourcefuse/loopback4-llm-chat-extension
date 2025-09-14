@@ -84,18 +84,14 @@ export class PgConnector implements IDbConnector {
     ddlStatements: string[],
     columnDefinitions: string[],
   ) {
-    const createTableStatement = `CREATE TABLE ${tableName} (\n${columnDefinitions.join(
+    let createTableStatement = `CREATE TABLE ${tableName} (\n${columnDefinitions.join(
       ',\n',
     )}\n);`;
-    ddlStatements.push(createTableStatement);
     if (table.description) {
-      ddlStatements.push(
-        `COMMENT ON TABLE ${tableName} IS '${table.description.replace(
-          /'/g,
-          "''",
-        )}';`,
-      );
+      createTableStatement =
+        `-- ${table.description.replace(/'/g, "''")}\n` + createTableStatement;
     }
+    ddlStatements.push(createTableStatement);
   }
 
   protected mapDbTypeToColumnType(dbType: string): string {

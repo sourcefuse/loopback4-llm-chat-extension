@@ -15,6 +15,10 @@ export class DbQueryGraph extends BaseGraph<DbQueryState> {
         await this._getNodeFn(DbQueryNodes.GetTables),
       )
       .addNode(
+        DbQueryNodes.GetColumns,
+        await this._getNodeFn(DbQueryNodes.GetColumns),
+      )
+      .addNode(
         DbQueryNodes.CheckPermissions,
         await this._getNodeFn(DbQueryNodes.CheckPermissions),
       )
@@ -69,14 +73,15 @@ export class DbQueryGraph extends BaseGraph<DbQueryState> {
           if (state.status === GenerationError.Failed) {
             return 'Failed';
           } else {
-            return 'CheckPermissions';
+            return 'GetColumns';
           }
         },
         {
           Failed: DbQueryNodes.Failed,
-          CheckPermissions: DbQueryNodes.CheckPermissions,
+          GetColumns: DbQueryNodes.GetColumns,
         },
       )
+      .addEdge(DbQueryNodes.GetColumns, DbQueryNodes.CheckPermissions)
       .addConditionalEdges(
         DbQueryNodes.CheckPermissions,
         (state: DbQueryState) => {

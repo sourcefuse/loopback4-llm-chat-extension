@@ -38,6 +38,10 @@ describe(`DbSchemaHelperService Unit`, () => {
       'public.employee_skills',
     );
 
+    expect(
+      schema.tables['public.employees'].columns['joiningdate'].metadata,
+    ).to.deepEqual(Employee.definition.properties['joiningDate']);
+
     expect(schema.relations).to.have.length(3);
 
     expect(schema.relations[0]).to.deepEqual({

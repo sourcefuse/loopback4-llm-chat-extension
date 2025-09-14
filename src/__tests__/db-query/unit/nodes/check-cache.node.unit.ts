@@ -6,6 +6,7 @@ import {
   StubbedInstanceWithSinonAccessor,
 } from '@loopback/testlab';
 import {
+  CacheResults,
   CheckCacheNode,
   DataSetHelper,
   DbQueryState,
@@ -34,9 +35,7 @@ describe('CheckCacheNode Unit', function () {
 
   it('should return state as it is if no relevant query found in cache', async () => {
     llmStub.resolves({
-      content: {
-        toString: () => 'no-relevant-queries',
-      },
+      content: CacheResults.NotRelevant,
     });
     cacheStub.resolves([]);
     const state = {
@@ -50,9 +49,7 @@ describe('CheckCacheNode Unit', function () {
 
   it('should return state with sampleSql if relevant query found in cache', async () => {
     llmStub.resolves({
-      content: {
-        toString: () => 'similar 1',
-      },
+      content: CacheResults.Similar + ' 1',
     });
     cacheStub.resolves([
       {
@@ -75,9 +72,7 @@ describe('CheckCacheNode Unit', function () {
 
   it('should return state with datasetId and fromCache true if exact query found in cache with matching permissions', async () => {
     llmStub.resolves({
-      content: {
-        toString: () => 'as-is 1',
-      },
+      content: CacheResults.AsIs + ' 1',
     });
     datasetHelperStub.stubs.checkPermissions.resolves([]);
     cacheStub.resolves([
@@ -105,9 +100,7 @@ describe('CheckCacheNode Unit', function () {
 
   it('should return existing state if exact query found in cache but with missing permissions', async () => {
     llmStub.resolves({
-      content: {
-        toString: () => 'as-is 1',
-      },
+      content: `${CacheResults.AsIs} 1`,
     });
     datasetHelperStub.stubs.checkPermissions.resolves(['some permission']);
     cacheStub.resolves([
@@ -145,9 +138,7 @@ describe('CheckCacheNode Unit', function () {
 
   it('should return state as is if LLM returns invalid index', async () => {
     llmStub.resolves({
-      content: {
-        toString: () => 'as-is 5',
-      },
+      content: `${CacheResults.AsIs} 5`,
     }); // Index out of bounds
     cacheStub.resolves([
       {
@@ -169,9 +160,7 @@ describe('CheckCacheNode Unit', function () {
 
   it('should return state as is if LLM returns non-numeric index', async () => {
     llmStub.resolves({
-      content: {
-        toString: () => 'as-is abc',
-      },
+      content: `${CacheResults.AsIs} abc`,
     });
     cacheStub.resolves([
       {
@@ -193,9 +182,7 @@ describe('CheckCacheNode Unit', function () {
 
   it('should return state as is if LLM returns not-relevant', async () => {
     llmStub.resolves({
-      content: {
-        toString: () => 'not-relevant 1',
-      },
+      content: `${CacheResults.NotRelevant} 1`,
     });
     cacheStub.resolves([
       {

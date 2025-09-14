@@ -111,6 +111,7 @@ export type DbQueryConfig = {
     // max cluster size
     maxClusterSize?: number;
   };
+  columnSelection?: boolean;
 };
 export type IDataSet = {
   tenantId: string;

@@ -68,9 +68,7 @@ describe('SemanticValidatorNode Unit', function () {
       resultArray: undefined,
     };
     llmStub.resolves({
-      content: {
-        toString: () => 'valid',
-      },
+      content: 'valid',
     });
 
     const result = await node.execute(state, {});
@@ -108,9 +106,7 @@ describe('SemanticValidatorNode Unit', function () {
       resultArray: undefined,
     };
     llmStub.resolves({
-      content: {
-        toString: () => 'invalid: table `invalid_table` does not exist',
-      },
+      content: 'invalid: table `invalid_table` does not exist',
     });
 
     const result = await node.execute(state, {});
@@ -124,6 +120,7 @@ describe('SemanticValidatorNode Unit', function () {
 You are an AI assistant that judges whether the generated and syntactically verified SQL query will satisfy the user's query and the additional checks provided.
 The query has already been validated for syntax and correctness, so you only need to check if it satisfies the user's query and all the additional checks provided.
 Note that query has already been validated for syntax and correctness, so you only need to check if it satisfies the user's query and all the additional checks provided.
+You must create a checklist and ensure that the query satisfies all the points in the checklist.
 </instructions>
 
 <latest-query>
@@ -147,19 +144,17 @@ employee salary must be converted to USD
 
 
 <output-instructions>
-If the query is valid and will satisfy the user's query, then return valid, else return invalid followed by the reason why it is invalid.
+The last line of your response must be either 'valid' or 'invalid'.
+In case of 'invalid', you must provide the reasons for invalidity after a colon and space.
 The format in case of invalid query should be -
-invalid: <reason>
+
+invalid: reason for invalidity
 
 The format in case of valid query should just be the string 'valid' with no other explanation or string, the output should just be -
+
 valid
+
 </output-instructions>
-<valid-output-example>
-valid
-</valid-output-example>
-<invalid-output-example>
-invalid: the query does not follow the additional checks provided
-</invalid-output-example>
 `);
   });
 
@@ -192,9 +187,7 @@ invalid: the query does not follow the additional checks provided
       resultArray: undefined,
     };
     llmStub.resolves({
-      content: {
-        toString: () => 'valid',
-      },
+      content: 'valid',
     });
 
     await node.execute(state, {});
@@ -206,6 +199,7 @@ invalid: the query does not follow the additional checks provided
 You are an AI assistant that judges whether the generated and syntactically verified SQL query will satisfy the user's query and the additional checks provided.
 The query has already been validated for syntax and correctness, so you only need to check if it satisfies the user's query and all the additional checks provided.
 Note that query has already been validated for syntax and correctness, so you only need to check if it satisfies the user's query and all the additional checks provided.
+You must create a checklist and ensure that the query satisfies all the points in the checklist.
 </instructions>
 
 <latest-query>
@@ -237,19 +231,17 @@ Keep these feedbacks in mind while validating the new query.
 </feedback-instructions>
 
 <output-instructions>
-If the query is valid and will satisfy the user's query, then return valid, else return invalid followed by the reason why it is invalid.
+The last line of your response must be either 'valid' or 'invalid'.
+In case of 'invalid', you must provide the reasons for invalidity after a colon and space.
 The format in case of invalid query should be -
-invalid: <reason>
+
+invalid: reason for invalidity
 
 The format in case of valid query should just be the string 'valid' with no other explanation or string, the output should just be -
+
 valid
+
 </output-instructions>
-<valid-output-example>
-valid
-</valid-output-example>
-<invalid-output-example>
-invalid: the query does not follow the additional checks provided
-</invalid-output-example>
 `);
   });
 });

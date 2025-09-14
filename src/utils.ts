@@ -15,7 +15,7 @@ export function isTextContent(
     return true;
   }
   if (Array.isArray(content)) {
-    return content.every(isTextContent);
+    return content.filter(v => v.type === 'text').every(isTextContent);
   }
   return false;
 }
@@ -30,17 +30,23 @@ summary of file - ${fileName}:
 ${summary}`;
 }
 
-export function getTextContent(content: MessageContent): string {
+export function getTextContent(content: MessageContent | string): string {
+  if (typeof content === 'string') {
+    return content;
+  }
   if (isTextContent(content)) {
     return typeof content === 'string'
       ? content
-      : content.map(c => (isTextContent(c) ? c.text : '')).join('');
+      : content
+          .map(c => (isTextContent(c) ? c.text : ''))
+          .filter(v => !!v)
+          .join('');
   }
   return '';
 }
 
 export function stripThinkingTokens(text: AIMessage): string {
-  const message = text.content.toString();
+  const message = getTextContent(text.content ?? text);
   // remove all the content between <think> and <thinking> tags
   let stripped = message.replace(/<think(ing)?>.*?<\/think(ing)?>/gs, '');
   // also strip any string that ends with <thinking> or <think>

@@ -30,6 +30,7 @@ export class SemanticValidatorNode implements IGraphNode<DbQueryState> {
 You are an AI assistant that judges whether the generated and syntactically verified SQL query will satisfy the user's query and the additional checks provided.
 The query has already been validated for syntax and correctness, so you only need to check if it satisfies the user's query and all the additional checks provided.
 Note that query has already been validated for syntax and correctness, so you only need to check if it satisfies the user's query and all the additional checks provided.
+You must create a checklist and ensure that the query satisfies all the points in the checklist.
 </instructions>
 
 <latest-query>
@@ -49,19 +50,17 @@ Note that query has already been validated for syntax and correctness, so you on
 {feedbacks}
 
 <output-instructions>
-If the query is valid and will satisfy the user's query, then return valid, else return invalid followed by the reason why it is invalid.
+The last line of your response must be either 'valid' or 'invalid'.
+In case of 'invalid', you must provide the reasons for invalidity after a colon and space.
 The format in case of invalid query should be -
-invalid: <reason>
+
+invalid: reason for invalidity
 
 The format in case of valid query should just be the string 'valid' with no other explanation or string, the output should just be -
+
 valid
+
 </output-instructions>
-<valid-output-example>
-valid
-</valid-output-example>
-<invalid-output-example>
-invalid: the query does not follow the additional checks provided
-</invalid-output-example>
 `);
 
   feedbackPrompt = PromptTemplate.fromTemplate(`

@@ -1,8 +1,13 @@
 import {BindingKey} from '@loopback/context';
-import {DatasetServiceConfig, DbQueryConfig, IDbConnector} from './types';
+import {
+  DatasetServiceConfig,
+  DbQueryConfig,
+  IDataSetStore,
+  IDbConnector,
+} from './types';
 
 export namespace DbQueryAIExtensionBindings {
-  export const DatasetStore = BindingKey.create<string>(
+  export const DatasetStore = BindingKey.create<IDataSetStore>(
     'services.ai-integration.db-query.dataset-store',
   );
 

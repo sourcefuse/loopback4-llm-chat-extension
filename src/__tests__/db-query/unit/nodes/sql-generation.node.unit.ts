@@ -51,10 +51,7 @@ describe('SqlGenerationNode Unit', function () {
 
   it('should generate SQL query based on the provided prompt', async () => {
     llmStub.resolves({
-      content: {
-        toString: () =>
-          '<think>thinking about it</think>SELECT * FROM employees;',
-      },
+      content: '<think>thinking about it</think>SELECT * FROM employees;',
     });
 
     const state = {
@@ -105,14 +102,12 @@ Adhere to these rules:
 - Never query for all the columns from a specific table, only ask for the relevant columns for the given the question.
 - You can only generate a single query, so if you need multiple results you can use JOINs, subqueries, CTEs or UNIONS.
 - Do not make any assumptions about the user's intent beyond what is explicitly provided in the prompt.
-<instructions>
-
-
-<context>
+- Ensure proper grouping with brackets for where clauses with multiple conditions using AND and OR.
+</instructions>
 <user-question>
 ${state.prompt}
 </user-question>
-
+<context>
 <database-schema>
 ${schemaHelper.asString(state.schema)}
 </database-schema>
@@ -126,19 +121,16 @@ You must keep these additional details in mind while writing the query -
 
 
 
+</context>
 <output-instructions>
 Return the SQL query as a string, without any additional text, quotations, code block, comments or any other non sql token.
 The output should be a valid SQL query that can run on the database schema provided.
-</output-instructions>
-</context>`);
+</output-instructions>`);
   });
 
   it('should generate SQL query based on the provided prompt with a single feedback from some validation stage', async () => {
     llmStub.resolves({
-      content: {
-        toString: () =>
-          '<think>thinking about it</think>SELECT * FROM employees;',
-      },
+      content: '<think>thinking about it</think>SELECT * FROM employees;',
     });
 
     const state = {
@@ -189,14 +181,12 @@ Adhere to these rules:
 - Never query for all the columns from a specific table, only ask for the relevant columns for the given the question.
 - You can only generate a single query, so if you need multiple results you can use JOINs, subqueries, CTEs or UNIONS.
 - Do not make any assumptions about the user's intent beyond what is explicitly provided in the prompt.
-<instructions>
-
-
-<context>
+- Ensure proper grouping with brackets for where clauses with multiple conditions using AND and OR.
+</instructions>
 <user-question>
 ${state.prompt}
 </user-question>
-
+<context>
 <database-schema>
 ${schemaHelper.asString(state.schema)}
 </database-schema>
@@ -212,35 +202,28 @@ You must keep these additional details in mind while writing the query -
 
 <feedback-instructions>
 We also need to consider the users feedback on the last attempt at query generation.
-Make sure you do not repeat the mistakes made in the last attempt.
+Make sure you fix the provided error without introducing any new or past errors.
 In the last attempt, you generated this SQL query -
 <last-generated-query>
 ${state.sql}
 </last-generated-query>
 
-<last-feedback>
+<last-error>
 This was the error in the latest query you generated - \n${state.feedbacks[0]}
-</last-feedback>
+</last-error>
 
-<past-feedbacks>
 
-</past-feedbacks>
-
-Keep these feedbacks in mind while generating the new query or improving this one SQL query.
 </feedback-instructions>
+</context>
 <output-instructions>
 Return the SQL query as a string, without any additional text, quotations, code block, comments or any other non sql token.
 The output should be a valid SQL query that can run on the database schema provided.
-</output-instructions>
-</context>`);
+</output-instructions>`);
   });
 
   it('should generate SQL query based on the provided prompt with a multiple feedbacks from from previous loops', async () => {
     llmStub.resolves({
-      content: {
-        toString: () =>
-          '<think>thinking about it</think>SELECT * FROM employees;',
-      },
+      content: '<think>thinking about it</think>SELECT * FROM employees;',
     });
 
     const state = {
@@ -295,14 +278,12 @@ Adhere to these rules:
 - Never query for all the columns from a specific table, only ask for the relevant columns for the given the question.
 - You can only generate a single query, so if you need multiple results you can use JOINs, subqueries, CTEs or UNIONS.
 - Do not make any assumptions about the user's intent beyond what is explicitly provided in the prompt.
-<instructions>
-
-
-<context>
+- Ensure proper grouping with brackets for where clauses with multiple conditions using AND and OR.
+</instructions>
 <user-question>
 ${state.prompt}
 </user-question>
-
+<context>
 <database-schema>
 ${schemaHelper.asString(state.schema)}
 </database-schema>
@@ -318,37 +299,32 @@ You must keep these additional details in mind while writing the query -
 
 <feedback-instructions>
 We also need to consider the users feedback on the last attempt at query generation.
-Make sure you do not repeat the mistakes made in the last attempt.
+Make sure you fix the provided error without introducing any new or past errors.
 In the last attempt, you generated this SQL query -
 <last-generated-query>
 ${state.sql}
 </last-generated-query>
 
-<last-feedback>
+<last-error>
 This was the error in the latest query you generated - \n${state.feedbacks[2]}
-</last-feedback>
+</last-error>
 
-<past-feedbacks>
+<historical-feedbacks>
 You already faced following issues in the past -
 ${state.feedbacks[0]}
 ${state.feedbacks[1]}
-</past-feedbacks>
-
-Keep these feedbacks in mind while generating the new query or improving this one SQL query.
+</historical-feedbacks>
 </feedback-instructions>
+</context>
 <output-instructions>
 Return the SQL query as a string, without any additional text, quotations, code block, comments or any other non sql token.
 The output should be a valid SQL query that can run on the database schema provided.
-</output-instructions>
-</context>`);
+</output-instructions>`);
   });
 
   it('should generate SQL query with sample queries when no feedbacks but has sample SQL', async () => {
     llmStub.resolves({
-      content: {
-        toString: () =>
-          '<think>thinking about it</think>SELECT * FROM employees;',
-      },
+      content: '<think>thinking about it</think>SELECT * FROM employees;',
     });
 
     const state = {
@@ -398,10 +374,7 @@ The output should be a valid SQL query that can run on the database schema provi
 
   it('should generate SQL query with baseline sample queries when no feedbacks and not from cache', async () => {
     llmStub.resolves({
-      content: {
-        toString: () =>
-          '<think>thinking about it</think>SELECT * FROM employees;',
-      },
+      content: '<think>thinking about it</think>SELECT * FROM employees;',
     });
 
     const state = {

@@ -18,6 +18,7 @@ import {
   CheckCacheNode,
   CheckPermissionsNode,
   FailedNode,
+  GetColumnsNode,
   GetTablesNode,
   IsImprovementNode,
   SaveDataSetNode,
@@ -78,6 +79,7 @@ export class DbQueryComponent implements Component {
       FailedNode,
       SaveDataSetNode,
       CheckCacheNode,
+      GetColumnsNode,
     ];
     this.components = [DatasetServiceComponent];
   }

@@ -37,6 +37,10 @@
       "type": "./dist/sub-modules/providers/openai/index.d.ts",
       "default": "./dist/sub-modules/providers/openai/index.js"
     },
+    "./groq": {
+      "type": "./dist/sub-modules/providers/groq/index.d.ts",
+      "default": "./dist/sub-modules/providers/groq/index.js"
+    },
     "./pg": {
       "type": "./dist/sub-modules/providers/pg/index.d.ts",
       "default": "./dist/sub-modules/providers/pg/index.js"
@@ -65,6 +69,9 @@
       ],
       "openai": [
         "dist/sub-modules/providers/openai/index.d.ts"
+      ],
+      "groq": [
+        "dist/sub-modules/providers/groq/index.d.ts"
       ],
       "pg": [
         "dist/sub-modules/providers/pg/index.d.ts"
@@ -131,6 +138,7 @@
     "@langchain/aws": "^0.1.13",
     "@langchain/cerebras": "^0.0.2",
     "@langchain/google-genai": "^0.2.16",
+    "@langchain/groq": "^0.2.3",
     "@langchain/ollama": "^0.2.3",
     "@langchain/openai": "^0.6.11",
     "@loopback/build": "^11.0.9",

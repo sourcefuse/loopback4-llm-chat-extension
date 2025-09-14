@@ -32,11 +32,11 @@ export class GetTablesNode implements IGraphNode<DbQueryState> {
   prompt = PromptTemplate.fromTemplate(`
 <instructions>
 You are an AI assistant that extracts table names that are relevant to the users query that will be used to generate an SQL query later.
-Please extract the relevant table names and return them as a comma separated list. Note there should be nothing else other than a comma separated list of exact same table names as in the input.
-Ensure that table names are exact and match the names in the input including schema if given.
-Use only and only the tables that are relevant to the query.
-If you are not sure about the tables to select from the given schema, just return your doubt asking the user for more details or to rephrase the question in the following format -
-failed attempt: <reason for failure>
+- Ensure that table names are exact and match the names in the input including schema if given.
+- Use only and only the tables that are relevant to the query.
+- Assume that the table would have appropriate columns for relating them to any other table even if the description does not mention it.
+- If you are not sure about the tables to select from the given schema, just return your doubt asking the user for more details or to rephrase the question in the following format -
+failed attempt: reason for failure
 </instructions>
 
 <tables-with-description>
@@ -52,7 +52,15 @@ failed attempt: <reason for failure>
 {feedbacks}
 
 <output-format>
-table1, table2, table3
+The output should be just a comma separated list of table names with no other text, comments or formatting.
+<example-output>
+public.employees, public.departments
+</example-output>
+In case of failure, return the failure message in the format -
+failed attempt: <reason for failure>
+<example-failure>
+failed attempt: reason for failure
+</example-failure>
 </output-format>`);
 
   feedbackPrompt = PromptTemplate.fromTemplate(`
@@ -93,35 +101,54 @@ Use these if they are relevant to the table selection, otherwise ignore them, th
       },
     });
 
-    const result = await chain.invoke({
-      tables: allTables.join('\n\n'),
-      query: state.prompt,
-      feedbacks: await this.getFeedbacks(state),
-      checks: [
-        `<must-follow-rules>`,
-        'You must keep these additional details in consideration -',
-        ...(this.checks ?? []),
-        ...this.schemaHelper.getTablesContext(dbSchema),
-        `</must-follow-rules>`,
-      ].join('\n'),
-    });
-
-    const output = stripThinkingTokens(result);
-
-    if (output.startsWith('failed attempt:')) {
-      config.writer?.({
-        type: LLMStreamEventType.Log,
-        data: `Table selection failed: ${output}`,
+    let attempts = 0;
+    let requiredTables: string[] = [];
+    while (attempts < 2) {
+      attempts++;
+      const result = await chain.invoke({
+        tables: allTables.join('\n\n'),
+        query: state.prompt,
+        feedbacks: await this.getFeedbacks(state),
+        checks: [
+          `<must-follow-rules>`,
+          ...(this.checks ?? []),
+          ...this.schemaHelper.getTablesContext(dbSchema),
+          `</must-follow-rules>`,
+        ].join('\n'),
       });
-      return {
-        ...state,
-        status: GenerationError.Failed,
-        replyToUser: output.replace('failed attempt: ', ''),
-      };
-    }
 
-    const lastLine = output.split('\n').pop() ?? '';
-    const requiredTables = lastLine.split(',').map(t => t.trim());
+      const output = stripThinkingTokens(result);
+
+      if (output.startsWith('failed attempt:')) {
+        config.writer?.({
+          type: LLMStreamEventType.Log,
+          data: `Table selection failed: ${output}`,
+        });
+        return {
+          ...state,
+          status: GenerationError.Failed,
+          replyToUser: output.replace('failed attempt: ', ''),
+        };
+      }
+
+      const lastLine = output.split('\n').pop() ?? '';
+      requiredTables = lastLine.split(',').map(t => t.trim());
+      if (this._validateTables(requiredTables, dbSchema)) {
+        break;
+      } else {
+        if (attempts === 3) {
+          return {
+            ...state,
+            status: GenerationError.Failed,
+            replyToUser: `Not able to select relevant tables from the schema. Please rephrase the question or provide more details.`,
+          };
+        }
+        config.writer?.({
+          type: LLMStreamEventType.Log,
+          data: `LLM returned invalid tables: ${lastLine}, trying again`,
+        });
+      }
+    }
 
     config.writer?.({
       type: LLMStreamEventType.Log,
@@ -168,5 +195,9 @@ Use these if they are relevant to the table selection, otherwise ignore them, th
       const table = schema.tables[tableName];
       return `${tableName}: ${table.description}`;
     });
+  }
+
+  private _validateTables(tables: string[], schema: DatabaseSchema): boolean {
+    return tables.every(t => schema.tables[t] !== undefined);
   }
 }

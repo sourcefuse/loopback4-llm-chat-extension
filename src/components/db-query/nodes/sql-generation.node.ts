@@ -27,14 +27,12 @@ Adhere to these rules:
 - Never query for all the columns from a specific table, only ask for the relevant columns for the given the question.
 - You can only generate a single query, so if you need multiple results you can use JOINs, subqueries, CTEs or UNIONS.
 - Do not make any assumptions about the user's intent beyond what is explicitly provided in the prompt.
-<instructions>
-
-
-<context>
+- Ensure proper grouping with brackets for where clauses with multiple conditions using AND and OR.
+</instructions>
 <user-question>
 {question}
 </user-question>
-
+<context>
 <database-schema>
 {dbschema}
 </database-schema>
@@ -44,30 +42,26 @@ Adhere to these rules:
 {exampleQueries}
 
 {feedbacks}
+</context>
 <output-instructions>
 Return the SQL query as a string, without any additional text, quotations, code block, comments or any other non sql token.
 The output should be a valid SQL query that can run on the database schema provided.
-</output-instructions>
-</context>`);
+</output-instructions>`);
 
   feedbackPrompt = PromptTemplate.fromTemplate(`
 <feedback-instructions>
 We also need to consider the users feedback on the last attempt at query generation.
-Make sure you do not repeat the mistakes made in the last attempt.
+Make sure you fix the provided error without introducing any new or past errors.
 In the last attempt, you generated this SQL query -
 <last-generated-query>
 {query}
 </last-generated-query>
 
-<last-feedback>
+<last-error>
 {feedback}
-</last-feedback>
+</last-error>
 
-<past-feedbacks>
-{pastFeedbacks}
-</past-feedbacks>
-
-Keep these feedbacks in mind while generating the new query or improving this one SQL query.
+{historicalErrors}
 </feedback-instructions>`);
   constructor(
     @inject(AiIntegrationBindings.SmartLLM)
@@ -134,10 +128,12 @@ Keep these feedbacks in mind while generating the new query or improving this on
       const feedbacks = await this.feedbackPrompt.format({
         query: state.sql,
         feedback: `This was the error in the latest query you generated - \n${lastFeedback}`,
-        pastFeedbacks: otherFeedbacks.length
+        historicalErrors: otherFeedbacks.length
           ? [
+              `<historical-feedbacks>`,
               `You already faced following issues in the past -`,
               otherFeedbacks.join('\n'),
+              `</historical-feedbacks>`,
             ].join('\n')
           : '',
       });

@@ -1,6 +1,7 @@
 export * from './check-cache.node';
 export * from './check-permissions.node';
 export * from './failed.node';
+export * from './get-columns.node';
 export * from './get-tables.node';
 export * from './is-improvement.node';
 export * from './save-dataset-node';

@@ -67,9 +67,7 @@ describe('GetTablesNode Unit', function () {
     } as unknown as DbQueryState;
 
     llmStub.resolves({
-      content: {
-        toString: () => 'employees',
-      },
+      content: 'employees',
     });
 
     const result = await node.execute(state, {});
@@ -77,11 +75,11 @@ describe('GetTablesNode Unit', function () {
     expect(llmStub.getCalls()[0].args[0].value.trim()).equal(
       `<instructions>
 You are an AI assistant that extracts table names that are relevant to the users query that will be used to generate an SQL query later.
-Please extract the relevant table names and return them as a comma separated list. Note there should be nothing else other than a comma separated list of exact same table names as in the input.
-Ensure that table names are exact and match the names in the input including schema if given.
-Use only and only the tables that are relevant to the query.
-If you are not sure about the tables to select from the given schema, just return your doubt asking the user for more details or to rephrase the question in the following format -
-failed attempt: <reason for failure>
+- Ensure that table names are exact and match the names in the input including schema if given.
+- Use only and only the tables that are relevant to the query.
+- Assume that the table would have appropriate columns for relating them to any other table even if the description does not mention it.
+- If you are not sure about the tables to select from the given schema, just return your doubt asking the user for more details or to rephrase the question in the following format -
+failed attempt: reason for failure
 </instructions>
 
 <tables-with-description>
@@ -95,7 +93,6 @@ Get me the employee with name Akshat
 </user-question>
 
 <must-follow-rules>
-You must keep these additional details in consideration -
 test context
 employee salary must be converted to USD, using the currency_id column and the exchange rate table
 </must-follow-rules>
@@ -103,7 +100,15 @@ employee salary must be converted to USD, using the currency_id column and the e
 
 
 <output-format>
-table1, table2, table3
+The output should be just a comma separated list of table names with no other text, comments or formatting.
+<example-output>
+public.employees, public.departments
+</example-output>
+In case of failure, return the failure message in the format -
+failed attempt: <reason for failure>
+<example-failure>
+failed attempt: reason for failure
+</example-failure>
 </output-format>`,
     );
 
@@ -129,13 +134,42 @@ table1, table2, table3
     } as unknown as DbQueryState;
 
     llmStub.resolves({
-      content: {
-        toString: () => 'employees',
-      },
+      content: 'employees',
     });
 
     await expect(node.execute(state, {})).to.be.rejectedWith(
       'No tables found in the provided database schema. Please ensure the schema is valid.',
+    );
+  });
+
+  it('should retry selection if table names are not valid', async () => {
+    tableSearchStub.stubs.getTables.resolves(['employees', 'exchange_rates']);
+    const originalSchema = schemaHelper.modelToSchema('', [
+      Employee,
+      ExchangeRate,
+      Currency,
+      Skill,
+      EmployeeSkill,
+    ]);
+    await schemaStore.save(originalSchema);
+
+    const state = {
+      prompt: 'Get me the employee with name Akshat',
+      schema: originalSchema,
+    } as unknown as DbQueryState;
+
+    llmStub.onFirstCall().resolves({
+      content: 'non_existing_table',
+    });
+    llmStub.onSecondCall().resolves({
+      content: 'employees',
+    });
+
+    const result = await node.execute(state, {});
+
+    expect(llmStub.callCount).to.equal(2);
+    expect(result.schema).to.deepEqual(
+      schemaStore.filteredSchema(['employees']),
     );
   });
 });

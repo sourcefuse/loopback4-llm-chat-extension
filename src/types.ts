@@ -11,6 +11,7 @@ import {ChatOpenAI, OpenAIEmbeddings} from '@langchain/openai';
 import {Provider} from '@loopback/core';
 import {AnyObject} from '@loopback/repository';
 import {IGraphTool} from './graphs/types';
+import {ChatGroq} from '@langchain/groq';
 
 export enum SupportedDBs {
   PostgreSQL = 'PostgreSQL',
@@ -33,7 +34,8 @@ export type LLMProviderType =
   | ChatOpenAI
   | ChatAnthropic
   | ChatBedrockConverse
-  | ChatGoogleGenerativeAI;
+  | ChatGoogleGenerativeAI
+  | ChatGroq;
 
 export type LLMProvider = LLMProviderType & {
   getFile?: FileMessageBuilder;
