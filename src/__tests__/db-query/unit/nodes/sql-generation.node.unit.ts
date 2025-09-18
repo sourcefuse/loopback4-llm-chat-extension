@@ -25,6 +25,7 @@ describe('SqlGenerationNode Unit', function () {
           debug: true,
         }),
       ),
+      {models: []},
     );
 
     // Mock the getTablesContext method

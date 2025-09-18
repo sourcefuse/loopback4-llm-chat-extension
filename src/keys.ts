@@ -15,10 +15,10 @@ export namespace AiIntegrationBindings {
     'services.ai-reporting.config',
   );
   export const SmartLLM = BindingKey.create<LLMProvider>(
-    'services.ai-reporting.llmProvider',
+    'services.ai-reporting.smartLLMProvider',
   );
   export const CheapLLM = BindingKey.create<LLMProvider>(
-    'services.ai-reporting.sqlLLMProvider',
+    'services.ai-reporting.cheapLLMProvider',
   );
   export const FileLLM = BindingKey.create<LLMProvider>(
     'services.ai-reporting.fileLLMProvider',

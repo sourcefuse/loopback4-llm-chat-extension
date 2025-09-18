@@ -24,7 +24,7 @@ export class CheckCacheNode implements IGraphNode<DbQueryState> {
   constructor(
     @inject(DbQueryAIExtensionBindings.QueryCache)
     private readonly cache: BaseRetriever<QueryCacheMetadata>,
-    @inject(AiIntegrationBindings.SmartLLM)
+    @inject(AiIntegrationBindings.CheapLLM)
     private readonly smartLLM: LLMProvider,
     @service(DataSetHelper)
     private readonly dataSetHelper: DataSetHelper,
@@ -32,8 +32,8 @@ export class CheckCacheNode implements IGraphNode<DbQueryState> {
   prompt = PromptTemplate.fromTemplate(`
 <instructions>
 You are an expert Semantic analyser, you will be given a prompt and a list of past prompts that were successfully processed, and you need to return the most relevant prompt from the list and in which of the following ways is it relevant - 
-- return '${CacheResults.AsIs}' if the prompt result would contain the information the user is looking for without any changes in the result (though it could have additional details).
-- return '${CacheResults.Similar}' if the prompt result would be similar to the question in the new prompt but not exactly, and can be modified to get the data user needs.
+- return '${CacheResults.AsIs}' if the prompt's result would contain the information the user is looking for without any changes in the result, and can be used as it is.
+- return '${CacheResults.Similar}' if the prompt's result would be similar to the question in the new prompt but not exactly, and can be modified to get the data user needs.
 - return '${CacheResults.NotRelevant}' if the prompt is not relevant to the new prompt at all.
 Remember that if the cached prompt has extra information, then still the old prompt could be considered exactly same as long as it does not contradict the new prompt.
 </instructions>

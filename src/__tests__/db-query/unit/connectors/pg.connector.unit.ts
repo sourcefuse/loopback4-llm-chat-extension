@@ -12,7 +12,7 @@ describe(`PgConnector Unit`, () => {
       connector: 'memory',
     });
     connector = new PgConnector(ds);
-    dbSchemaHelper = new DbSchemaHelperService(connector);
+    dbSchemaHelper = new DbSchemaHelperService(connector, {models: []});
   });
 
   it('should transform a model correctly', () => {

@@ -15,7 +15,7 @@ import {Errors} from '../types';
 @graphNode(DbQueryNodes.CheckPermissions)
 export class CheckPermissionsNode implements IGraphNode<DbQueryState> {
   constructor(
-    @inject(AiIntegrationBindings.SmartLLM)
+    @inject(AiIntegrationBindings.CheapLLM)
     private readonly llm: LLMProvider, // Replace with actual type if available
 
     @service(PermissionHelper)

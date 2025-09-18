@@ -28,6 +28,7 @@ describe('GetColumnsNode Unit', function () {
           debug: true,
         }),
       ),
+      {models: []},
     );
 
     node = new GetColumnsNode(

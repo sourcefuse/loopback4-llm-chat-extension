@@ -1,6 +1,10 @@
 import {juggler} from '@loopback/repository';
 import {expect} from '@loopback/testlab';
-import {DbSchemaHelperService, PgConnector} from '../../../components';
+import {
+  DbSchemaHelperService,
+  PgConnector,
+  SchemaStore,
+} from '../../../components';
 import {
   Currency,
   Employee,
@@ -8,6 +12,7 @@ import {
   ExchangeRate,
   Skill,
 } from '../../fixtures/models';
+import {SupportedDBs} from '../../../types';
 
 describe(`DbSchemaHelperService Unit`, () => {
   let service: DbSchemaHelperService;
@@ -17,8 +22,15 @@ describe(`DbSchemaHelperService Unit`, () => {
       connector: 'memory',
       name: 'db',
     });
+
     const pg = new PgConnector(connector);
-    service = new DbSchemaHelperService(pg);
+    service = new DbSchemaHelperService(pg, {
+      models: [],
+      db: {
+        dialect: SupportedDBs.PostgreSQL,
+        ignoredColumns: ['deleted', 'delete_reason'],
+      },
+    });
   });
 
   it('should transform the schema correctly', async () => {
@@ -41,6 +53,13 @@ describe(`DbSchemaHelperService Unit`, () => {
     expect(
       schema.tables['public.employees'].columns['joiningdate'].metadata,
     ).to.deepEqual(Employee.definition.properties['joiningDate']);
+
+    expect(
+      schema.tables['public.employees'].columns['deleted'],
+    ).to.be.undefined();
+    expect(
+      schema.tables['public.employees'].columns['delete_reason'],
+    ).to.be.undefined();
 
     expect(schema.relations).to.have.length(3);
 

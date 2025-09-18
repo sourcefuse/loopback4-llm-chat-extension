@@ -22,7 +22,7 @@ import {
 @graphNode(DbQueryNodes.GetColumns)
 export class GetColumnsNode implements IGraphNode<DbQueryState> {
   constructor(
-    @inject(AiIntegrationBindings.SmartLLM)
+    @inject(AiIntegrationBindings.CheapLLM)
     private readonly llm: LLMProvider,
     @service(DbSchemaHelperService)
     private readonly schemaHelper: DbSchemaHelperService,

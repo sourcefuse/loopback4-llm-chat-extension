@@ -95,6 +95,7 @@ export type DbQueryConfig = {
   db?: {
     schema?: string;
     dialect: SupportedDBs;
+    ignoredColumns?: string[];
   };
   readAccessForAI?: boolean;
   maxRowsForAI?: number;

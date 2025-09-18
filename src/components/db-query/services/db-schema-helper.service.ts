@@ -12,6 +12,7 @@ import {createHash} from 'crypto';
 import {DbQueryAIExtensionBindings} from '../keys';
 import {
   DatabaseSchema,
+  DbQueryConfig,
   ForeignKey,
   IDbConnector,
   ModelDefinitionWithName,
@@ -23,6 +24,8 @@ export class DbSchemaHelperService {
   constructor(
     @inject(DbQueryAIExtensionBindings.Connector)
     private readonly connector: IDbConnector,
+    @inject(DbQueryAIExtensionBindings.Config)
+    private readonly config: DbQueryConfig,
   ) {}
   getTablesContext(schema: DatabaseSchema) {
     const tableContexts: string[] = [];
@@ -53,6 +56,7 @@ export class DbSchemaHelperService {
     };
     const tableMap = new Map<string, ModelDefinitionWithName>();
     const foreignKeysSet = new Set<string>();
+    const excludedColumnSet = new Set(this.config.db?.ignoredColumns ?? []);
     models.forEach(model => {
       let currentSchema = model.definition.settings.schema || schema;
       currentSchema = currentSchema ? `${currentSchema}.` : '';
@@ -67,8 +71,16 @@ export class DbSchemaHelperService {
         model.definition.relations ?? {},
         tableMap,
       );
-      schemaDDL.relations.push(...foreignKeys.foreignKeys);
+      schemaDDL.relations.push(
+        ...foreignKeys.foreignKeys.filter(fk => {
+          return (
+            !excludedColumnSet.has(fk.column) &&
+            !excludedColumnSet.has(fk.referencedColumn)
+          );
+        }),
+      );
       foreignKeys.foreignKeySet.forEach(key => {
+        if (excludedColumnSet.has(key)) return;
         foreignKeysSet.add(key);
       });
     });
@@ -101,6 +113,9 @@ export class DbSchemaHelperService {
       Object.keys(properties).forEach(prop => {
         const property = properties[prop];
         const columnName = property.name || prop.toLowerCase();
+        if (excludedColumnSet.has(columnName)) {
+          return;
+        }
         schemaDDL.tables[modelName].columns[columnName] = {
           type: parseType(property.type),
           required: property.required || false,

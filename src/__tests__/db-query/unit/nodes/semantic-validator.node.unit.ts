@@ -26,6 +26,7 @@ describe('SemanticValidatorNode Unit', function () {
           debug: true,
         }),
       ),
+      {models: []},
     );
 
     // Mock the getTablesContext method
@@ -66,6 +67,7 @@ describe('SemanticValidatorNode Unit', function () {
       sampleSql: '',
       fromCache: false,
       resultArray: undefined,
+      description: undefined,
     };
     llmStub.resolves({
       content: 'valid',
@@ -104,6 +106,7 @@ describe('SemanticValidatorNode Unit', function () {
       sampleSql: '',
       fromCache: false,
       resultArray: undefined,
+      description: undefined,
     };
     llmStub.resolves({
       content: 'invalid: table `invalid_table` does not exist',
@@ -184,6 +187,7 @@ valid
       sampleSqlPrompt: '',
       sampleSql: '',
       fromCache: false,
+      description: undefined,
       resultArray: undefined,
     };
     llmStub.resolves({

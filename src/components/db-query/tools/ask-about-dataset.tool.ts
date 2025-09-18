@@ -20,7 +20,7 @@ export class AskAboutDatasetTool implements IGraphTool {
   constructor(
     @inject(DbQueryAIExtensionBindings.DatasetStore)
     private readonly store: IDataSetStore,
-    @inject(AiIntegrationBindings.SmartLLM)
+    @inject(AiIntegrationBindings.CheapLLM)
     private readonly sqlllm: LLMProvider,
     @service(DbSchemaHelperService)
     private readonly dbSchemaHelper: DbSchemaHelperService,

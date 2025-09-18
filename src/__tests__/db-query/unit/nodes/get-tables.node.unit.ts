@@ -42,6 +42,7 @@ describe('GetTablesNode Unit', function () {
           debug: true,
         }),
       ),
+      {models: []},
     );
     schemaStore = new SchemaStore();
     tableSearchStub = createStubInstance(TableSearchService);
