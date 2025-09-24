@@ -25,3 +25,21 @@ jobs:
 
       - name: Run Test Cases 🔧
         run: npm run test
+
+      - name: Run Trivy vulnerability scanner in repo mode
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: 'fs'
+          scan-ref: '${{ github.workspace }}'
+          trivy-config: '${{ github.workspace }}/trivy.yaml'
+
+      - name: Run npm audit
+        run: >
+          npm audit --json |
+          node -e '
+            const fs = require("fs");
+            const auditLevel = (process.argv[1] || "critical").toLowerCase();
+            const { vulnerabilities } = JSON.parse(fs.readFileSync(0).toString("utf-8"));
+            const result = Object.values(vulnerabilities).filter((i) => i.severity.toLowerCase() === auditLevel);
+            console.table(JSON.stringify(result, null, 2));
+          ' high
