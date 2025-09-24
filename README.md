@@ -108,13 +108,41 @@ this.bind(AiIntegrationBindings.FileLLM).toProvider(Bedrock);
 
 This binding would add an endpoint `/generate` in your service, that can answer user's query using the registered tools. By default, the module gives one set of tools through the `DbQueryComponent`
 
+## Limiters
+
+The package provides a way to limit the usage of the LLM Chat functionality by binding a provider on the key `AiIntegrationBindings.LimitStrategy` that follows the interface - `ILimitStrategy`.
+
+The packages comes with 3 strategies by default that are bound automatically on the basis of `AiIntegrationBindings.Config` -
+
+- **ChatCountStrategy** - Applies limits per user based on number of chats. It is used if only `chatLimit` and `period` is provided in `tokenCounterConfig`.
+- **TokenCountStrategy** - Applies a fixed limit per user based on number of tokens used. It is used if `tokenLimit` and `period` are provided with `bufferToken` as optional field that determines that how much buffer to keep while checking for token limit.
+- **TokenCountPerUserStrategy** - Applies token based limit similar to `TokenCountStrategy` except the number of tokens commes from user permission `TokenUsage:NUMBER` in the user's token. It applies if only `period` is set in `tokenCounterConfig`, it also works with `bufferToken` just like `TokenCountStrategy`.
+
 ## DbQueryComponent
 
-This component provides a set of pre-build tools that can be plugged into any Loopback4 application -
+This component provides a set of pre-built tools that can be plugged into any Loopback4 application -
 
-- generate-query - this tool can be used by the LLM to generate a database query based on user's prompt. It will return a `DataSet` instead of the query directly to the LLM.
-- improve-query - this tool takes a `DataSet`'s id and a feedback or suggestion from the user, and uses it to modify the existing `DataSet` query.
-- ask-about-dataset - this tools takes a `DataSet`'s id and a user prompt, and tries to answer user's question about the database query. Note that it can not run the query.
+- **generate-query** - this tool can be used by the LLM to generate a database query based on user's prompt. It will return a `DataSet` instead of the query directly to the LLM.
+- **improve-query** - this tool takes a `DataSet`'s id and feedback from the user, and uses it to modify the existing `DataSet` query. Users can also vote on datasets via the dataset actions endpoint.
+- **ask-about-dataset** - this tool takes a `DataSet`'s id and a user prompt, and tries to answer user's question about the database query. Note that it can not run the query.
+
+### Database Schema
+
+The component uses a dedicated `chatbot` schema with the following tables:
+
+- **datasets** - Stores generated SQL queries with metadata including description, prompt, tables involved, and schema hash
+- **dataset_actions** - Tracks user actions on datasets (votes, comments, improvements)
+- **chats** - Stores chat sessions with metadata and token usage
+- **messages** - Stores individual messages within chats
+
+### Dataset Feedback System
+
+Users can provide feedback on generated datasets through the dataset actions endpoint. Each dataset can receive votes and comments, which can be used to improve future query generation. The system tracks:
+
+- Vote count for each dataset
+- User comments and suggestions
+- Improvement history
+- Creation and modification timestamps
 
 ### Query Generation Flow
 
@@ -242,9 +270,94 @@ this.bind(DbQueryAIExtensionBindings.Config).to({
   db: {
     dialect: SupportedDBs.PostgreSQL, // dialect for which the SQL will be generated.
     schema: 'public', // schema of the database in case of DBs like Postgresql
+    ignoredColumns: ['deleted'], // list of db column names that will be ignored for query generation (Do not use Loopback field names in this list)
   },
+  readAccessForAI: false // give access of the query result to the llm
+  maxRowsForAI: 0 // number of rows from the result that are passed to the LLM
+  columnSelection: false // add a column selection step in generation in case you have tables with a lot of columns.
 });
-this.component(DbQueryComponent);
+```
+
+## Connectors
+
+The package comes with 3 connectors by default -
+
+- **PgConnector** - basic connector for PostgreSQL databases
+- **SqlLiteConnector** - basic connector SqlLite databases, can be used for testing
+- **PgWithRlsConnector** - Connector for PostgreSQL databases with support for [Row Security Policies](https://www.postgresql.org/docs/current/ddl-rowsecurity.html). Refer [`PgWithRlsConnector`](#pgwithrlsconnector) for more details.
+
+You can write your own connector by following the `IDbConnector` interface and and binding it on `DbQueryAIExtensionBindings.Connector`.
+
+By default, the package binds `PgWithRlsConnector` but if you are not planning to use row security policies or default conditions, you can bind `PgConnector` -
+
+```ts
+// application.ts
+this.bind(DbQueryAIExtensionBindings.Connector).toClass(PgConnector);
+```
+
+## Default Conditions
+
+The package allows binding an optional provider on key `DbQueryAIExtensionBindings.DefaultConditions` that are applied on every query generated by the LLM. **NOTE** This only works for connectors that support this option.
+
+As of now, the only provider that supports this is `PgWithRlsConnector`.
+
+## PgWithRlsConnector
+
+You can take advantage of the `DbQueryAIExtensionBindings.DefaultConditions` by using this connector with a PostgreSQL database. To use this you need to first setup your database to use [Row Security Policies](https://www.postgresql.org/docs/current/ddl-rowsecurity.html). You can use an SQL script that looks something like this to do this -
+
+```sql
+DO $$
+DECLARE
+    tbl text;
+    tables text[] := ARRAY[
+        'main.test-table',
+    ];
+BEGIN
+    FOREACH tbl IN ARRAY tables LOOP
+        -- Enable RLS
+        EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY;', tbl);
+
+        -- Drop existing policy if it already exists (to avoid duplicates)
+        EXECUTE format('DROP POLICY IF EXISTS tenant_policy ON %I;', tbl);
+
+        -- Create policy (applies to SELECT, INSERT, UPDATE, DELETE)
+        EXECUTE format($f$
+            CREATE POLICY tenant_policy ON %I
+            -- conditions to apply by default are tenant id = some value and deleted = false
+            USING (tenant_id = current_setting('app.current_tenant')::int AND deleted = false)
+            WITH CHECK (false);
+        $f$, tbl);
+    END LOOP;
+END$$;
+```
+
+Once the policies are setup, you can bind the provider for `DbQueryAIExtensionBindings.DefaultConditions` -
+
+```ts
+// default-conditions.provider.ts
+import {IAuthUserWithPermissions} from '@sourceloop/core';
+import {AuthenticationBindings} from 'loopback4-authentication';
+import {AnyObject} from '@loopback/repository';
+import {Provider} from '@loopback/core';
+
+class DefaultConditionsProvider implements Provider<AnyObject> {
+  constructor(
+    @inject(AuthenticationBindings.CURRENT_USER)
+    private readonly user: IAuthUserWithPermissions,
+  ) {}
+  value() {
+    return {
+      tenant_id: this.user.tenantId,
+    };
+  }
+}
+```
+
+```ts
+// application.ts
+this.bind(DbQueryAIExtensionBindings.DefaultConditions).to(
+  DefaultConditionsProvider,
+);
 ```
 
 ## Writing Your Own Tool
