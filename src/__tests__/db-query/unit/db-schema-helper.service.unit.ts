@@ -1,10 +1,6 @@
 import {juggler} from '@loopback/repository';
 import {expect} from '@loopback/testlab';
-import {
-  DbSchemaHelperService,
-  PgConnector,
-  SchemaStore,
-} from '../../../components';
+import {DbSchemaHelperService, PgConnector} from '../../../components';
 import {
   Currency,
   Employee,
@@ -13,6 +9,7 @@ import {
   Skill,
 } from '../../fixtures/models';
 import {SupportedDBs} from '../../../types';
+import {IAuthUserWithPermissions} from 'loopback4-authorization';
 
 describe(`DbSchemaHelperService Unit`, () => {
   let service: DbSchemaHelperService;
@@ -22,8 +19,8 @@ describe(`DbSchemaHelperService Unit`, () => {
       connector: 'memory',
       name: 'db',
     });
-
-    const pg = new PgConnector(connector);
+    const user = {} as unknown as IAuthUserWithPermissions;
+    const pg = new PgConnector(connector, user);
     service = new DbSchemaHelperService(pg, {
       models: [],
       db: {

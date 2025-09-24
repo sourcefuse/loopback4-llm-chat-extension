@@ -30,8 +30,23 @@ export class DbSchemaHelperService {
   getTablesContext(schema: DatabaseSchema) {
     const tableContexts: string[] = [];
     Object.keys(schema.tables).forEach(table => {
-      if (schema.tables[table]) {
-        tableContexts.push(...schema.tables[table].context);
+      if (schema.tables[table].context) {
+        for (const item of schema.tables[table].context) {
+          if (typeof item === 'string' && item.trim().length > 0) {
+            tableContexts.push(item.trim());
+          } else if (typeof item === 'object') {
+            const tableSet = new Set(
+              Object.keys(schema.tables).map(t => t.split('.').pop() ?? t),
+            );
+            Object.keys(item).forEach(withTable => {
+              if (tableSet.has(`${withTable}`)) {
+                tableContexts.push(item[withTable].trim());
+              }
+            });
+          } else {
+            throw Error('Invalid context item in table schema');
+          }
+        }
       }
     });
     return tableContexts;

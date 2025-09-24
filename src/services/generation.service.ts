@@ -2,6 +2,7 @@ import {BindingScope, inject, injectable, service} from '@loopback/core';
 import {ChatGraph} from '../graphs/chat/chat.graph';
 import {AiIntegrationBindings} from '../keys';
 import {ITransport} from '../transports/types';
+import {ILimitStrategy} from './limit-strategies/types';
 
 @injectable({scope: BindingScope.REQUEST})
 export class GenerationService {
@@ -10,8 +11,11 @@ export class GenerationService {
     private readonly chatGraph: ChatGraph,
     @inject(AiIntegrationBindings.Transport)
     private readonly transport: ITransport,
+    @inject(AiIntegrationBindings.LimitStrategy, {optional: true})
+    private readonly limiter?: ILimitStrategy,
   ) {}
   async generate(prompt: string, files: Express.Multer.File[], id?: string) {
+    await this.limiter?.check();
     const abortController = new AbortController();
     await this.transport.start();
     this.transport.onCancel(() => {

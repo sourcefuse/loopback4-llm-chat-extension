@@ -24,6 +24,14 @@ export type AIIntegrationConfig = {
   mountFileUtils?: boolean;
   mountChatControllers?: boolean;
   maxTokenCount?: number;
+  writerDS?: string;
+  readerDS?: string;
+  tokenCounterConfig?: {
+    chatLimit?: number;
+    tokenLimit?: number;
+    bufferTokens?: number;
+    period: number; // in seconds
+  };
 };
 
 export type FileMessageBuilder = (file: Express.Multer.File) => AnyObject;
@@ -62,3 +70,10 @@ export interface ICache {
   set<T = AnyObject>(key: string, value: T): Promise<void>;
   get<T = AnyObject>(key: string): Promise<T | null>;
 }
+
+export type TokenMetadata = {
+  [key: string]: {
+    inputTokens: number;
+    outputTokens: number;
+  };
+};

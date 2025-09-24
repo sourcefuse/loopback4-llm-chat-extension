@@ -21,6 +21,7 @@ import {
   ExchangeRate,
   Skill,
 } from '../../../fixtures/models';
+import {IAuthUserWithPermissions} from 'loopback4-authorization';
 
 describe('GetTablesNode Unit', function () {
   let node: GetTablesNode;
@@ -41,6 +42,7 @@ describe('GetTablesNode Unit', function () {
           name: 'db',
           debug: true,
         }),
+        {} as unknown as IAuthUserWithPermissions,
       ),
       {models: []},
     );

@@ -1,6 +1,7 @@
 import {hasMany, model, property} from '@loopback/repository';
 import {UserModifiableEntity} from '@sourceloop/core';
 import {Message} from './message.model';
+import {TokenMetadata} from '../types';
 
 @model({
   name: 'chats',
@@ -49,6 +50,15 @@ export class Chat extends UserModifiableEntity {
     description: 'Number of output tokens generated in the chat',
   })
   outputTokens: number;
+
+  @property({
+    type: 'object',
+    name: 'metadata',
+    postgresql: {
+      dataType: 'jsonb',
+    },
+  })
+  metadata: TokenMetadata;
 
   @hasMany(() => Message, {keyTo: 'channelId'})
   messages: Message[];

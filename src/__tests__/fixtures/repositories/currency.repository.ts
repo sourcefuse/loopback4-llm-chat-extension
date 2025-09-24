@@ -6,7 +6,7 @@ export class CurrencyRepository extends DefaultCrudRepository<
   Currency,
   typeof Currency.prototype.id
 > {
-  constructor(@inject('datasources.db') dataSource: juggler.DataSource) {
+  constructor(@inject('datasources.readerdb') dataSource: juggler.DataSource) {
     super(Currency, dataSource);
   }
 }

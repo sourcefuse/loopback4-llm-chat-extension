@@ -1,6 +1,7 @@
-import {model, property} from '@loopback/repository';
+import {hasMany, model, property} from '@loopback/repository';
 import {UserModifiableEntity} from '@sourceloop/core';
 import {IDataSet} from '../types';
+import {DatasetAction} from './dataset-action.model';
 
 @model({
   name: 'datasets',
@@ -56,12 +57,12 @@ export class DataSet extends UserModifiableEntity implements IDataSet {
   tenantId: string;
 
   @property({
-    type: 'boolean',
+    type: 'number',
     default: false,
     description:
-      'Indicates if the dataset is valid and can be used for queries',
+      'Indicates the number of votes the dataset has received. Null if not voted on. It also goes down if it is disliked.',
   })
-  valid: boolean | null;
+  votes: number;
 
   @property({
     type: 'string',
@@ -70,12 +71,12 @@ export class DataSet extends UserModifiableEntity implements IDataSet {
   })
   prompt: string;
 
-  @property({
-    type: 'string',
-    description: 'Feedback provided by the user for the dataset',
-    required: false,
+  @hasMany(() => DatasetAction, {
+    name: 'actions',
+    keyTo: 'datasetId',
+    keyFrom: 'id',
   })
-  feedback?: string;
+  actions?: DatasetAction[];
 
   constructor(data?: Partial<DataSet>) {
     super(data);

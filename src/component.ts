@@ -1,5 +1,6 @@
 import {
   Binding,
+  BindingScope,
   Component,
   ControllerClass,
   CoreBindings,
@@ -41,17 +42,23 @@ import {
   RunToolNode,
   SummariseFileNode,
 } from './graphs/chat';
-import {AiIntegrationBindings} from './keys';
+import {WriterDB, AiIntegrationBindings, ReaderDB} from './keys';
 import {Chat, Message} from './models';
 import {CacheModel, ToolsProvider} from './providers';
 import {RedisCache, RedisCacheRepository} from './providers/cache/redis';
 import {ChatRepository, MessageRepository} from './repositories';
-import {GenerationService} from './services';
+import {
+  ChatCountStrategy,
+  GenerationService,
+  TokenCountPerUserStrategy,
+  TokenCountStrategy,
+} from './services';
 import {TokenCounter} from './services/token-counter.service';
 import {SSETransport} from './transports';
 import {AIIntegrationConfig} from './types';
 import {PgVectorStore} from './sub-modules/db/postgresql';
 
+const debug = require('debug')('ai-integration:log-events:component');
 export class AiIntegrationsComponent implements Component {
   constructor(
     @inject(CoreBindings.APPLICATION_INSTANCE)
@@ -99,6 +106,7 @@ export class AiIntegrationsComponent implements Component {
       MessageRepository,
       RedisCacheRepository,
     ];
+
     // Mount core component
     if (this.config?.mountCore !== false) {
       this.application.component(CoreComponent);
@@ -117,6 +125,51 @@ export class AiIntegrationsComponent implements Component {
         },
       });
       this.application.component(FileUtilComponent);
+    }
+
+    if (this.config?.writerDS) {
+      this.application
+        .bind(`datasources.${WriterDB}`)
+        .toAlias(`datasources.${this.config.writerDS}`);
+    }
+
+    if (this.config?.readerDS) {
+      this.application
+        .bind(`datasources.${ReaderDB}`)
+        .toAlias(`datasources.${this.config.readerDS}`);
+    }
+
+    if (this.config?.tokenCounterConfig) {
+      if (this.config.tokenCounterConfig.chatLimit) {
+        debug(
+          `Chat limit strategy enabled with ${this.config.tokenCounterConfig.chatLimit} chats per ${this.config.tokenCounterConfig.period} seconds`,
+        );
+        this.application
+          .bind(AiIntegrationBindings.LimitStrategy)
+          .toClass(ChatCountStrategy)
+          .inScope(BindingScope.REQUEST);
+      } else if (
+        this.config.tokenCounterConfig.tokenLimit &&
+        !this.config.tokenCounterConfig.bufferTokens
+      ) {
+        debug(
+          `Token limit strategy enabled with ${this.config.tokenCounterConfig.tokenLimit} tokens per ${this.config.tokenCounterConfig.period} seconds`,
+        );
+        this.application
+          .bind(AiIntegrationBindings.LimitStrategy)
+          .toClass(TokenCountStrategy)
+          .inScope(BindingScope.REQUEST);
+      } else if (this.config.tokenCounterConfig.period) {
+        debug(
+          `Token count per user strategy enabled with buffer of ${this.config.tokenCounterConfig.bufferTokens ?? 0} tokens and limit of ${this.config.tokenCounterConfig.tokenLimit} tokens per ${this.config.tokenCounterConfig.period} seconds`,
+        );
+        this.application
+          .bind(AiIntegrationBindings.LimitStrategy)
+          .toClass(TokenCountPerUserStrategy)
+          .inScope(BindingScope.REQUEST);
+      } else {
+        debug('No limit strategy enabled');
+      }
     }
 
     this.application.api({

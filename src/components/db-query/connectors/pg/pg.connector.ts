@@ -1,13 +1,19 @@
 import {BindingScope, inject, injectable} from '@loopback/core';
-import {juggler} from '@loopback/repository';
-import {MAX_CONSTRAINT_NAME_LENGTH} from '../../../constant';
+import {HttpErrors} from '@loopback/rest';
+import {AnyObject, juggler} from '@loopback/repository';
+import {MAX_CONSTRAINT_NAME_LENGTH} from '../../../../constant';
 import {
   ColumnSchema,
   DatabaseSchema,
   ForeignKey,
   IDbConnector,
+  QueryParam,
   TableSchema,
-} from '../types';
+} from '../../types';
+import {AuthenticationBindings} from 'loopback4-authentication';
+import {IAuthUserWithPermissions} from '@sourceloop/core';
+import {ReaderDB} from '../../../../keys';
+import {DbQueryAIExtensionBindings} from '../../keys';
 
 @injectable({scope: BindingScope.TRANSIENT})
 export class PgConnector implements IDbConnector {
@@ -20,17 +26,49 @@ export class PgConnector implements IDbConnector {
     array: 'VARCHAR[]',
   };
   constructor(
-    @inject(`datasources.db`)
-    private readonly db: juggler.DataSource,
+    @inject(`datasources.${ReaderDB}`)
+    protected readonly db: juggler.DataSource,
+    @inject(AuthenticationBindings.CURRENT_USER, {optional: true})
+    protected readonly user?: IAuthUserWithPermissions,
+    @inject(DbQueryAIExtensionBindings.DefaultConditions, {optional: true})
+    protected readonly defaultConditions?: AnyObject,
   ) {}
 
-  async validate(query: string): Promise<void> {
-    // remove the last semicolon if it exists
-    const trimmedQuery = query.trim();
-    if (trimmedQuery.endsWith(';')) {
-      query = trimmedQuery.slice(0, -1);
+  async execute<T>(
+    query: string,
+    limit?: number,
+    offset?: number,
+    params: QueryParam[] = [],
+  ): Promise<T[]> {
+    if (!this.user?.tenantId) {
+      throw new HttpErrors.Unauthorized('Not authorized to execute query.');
     }
-    await this.db.execute(`EXPLAIN ${query}`);
+    let limitOffsetQuery = '';
+    const paramCount = params.length + 1;
+    if (limit && offset) {
+      limitOffsetQuery = ` LIMIT $${paramCount} OFFSET $${paramCount + 1}`;
+      params = [limit, offset];
+    } else if (limit) {
+      limitOffsetQuery = ` LIMIT $${paramCount}`;
+      params = [limit];
+    } else if (offset) {
+      limitOffsetQuery = ` OFFSET $${paramCount}`;
+      params = [offset];
+    } else {
+      params = [];
+    }
+    // Clean the query by removing trailing semicolons and comments
+    const finalQuery = this._cleanQuery(query);
+    return this._execute(
+      `SELECT * FROM (${finalQuery}) AS subquery${limitOffsetQuery};`,
+      params,
+    );
+  }
+
+  async validate(query: string): Promise<void> {
+    // Clean the query by removing trailing semicolons and comments
+    const finalQuery = this._cleanQuery(query);
+    await this._execute(`EXPLAIN ${finalQuery}`);
   }
 
   toDDL(dbSchema: DatabaseSchema): string {
@@ -76,6 +114,10 @@ export class PgConnector implements IDbConnector {
     }
 
     return ddlStatements.join('\n\n');
+  }
+
+  protected async _execute(query: string, params: QueryParam[] = []) {
+    return this.db.execute(query, params);
   }
 
   private _addTable(
@@ -126,5 +168,41 @@ export class PgConnector implements IDbConnector {
       }
     }
     return this.operatorMap[type] || 'TEXT';
+  }
+  /**
+   * Clean a SQL query by removing trailing semicolons and comments
+   * @param query - The SQL query to clean
+   * @returns The cleaned SQL query
+   */
+  private _cleanQuery(query: string): string {
+    // Trim whitespace from the query
+    let cleanedQuery = query.trim();
+
+    // Remove trailing semicolons
+    while (cleanedQuery.endsWith(';')) {
+      cleanedQuery = cleanedQuery.slice(0, -1).trim();
+    }
+
+    // Remove trailing single-line comments (-- comment)
+    const singleLineCommentRegex = /--.*$/;
+    while (singleLineCommentRegex.test(cleanedQuery)) {
+      cleanedQuery = cleanedQuery.replace(singleLineCommentRegex, '').trim();
+      // Also remove any trailing semicolons that might have been left after comment removal
+      while (cleanedQuery.endsWith(';')) {
+        cleanedQuery = cleanedQuery.slice(0, -1).trim();
+      }
+    }
+
+    // Remove trailing multi-line comments (/* comment */)
+    const multiLineCommentRegex = /\/\*.*?\*\/\s*$/s;
+    while (multiLineCommentRegex.test(cleanedQuery)) {
+      cleanedQuery = cleanedQuery.replace(multiLineCommentRegex, '').trim();
+      // Also remove any trailing semicolons that might have been left after comment removal
+      while (cleanedQuery.endsWith(';')) {
+        cleanedQuery = cleanedQuery.slice(0, -1).trim();
+      }
+    }
+
+    return cleanedQuery;
   }
 }

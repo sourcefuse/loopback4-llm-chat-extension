@@ -1,5 +1,6 @@
 import {
   Binding,
+  BindingScope,
   Component,
   Constructor,
   ControllerClass,
@@ -9,7 +10,6 @@ import {
   ServiceOrProviderClass,
 } from '@loopback/core';
 import {AnyObject} from '@loopback/repository';
-import {PgConnector} from './connectors';
 import {DataSetController} from './controller';
 import {DatasetServiceComponent} from './dataset-service.component';
 import {DbQueryGraph} from './db-query.graph';
@@ -37,6 +37,7 @@ import {
   GenerateQueryTool,
   ImproveQueryTool,
 } from './tools';
+import {PgWithRlsConnector} from './connectors/pg';
 
 export class DbQueryComponent implements Component {
   services: ServiceOrProviderClass[] | undefined;
@@ -51,8 +52,9 @@ export class DbQueryComponent implements Component {
       [DbQueryAIExtensionBindings.QueryCache.key]: DatasetRetriever,
     };
     this.bindings = [
-      createBindingFromClass(PgConnector, {
+      createBindingFromClass(PgWithRlsConnector, {
         key: DbQueryAIExtensionBindings.Connector.key,
+        defaultScope: BindingScope.TRANSIENT,
       }),
     ];
     this.lifeCycleObservers = [TableSeedObserver];

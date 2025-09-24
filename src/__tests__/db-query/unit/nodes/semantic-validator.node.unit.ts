@@ -7,6 +7,7 @@ import {
   SqliteConnector,
 } from '../../../../components';
 import {LLMProvider} from '../../../../types';
+import {IAuthUserWithPermissions} from 'loopback4-authorization';
 
 describe('SemanticValidatorNode Unit', function () {
   let node: SemanticValidatorNode;
@@ -25,6 +26,7 @@ describe('SemanticValidatorNode Unit', function () {
           name: 'db',
           debug: true,
         }),
+        {} as unknown as IAuthUserWithPermissions,
       ),
       {models: []},
     );

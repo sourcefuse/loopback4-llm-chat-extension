@@ -53,7 +53,23 @@ export class ChatGraph extends BaseGraph<ChatState> {
       signal: abort,
       callbacks: [
         {
-          handleLLMEnd: this.tokenCounter.handleLlmEnd.bind(this.tokenCounter),
+          handleLLMStart: (
+            llm,
+            prompts,
+            runId,
+            parentRunId,
+            extraParams,
+            tags,
+            metadata,
+          ) => {
+            this.tokenCounter.handleLlmStart(
+              runId,
+              (metadata?.ls_model_name as string) || 'unknown',
+            );
+          },
+          handleLLMEnd: (output, runId) => {
+            this.tokenCounter.handleLlmEnd(runId, output);
+          },
         },
       ],
     });

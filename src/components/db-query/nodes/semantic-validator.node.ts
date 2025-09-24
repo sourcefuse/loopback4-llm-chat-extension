@@ -83,6 +83,10 @@ Keep these feedbacks in mind while validating the new query.
         status: `Verifying if the query fully satisfies the user's requirement`,
       },
     });
+    config.writer?.({
+      type: LLMStreamEventType.Log,
+      data: `Validating the query semantically.`,
+    });
     const chain = RunnableSequence.from([this.prompt, this.llm]);
     const output = await chain.invoke({
       query: state.sql,
