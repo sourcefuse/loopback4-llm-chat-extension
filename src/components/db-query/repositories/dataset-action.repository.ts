@@ -1,5 +1,10 @@
 import {Getter, inject} from '@loopback/core';
-import {DefaultTransactionalRepository, juggler} from '@loopback/repository';
+import {
+  DefaultTransactionalRepository,
+  Filter,
+  juggler,
+  Options,
+} from '@loopback/repository';
 import {IAuthUserWithPermissions} from '@sourceloop/core';
 import {AuthenticationBindings} from 'loopback4-authentication';
 import {DatasetAction} from '../models';
@@ -16,5 +21,17 @@ export class DatasetActionRepository extends DefaultTransactionalRepository<
     public getCurrentUser: Getter<IAuthUserWithPermissions>,
   ) {
     super(DatasetAction, ds);
+  }
+
+  async find(
+    filter?: Filter<DatasetAction> | undefined,
+    options?: Options,
+  ): Promise<DatasetAction[]> {
+    const user = await this.getCurrentUser();
+    filter = filter ?? {};
+    filter.where = {
+      and: [filter.where ?? {}, {userId: user.tenantId}],
+    };
+    return super.find(filter, options);
   }
 }

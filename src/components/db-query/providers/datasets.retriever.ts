@@ -5,17 +5,23 @@ import {AnyObject} from '@loopback/repository';
 import {MemoryVectorStore} from 'langchain/vectorstores/memory';
 import {AiIntegrationBindings} from '../../../keys';
 import {DbQueryStoredTypes} from '../types';
+import {AuthenticationBindings} from 'loopback4-authentication';
+import {IAuthUserWithPermissions} from '@sourceloop/core';
 
 export class DatasetRetriever implements Provider<BaseRetriever> {
   constructor(
     @inject(AiIntegrationBindings.VectorStore)
     private readonly vectorStore: VectorStore,
+    @inject(AuthenticationBindings.CURRENT_USER)
+    private readonly user: IAuthUserWithPermissions,
   ) {}
   value(): ValueOrPromise<BaseRetriever<AnyObject>> {
     if (this.vectorStore instanceof MemoryVectorStore) {
       return this.vectorStore.asRetriever({
         k: 20,
-        filter: doc => doc.metadata.type === DbQueryStoredTypes.DataSet,
+        filter: doc =>
+          doc.metadata.type === DbQueryStoredTypes.DataSet &&
+          doc.metadata.tenantId === this.user.tenantId,
         searchType: 'similarity',
       });
     }
@@ -23,6 +29,7 @@ export class DatasetRetriever implements Provider<BaseRetriever> {
       k: 5,
       filter: {
         type: DbQueryStoredTypes.DataSet,
+        tenantId: this.user.tenantId,
       },
       searchType: 'similarity',
     });

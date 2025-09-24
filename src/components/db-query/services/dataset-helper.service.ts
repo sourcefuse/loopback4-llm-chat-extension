@@ -56,6 +56,7 @@ export class DataSetHelper {
       filter: {
         metadata: {
           datasetId: id,
+          tenantId: dataset.tenantId,
         },
       },
     });
@@ -67,6 +68,7 @@ export class DataSetHelper {
             datasetId: id,
             votes: dataset.votes,
             type: DbQueryStoredTypes.DataSet,
+            tenantId: dataset.tenantId,
           },
         },
       ]);

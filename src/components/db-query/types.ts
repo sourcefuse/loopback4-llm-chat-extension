@@ -134,12 +134,16 @@ export type IDataSet = {
   id?: string;
 };
 
+export type IDatasetWithActions = IDataSet & {
+  actions?: IDatasetAction[];
+};
+
 export interface IDataSetStore {
   findById(
     id: string,
     filter?: FilterExcludingWhere<IDataSet>,
-  ): Promise<IDataSet>;
-  find(filter?: Filter<IDataSet>): Promise<IDataSet[]>;
+  ): Promise<IDatasetWithActions>;
+  find(filter?: Filter<IDataSet>): Promise<IDatasetWithActions[]>;
   create(data: IDataSet): Promise<IDataSet>;
   updateById(id: string, data: DataObject<IDataSet>): Promise<void>;
   updateAll(

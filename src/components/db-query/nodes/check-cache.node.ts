@@ -18,6 +18,7 @@ import {DbQueryNodes} from '../nodes.enum';
 import {DataSetHelper} from '../services';
 import {DbQueryState} from '../state';
 import {CacheResults, QueryCacheMetadata} from '../types';
+import {DatasetActionType} from '../constant';
 
 @graphNode(DbQueryNodes.CheckCache)
 export class CheckCacheNode implements IGraphNode<DbQueryState> {
@@ -128,6 +129,23 @@ If no queries are relevant, return '${CacheResults.NotRelevant}' and nothing els
           status: `Found relevant query in cache`,
         },
       });
+      const [dataset] = await this.dataSetHelper.find({
+        where: {
+          id: relevantDocs[indexNum].metadata.datasetId,
+        },
+        include: [{relation: 'actions'}],
+      });
+      if (
+        !dataset ||
+        (dataset.actions?.length &&
+          dataset.actions?.some(a => a.action === DatasetActionType.Disliked))
+      ) {
+        config.writer?.({
+          type: LLMStreamEventType.Log,
+          data: `Found relevant query in cache, but the dataset was not found or was disliked by the user, so generating new query`,
+        });
+        return state;
+      }
       const datasetId = relevantDocs[indexNum].metadata.datasetId;
       config.writer?.({
         type: LLMStreamEventType.ToolStatus,
