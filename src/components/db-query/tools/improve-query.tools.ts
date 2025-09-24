@@ -47,11 +47,11 @@ export class ImproveQueryTool implements IGraphTool {
     const schema = z.object({
       datasetId: z
         .string()
-        .describe(`uuid ID of the dataset to improve the query for`),
+        .describe(`Database UUID ID of the dataset to improve the query for`),
       prompt: z
         .string()
         .describe(
-          `A single prompt that describes the user's requirement for the query considering all the feedbacks and past attempts at query generation`,
+          `A single prompt that describes the user's requirement for the query considering all the feedbacks and past attempts at query generation. This should be cover exactly what the user asked so far without any assumptions.`,
         ),
     }) as AnyObject[string];
     return graph.asTool({

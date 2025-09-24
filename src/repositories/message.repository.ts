@@ -20,6 +20,7 @@ import {
 } from '@sourceloop/core';
 import {AuthenticationBindings} from 'loopback4-authentication';
 import {Message} from '../models';
+import {WriterDB} from '../keys';
 
 export class MessageRepository extends DefaultUserModifyCrudRepository<
   Message,
@@ -46,7 +47,7 @@ export class MessageRepository extends DefaultUserModifyCrudRepository<
   >;
 
   constructor(
-    @inject('datasources.db') dataSource: juggler.DataSource,
+    @inject(`datasources.${WriterDB}`) dataSource: juggler.DataSource,
     @inject.getter(AuthenticationBindings.CURRENT_USER)
     protected readonly getCurrentUser: Getter<
       IAuthUserWithPermissions | undefined

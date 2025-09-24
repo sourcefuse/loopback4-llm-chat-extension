@@ -98,7 +98,9 @@
     "clean": "lb-clean dist *.tsbuildinfo .eslintcache",
     "rebuild": "npm run clean && npm run build",
     "prune": "npm prune --production",
-    "coverage": "nyc npm run test"
+    "coverage": "nyc npm run test",
+    "migrate:pg:up": "db-migrate up --config migrations/pg/database.json --migrations-dir migrations/pg/migrations",
+    "migrate:pg:down": "db-migrate down --config migrations/pg/database.json --migrations-dir migrations/pg/migrations"
   },
   "repository": {
     "type": "git",
@@ -113,7 +115,7 @@
     "!*/__tests__"
   ],
   "peerDependencies": {
-    "@loopback/core": "^6.1.7"
+    "@loopback/core": "^6.1.11"
   },
   "dependencies": {
     "@langchain/community": "^0.3.50",
@@ -153,8 +155,8 @@
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^20.16.14",
     "commitizen": "^4.3.1",
-    "cz-conventional-changelog": "^3.0.1",
-    "cz-format-extension": "^1.5.0",
+    "cz-format-extension": "1.5.0",
+    "db-migrate": "^1.0.0-beta.21",
     "dotenv": "^16.6.1",
     "eslint": "^8.57.1",
     "husky": "^9.1.7",
@@ -173,7 +175,10 @@
       "jsonpath-plus": "^10.2.0"
     },
     "loopback-connector-sqlite3": {
-      "sqlite3": "^4.1.1"
+      "sqlite3": "5.1.7"
+    },
+    "commitizen": {
+      "inquirer": "^12.9.6"
     }
   },
   "config": {

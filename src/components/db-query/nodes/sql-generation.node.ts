@@ -11,7 +11,7 @@ import {DbQueryAIExtensionBindings} from '../keys';
 import {DbQueryNodes} from '../nodes.enum';
 import {DbSchemaHelperService} from '../services';
 import {DbQueryState} from '../state';
-import {DbQueryConfig, EvaluationResult} from '../types';
+import {DbQueryConfig, EvaluationResult, GenerationError} from '../types';
 
 @graphNode(DbQueryNodes.SqlGeneration)
 export class SqlGenerationNode implements IGraphNode<DbQueryState> {
@@ -28,6 +28,7 @@ Adhere to these rules:
 - You can only generate a single query, so if you need multiple results you can use JOINs, subqueries, CTEs or UNIONS.
 - Do not make any assumptions about the user's intent beyond what is explicitly provided in the prompt.
 - Ensure proper grouping with brackets for where clauses with multiple conditions using AND and OR.
+- Follow each and every single rule in the "must-follow-rules" section carefully while writing the query. DO NOT SKIP ANY RULE.
 </instructions>
 <user-question>
 {question}
@@ -44,8 +45,19 @@ Adhere to these rules:
 {feedbacks}
 </context>
 <output-instructions>
-Return the SQL query as a string, without any additional text, quotations, code block, comments or any other non sql token.
-The output should be a valid SQL query that can run on the database schema provided.
+Return the output in the following format with exactly 2 parts within opening and closing tags - 
+<sql>
+Contains the required valid SQL satisfying all the constraints
+It should have no other character or symbol or character that is not part of SQLs.
+Every single line of SQL should have a comment above it explaining the purpose of that line
+</sql>
+<description>
+A very detailed but non-technical description of the SQL describing every single condition and concept used in the SQL statement. DO NOT OMMIT ANY DETAIL.
+It should just be a plain english text with no other special formatting or special character. 
+It should NOT use any technical jargon or database specific terminology like tables or columns.
+Try to keep it short and to the point while not omitting any detail.
+Do not use any DB concepts like enum numbers, joins, CTEs, subqueries etc. in the description.
+</description>
 </output-instructions>`);
 
   feedbackPrompt = PromptTemplate.fromTemplate(`
@@ -83,6 +95,10 @@ In the last attempt, you generated this SQL query -
     ]);
 
     config.writer?.({
+      type: LLMStreamEventType.Log,
+      data: `Generating SQL query from the prompt - ${state.prompt}`,
+    });
+    config.writer?.({
       type: LLMStreamEventType.ToolStatus,
       data: {
         status: 'Generating SQL query from the prompt',
@@ -109,15 +125,54 @@ In the last attempt, you generated this SQL query -
     });
     const response = stripThinkingTokens(output);
 
+    const sqlMatch = response.match(/<sql>(.*?)<\/sql>/s);
+    const descMatch = response.match(/<description>(.*?)<\/description>/s);
+
+    const description = descMatch ? descMatch[1] : '';
+    const sql = sqlMatch ? sqlMatch[1] : null;
+
+    if (!sql || !description) {
+      config.writer?.({
+        type: LLMStreamEventType.Log,
+        data: `SQL generation failed: ${response}`,
+      });
+      return {
+        ...state,
+        status: GenerationError.Failed,
+        replyToUser:
+          'Failed to generate SQL query. Please try rephrasing your question or provide more details.',
+      };
+    }
+
+    config.writer?.({
+      type: LLMStreamEventType.ToolStatus,
+      data: {
+        status: 'SQL query generated successfully',
+      },
+    });
+
+    config.writer?.({
+      type: LLMStreamEventType.ToolStatus,
+      data: {
+        status: 'DESCRIPTION: ' + description,
+      },
+    });
+
     config.writer?.({
       type: LLMStreamEventType.Log,
-      data: `Generated SQL query: ${response}`,
+      data: `Generated SQL query: ${sql}`,
+    });
+
+    config.writer?.({
+      type: LLMStreamEventType.Log,
+      data: `SQL query description: ${description}`,
     });
 
     return {
       ...state,
       status: EvaluationResult.Pass,
-      sql: response,
+      sql,
+      description,
     };
   }
 

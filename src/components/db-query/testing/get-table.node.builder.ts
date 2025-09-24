@@ -24,6 +24,7 @@ export function getTableNodeTests(cases: GetTableNodeTestCase[]) {
           fromCache: undefined,
           done: false,
           resultArray: undefined,
+          description: undefined,
         },
         {
           writer: (event: AnyObject[string]) => {},

@@ -34,6 +34,7 @@ export class EndSessionNode implements IGraphNode<ChatState> {
       state.id,
       tokenCounts.inputs,
       tokenCounts.outputs,
+      tokenCounts.map,
     );
     // This node is used to end the session, so we can return the state as is.
     // You might want to add any cleanup logic here if needed.

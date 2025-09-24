@@ -8,6 +8,7 @@ import {
   SyntacticValidatorNode,
 } from '../../../../components';
 import {LLMProvider} from '../../../../types';
+import {IAuthUserWithPermissions} from 'loopback4-authorization';
 
 describe('SyntacticValidatorNode Unit', function () {
   let node: SyntacticValidatorNode;
@@ -33,7 +34,10 @@ describe('SyntacticValidatorNode Unit', function () {
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
       `);
-    connector = new SqliteConnector(ds);
+    connector = new SqliteConnector(
+      ds,
+      {} as unknown as IAuthUserWithPermissions,
+    );
 
     node = new SyntacticValidatorNode(llm, connector);
   });
@@ -41,6 +45,9 @@ describe('SyntacticValidatorNode Unit', function () {
   it('should return pass status in state if it is valid', async () => {
     const state = {
       sql: 'SELECT * FROM users',
+      schema: {
+        tables: {},
+      },
     } as unknown as DbQueryState;
 
     const result = await node.execute(state, {});
@@ -54,6 +61,9 @@ describe('SyntacticValidatorNode Unit', function () {
   it('should return a feedback with table error if query has table related error', async () => {
     const state = {
       sql: 'SELECT * FROM users_wrong',
+      schema: {
+        tables: {},
+      },
     } as unknown as DbQueryState;
 
     llmStub.resolves({content: EvaluationResult.TableError});
@@ -72,6 +82,9 @@ describe('SyntacticValidatorNode Unit', function () {
   it('should return a feedback with query error if query has non table related error', async () => {
     const state = {
       sql: 'SELECT * users',
+      schema: {
+        tables: {},
+      },
     } as unknown as DbQueryState;
 
     llmStub.resolves({content: EvaluationResult.QueryError});

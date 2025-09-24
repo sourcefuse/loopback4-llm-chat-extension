@@ -44,7 +44,15 @@ Remember that if the cached prompt has extra information, then still the old pro
 {queries}
 </queries>
 <output-format>
-relevance query index
+format -
+relevant index-of-query-starting-from-1
+examples - 
+${CacheResults.AsIs} 2
+
+${CacheResults.Similar} 1
+
+${CacheResults.NotRelevant}
+
 </output-format>
 <output-instructions>
 Do not return any other text or explanation, just the output in the above format.
@@ -70,7 +78,10 @@ If no queries are relevant, return '${CacheResults.NotRelevant}' and nothing els
     const response = await chain.invoke(
       {
         queries: relevantDocs
-          .map((doc, index) => `${index + 1}. ${doc.pageContent}`)
+          .map(
+            (doc, index) =>
+              `<query-${index + 1}>\n${doc.pageContent}\n</query-${index + 1}>`,
+          )
           .join('\n'),
         prompt: state.prompt,
       },

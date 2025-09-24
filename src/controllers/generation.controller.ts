@@ -17,7 +17,7 @@ export class GenerationController {
     passReqToCallback: true,
   })
   @authorize({permissions: [PermissionKey.AskAI]})
-  @post('/generate', {
+  @post('/reply', {
     security: OPERATION_SECURITY_SPEC,
     responses: {
       '200': {

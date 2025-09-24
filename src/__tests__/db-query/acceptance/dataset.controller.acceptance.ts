@@ -8,13 +8,20 @@ import {AiIntegrationBindings} from '../../../keys';
 import {PermissionKey} from '../../../permissions';
 import {EmbeddingProvider} from '../../../types';
 import {TestApp} from '../../fixtures/test-app';
-import {buildToken, seedEmployees, setupApplication} from '../../test-helper';
+import {
+  buildToken,
+  getRepo,
+  seedEmployees,
+  setupApplication,
+} from '../../test-helper';
+import {DatasetActionType} from '../../../components';
 
 describe('DatasetController', () => {
   let app: TestApp;
   let client: Client;
   let dummyDataset: DataSet;
   let llmStub: sinon.SinonStub;
+  let repo: DataSetRepository;
 
   before('setupApplication', async () => {
     ({app, client} = await setupApplication({
@@ -29,10 +36,17 @@ describe('DatasetController', () => {
     } as unknown as EmbeddingProvider);
     await seedEmployees(app);
     await seedDataset(app);
+    repo = await getRepo(app, DataSetRepository.name);
   });
 
   after(async () => {
     await app.stop();
+  });
+
+  afterEach(async () => {
+    // reset votes and actions
+    await repo.updateById(dummyDataset.id, {votes: 0});
+    await repo.actions(dummyDataset.id).delete({});
   });
 
   describe('GET /datasets/{id}/execute', () => {
@@ -91,10 +105,10 @@ describe('DatasetController', () => {
   });
 
   describe(`PATCH /datasets/{id}`, () => {
-    it('should update the dataset as invalid with feedback', async () => {
+    it('should update the dataset as disliked with feedback', async () => {
       const updatedData = {
-        valid: false,
-        feedback: 'This dataset is invalid',
+        liked: false,
+        comment: 'This dataset is invalid',
       };
       await client
         .patch(`/datasets/${dummyDataset.id}`)
@@ -104,10 +118,25 @@ describe('DatasetController', () => {
         )
         .send(updatedData)
         .expect(204);
+
+      const dataset = await repo.findById(dummyDataset.id, {
+        include: ['actions'],
+      });
+      expect(dataset).to.have.property('votes', -1);
+      expect(dataset.actions).to.be.Array();
+      expect(dataset.actions).to.have.length(1);
+      expect(dataset.actions![0]).to.have.property(
+        'action',
+        DatasetActionType.Disliked /* DatasetActionType.Disliked */,
+      );
+      expect(dataset.actions![0]).to.have.property(
+        'comment',
+        'This dataset is invalid',
+      );
     });
-    it('should throw error if marking dataset as invalid without feedback', async () => {
+    it('should throw error if marking dataset as disliked without feedback', async () => {
       const updatedData = {
-        valid: false,
+        liked: false,
       };
       await client
         .patch(`/datasets/${dummyDataset.id}`)
@@ -118,9 +147,9 @@ describe('DatasetController', () => {
         .send(updatedData)
         .expect(422);
     });
-    it('should update the dataset as valid', async () => {
+    it('should update the dataset as liked', async () => {
       const updatedData = {
-        valid: true,
+        liked: true,
       };
       await client
         .patch(`/datasets/${dummyDataset.id}`)
@@ -130,6 +159,216 @@ describe('DatasetController', () => {
         )
         .send(updatedData)
         .expect(204);
+
+      const dataset = await repo.findById(dummyDataset.id, {
+        include: ['actions'],
+      });
+      expect(dataset).to.have.property('votes', 1);
+      expect(dataset.actions).to.be.Array();
+      expect(dataset.actions).to.have.length(1);
+      expect(dataset.actions![0]).to.have.property(
+        'action',
+        DatasetActionType.Liked /* DatasetActionType.Disliked */,
+      );
+      expect(dataset.actions![0]).to.have.property('comment', undefined);
+    });
+    it('should not allow the user to like twice', async () => {
+      const updatedData = {
+        liked: true,
+      };
+      await client
+        .patch(`/datasets/${dummyDataset.id}`)
+        .set(
+          'authorization',
+          `Bearer ${buildToken(['1', PermissionKey.UpdateDataset])}`,
+        )
+        .send(updatedData)
+        .expect(204);
+
+      await client
+        .patch(`/datasets/${dummyDataset.id}`)
+        .set(
+          'authorization',
+          `Bearer ${buildToken(['1', PermissionKey.UpdateDataset])}`,
+        )
+        .send(updatedData)
+        // conflict error
+        .expect(409);
+    });
+    it('should clear likes when null is sent', async () => {
+      await client
+        .patch(`/datasets/${dummyDataset.id}`)
+        .set(
+          'authorization',
+          `Bearer ${buildToken(['1', PermissionKey.UpdateDataset])}`,
+        )
+        .send({liked: true})
+        .expect(204);
+      const updatedData = {
+        liked: null,
+      };
+      await client
+        .patch(`/datasets/${dummyDataset.id}`)
+        .set(
+          'authorization',
+          `Bearer ${buildToken(['1', PermissionKey.UpdateDataset])}`,
+        )
+        .send(updatedData)
+        .expect(204);
+
+      const dataset = await repo.findById(dummyDataset.id, {
+        include: ['actions'],
+      });
+      expect(dataset).to.have.property('votes', 0);
+      expect(dataset.actions).to.be.undefined();
+    });
+    it('should clear dislikes when null is sent', async () => {
+      await client
+        .patch(`/datasets/${dummyDataset.id}`)
+        .set(
+          'authorization',
+          `Bearer ${buildToken(['1', PermissionKey.UpdateDataset])}`,
+        )
+        .send({liked: false, comment: 'Not good'})
+        .expect(204);
+      const updatedData = {
+        liked: null,
+      };
+      await client
+        .patch(`/datasets/${dummyDataset.id}`)
+        .set(
+          'authorization',
+          `Bearer ${buildToken(['1', PermissionKey.UpdateDataset])}`,
+        )
+        .send(updatedData)
+        .expect(204);
+
+      const dataset = await repo.findById(dummyDataset.id, {
+        include: ['actions'],
+      });
+      expect(dataset).to.have.property('votes', 0);
+      expect(dataset.actions).to.be.undefined();
+    });
+    it('should not allow null if no likes/dislikes exist for this user', async () => {
+      await client
+        .patch(`/datasets/${dummyDataset.id}`)
+        .set(
+          'authorization',
+          `Bearer ${buildToken(['1', PermissionKey.UpdateDataset], 'non-default')}`,
+        )
+        .send({liked: true})
+        .expect(204);
+      const updatedData = {
+        liked: null,
+      };
+      await client
+        .patch(`/datasets/${dummyDataset.id}`)
+        .set(
+          'authorization',
+          `Bearer ${buildToken(['1', PermissionKey.UpdateDataset])}`,
+        )
+        .send(updatedData)
+        .expect(400);
+    });
+    it('should should increment votes for different user', async () => {
+      await client
+        .patch(`/datasets/${dummyDataset.id}`)
+        .set(
+          'authorization',
+          `Bearer ${buildToken(['1', PermissionKey.UpdateDataset])}`,
+        )
+        .send({liked: true})
+        .expect(204);
+
+      await client
+        .patch(`/datasets/${dummyDataset.id}`)
+        .set(
+          'authorization',
+          `Bearer ${buildToken(['1', PermissionKey.UpdateDataset], 'non-default')}`,
+        )
+        .send({liked: true})
+        .expect(204);
+      const dataset = await repo.findById(dummyDataset.id, {
+        include: ['actions'],
+      });
+      expect(dataset).to.have.property('votes', 2);
+      expect(dataset.actions).to.be.Array();
+      expect(dataset.actions).to.have.length(2);
+    });
+    it('should should cancel votes for different user', async () => {
+      await client
+        .patch(`/datasets/${dummyDataset.id}`)
+        .set(
+          'authorization',
+          `Bearer ${buildToken(['1', PermissionKey.UpdateDataset])}`,
+        )
+        .send({liked: true})
+        .expect(204);
+
+      await client
+        .patch(`/datasets/${dummyDataset.id}`)
+        .set(
+          'authorization',
+          `Bearer ${buildToken(['1', PermissionKey.UpdateDataset], 'non-default')}`,
+        )
+        .send({liked: false, comment: 'Not good'})
+        .expect(204);
+      const dataset = await repo.findById(dummyDataset.id, {
+        include: ['actions'],
+      });
+      expect(dataset).to.have.property('votes', 0);
+      expect(dataset.actions).to.be.Array();
+      expect(dataset.actions).to.have.length(2);
+    });
+    it('should handle muliple dislikes only', async () => {
+      await client
+        .patch(`/datasets/${dummyDataset.id}`)
+        .set(
+          'authorization',
+          `Bearer ${buildToken(['1', PermissionKey.UpdateDataset])}`,
+        )
+        .send({liked: false, comment: 'Not good'})
+        .expect(204);
+
+      await client
+        .patch(`/datasets/${dummyDataset.id}`)
+        .set(
+          'authorization',
+          `Bearer ${buildToken(['1', PermissionKey.UpdateDataset], 'non-default')}`,
+        )
+        .send({liked: false, comment: 'Not good'})
+        .expect(204);
+      const dataset = await repo.findById(dummyDataset.id, {
+        include: ['actions'],
+      });
+      expect(dataset).to.have.property('votes', -2);
+      expect(dataset.actions).to.be.Array();
+      expect(dataset.actions).to.have.length(2);
+    });
+    it('should allow same user to like then dislike', async () => {
+      await client
+        .patch(`/datasets/${dummyDataset.id}`)
+        .set(
+          'authorization',
+          `Bearer ${buildToken(['1', PermissionKey.UpdateDataset])}`,
+        )
+        .send({liked: true})
+        .expect(204);
+
+      await client
+        .patch(`/datasets/${dummyDataset.id}`)
+        .set(
+          'authorization',
+          `Bearer ${buildToken(['1', PermissionKey.UpdateDataset])}`,
+        )
+        .send({liked: false, comment: 'Not good'})
+        .expect(204);
+      const dataset = await repo.findById(dummyDataset.id, {
+        include: ['actions'],
+      });
+      expect(dataset).to.have.property('votes', -1);
+      expect(dataset.actions).to.be.Array();
+      expect(dataset.actions).to.have.length(1);
     });
     it('should return 404 if dataset not found', async () => {
       await client
@@ -138,12 +377,12 @@ describe('DatasetController', () => {
           'authorization',
           `Bearer ${buildToken(['1', PermissionKey.UpdateDataset])}`,
         )
-        .send({valid: true})
+        .send({liked: true})
         .expect(404);
     });
     it('should return 403 if the user does not have permission to update the dataset', async () => {
       const updatedData = {
-        valid: true,
+        liked: true,
       };
       await client
         .patch(`/datasets/${dummyDataset.id}`)
@@ -159,17 +398,17 @@ describe('DatasetController', () => {
       id: 'test-user',
       userTenantId: 'default',
     } as unknown as IAuthUserWithPermissions);
-    const repo = await ctx.get<DataSetRepository>(
+    const dsrepo = await ctx.get<DataSetRepository>(
       `repositories.${DataSetRepository.name}`,
     );
-    dummyDataset = await repo.create({
+    dummyDataset = await dsrepo.create({
       tenantId: 'default',
       description: 'This is a test dataset',
       query: 'SELECT * FROM employees',
       tables: ['employees'],
       schemaHash: 'test-hash',
       prompt: 'Test prompt',
-      valid: false,
+      votes: 0,
     });
   }
 });

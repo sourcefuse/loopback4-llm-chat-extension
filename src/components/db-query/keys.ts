@@ -5,6 +5,7 @@ import {
   IDataSetStore,
   IDbConnector,
 } from './types';
+import {AnyObject} from '@loopback/repository';
 
 export namespace DbQueryAIExtensionBindings {
   export const DatasetStore = BindingKey.create<IDataSetStore>(
@@ -29,6 +30,10 @@ export namespace DbQueryAIExtensionBindings {
 
   export const DbKnowledgeGraph = BindingKey.create<string>(
     'services.ai-integration.db-query.db-knowledge-graph',
+  );
+
+  export const DefaultConditions = BindingKey.create<AnyObject>(
+    'services.ai-integration.db-query.default-conditions',
   );
 }
 

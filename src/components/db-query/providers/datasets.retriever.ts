@@ -14,7 +14,7 @@ export class DatasetRetriever implements Provider<BaseRetriever> {
   value(): ValueOrPromise<BaseRetriever<AnyObject>> {
     if (this.vectorStore instanceof MemoryVectorStore) {
       return this.vectorStore.asRetriever({
-        k: 5,
+        k: 20,
         filter: doc => doc.metadata.type === DbQueryStoredTypes.DataSet,
         searchType: 'similarity',
       });

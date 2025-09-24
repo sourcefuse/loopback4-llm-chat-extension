@@ -19,18 +19,11 @@ describe('SaveDataSetNode Unit', function () {
     llmStub = sinon.stub();
     const llm = llmStub as unknown as LLMProvider;
     store = buildDatasetStoreStub();
-    node = new SaveDataSetNode(
-      llm,
-      store,
-      {models: []},
-      {
-        tenantId: 'test-tenant',
-        userTenantId: 'test-tenant',
-        permissions: ['1'],
-      } as IAuthUserWithPermissions,
-
-      ['test context'],
-    );
+    node = new SaveDataSetNode(llm, store, {models: []}, {
+      tenantId: 'test-tenant',
+      userTenantId: 'test-tenant',
+      permissions: ['1'],
+    } as IAuthUserWithPermissions);
   });
 
   it('should return state with dataset id', async () => {
@@ -50,6 +43,7 @@ describe('SaveDataSetNode Unit', function () {
           relations: [],
         },
         sql: 'SELECT * FROM test_table;',
+        description: 'dataset desc',
       } as unknown as DbQueryState,
       {},
     );
@@ -69,7 +63,6 @@ describe('SaveDataSetNode Unit', function () {
         userTenantId: 'test-tenant',
         permissions: ['1'],
       } as IAuthUserWithPermissions,
-      ['test context'],
     );
     llmStub.resolves({
       content: 'dataset desc',
@@ -89,6 +82,7 @@ describe('SaveDataSetNode Unit', function () {
           relations: [],
         },
         sql: 'SELECT * FROM test_table;',
+        description: 'dataset desc',
       } as unknown as DbQueryState,
       {},
     );
@@ -101,16 +95,10 @@ describe('SaveDataSetNode Unit', function () {
 
   it('should throw error if user does not have tenantId', async () => {
     const llm = llmStub as unknown as LLMProvider;
-    node = new SaveDataSetNode(
-      llm,
-      store,
-      {models: []},
-      {
-        userTenantId: 'test-tenant',
-        permissions: ['1'],
-      } as IAuthUserWithPermissions,
-      ['test context'],
-    );
+    node = new SaveDataSetNode(llm, store, {models: []}, {
+      userTenantId: 'test-tenant',
+      permissions: ['1'],
+    } as IAuthUserWithPermissions);
     await expect(
       node.execute(
         {
@@ -130,17 +118,11 @@ describe('SaveDataSetNode Unit', function () {
 
   it('should throw error if sql is not present in state', async () => {
     const llm = llmStub as unknown as LLMProvider;
-    node = new SaveDataSetNode(
-      llm,
-      store,
-      {models: []},
-      {
-        tenantId: 'test-tenant',
-        userTenantId: 'test-tenant',
-        permissions: ['1'],
-      } as IAuthUserWithPermissions,
-      ['test context'],
-    );
+    node = new SaveDataSetNode(llm, store, {models: []}, {
+      tenantId: 'test-tenant',
+      userTenantId: 'test-tenant',
+      permissions: ['1'],
+    } as IAuthUserWithPermissions);
     await expect(
       node.execute(
         {

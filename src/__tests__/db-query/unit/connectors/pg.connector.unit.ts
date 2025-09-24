@@ -2,6 +2,7 @@ import {juggler} from '@loopback/repository';
 import {DbSchemaHelperService, PgConnector} from '../../../../components';
 import {Employee} from '../../../fixtures/models';
 import {expect} from '@loopback/testlab';
+import {IAuthUserWithPermissions} from 'loopback4-authorization';
 
 describe(`PgConnector Unit`, () => {
   let connector: PgConnector;
@@ -11,7 +12,10 @@ describe(`PgConnector Unit`, () => {
       name: 'db',
       connector: 'memory',
     });
-    connector = new PgConnector(ds);
+    const user = {
+      userTenantId: 'test-tenant',
+    } as unknown as IAuthUserWithPermissions;
+    connector = new PgConnector(ds, user);
     dbSchemaHelper = new DbSchemaHelperService(connector, {models: []});
   });
 
@@ -34,5 +38,84 @@ CREATE TABLE public.employees (
   currency_id UUID,
   PRIMARY KEY (id)
 );`);
+  });
+
+  describe('_cleanQuery method', () => {
+    it('should remove trailing semicolons', () => {
+      const query = 'SELECT * FROM employees;';
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const cleaned = (connector as any)._cleanQuery(query);
+      expect(cleaned).to.equal('SELECT * FROM employees');
+    });
+
+    it('should remove trailing semicolons with whitespace', () => {
+      const query = 'SELECT * FROM employees;   ';
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const cleaned = (connector as any)._cleanQuery(query);
+      expect(cleaned).to.equal('SELECT * FROM employees');
+    });
+
+    it('should remove single-line comments', () => {
+      const query = 'SELECT * FROM employees -- This is a comment';
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const cleaned = (connector as any)._cleanQuery(query);
+      expect(cleaned).to.equal('SELECT * FROM employees');
+    });
+
+    it('should remove single-line comments with trailing semicolon', () => {
+      const query = 'SELECT * FROM employees; -- This is a comment';
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const cleaned = (connector as any)._cleanQuery(query);
+      expect(cleaned).to.equal('SELECT * FROM employees');
+    });
+
+    it('should remove multi-line comments', () => {
+      const query =
+        'SELECT * FROM employees /* This is a\nmulti-line comment */';
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const cleaned = (connector as any)._cleanQuery(query);
+      expect(cleaned).to.equal('SELECT * FROM employees');
+    });
+
+    it('should remove multi-line comments with trailing semicolon', () => {
+      const query =
+        'SELECT * FROM employees; /* This is a\nmulti-line comment */';
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const cleaned = (connector as any)._cleanQuery(query);
+      expect(cleaned).to.equal('SELECT * FROM employees');
+    });
+
+    it('should clean query with both comments and semicolons', () => {
+      const query = 'SELECT * FROM employees; -- Get all employees\n  ';
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const cleaned = (connector as any)._cleanQuery(query);
+      expect(cleaned).to.equal('SELECT * FROM employees');
+    });
+
+    it('should handle complex query without changes', () => {
+      const query =
+        'SELECT e.name, e.salary FROM employees e JOIN departments d ON e.id = d.employee_id WHERE e.salary > 50000';
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const cleaned = (connector as any)._cleanQuery(query);
+      expect(cleaned).to.equal(query);
+    });
+
+    it('should handle query with inline comments unchanged', () => {
+      const query =
+        "SELECT name, salary FROM employees WHERE department = 'sales' -- Get sales employees";
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const cleaned = (connector as any)._cleanQuery(query);
+      expect(cleaned).to.equal(
+        "SELECT name, salary FROM employees WHERE department = 'sales'",
+      );
+    });
+
+    it('should clean nested comments and semicolons', () => {
+      const query =
+        'SELECT * FROM employees; /* Another comment */ ; ;; -- Final comment';
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const cleaned = (connector as any)._cleanQuery(query);
+      expect(cleaned).to.equal('SELECT * FROM employees');
+    });
   });
 });

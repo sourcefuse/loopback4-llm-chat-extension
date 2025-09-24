@@ -19,6 +19,8 @@ import {PermissionKey} from '../../../permissions';
 import {DataSet} from '../models';
 import {DataSetHelper} from '../services';
 import {IDataSet} from '../types';
+import {DatasetUpdateDTO} from '../models/dataset-update-dto.model';
+import {DatasetActionType} from '../constant';
 
 export class DataSetController {
   constructor(
@@ -80,7 +82,7 @@ export class DataSetController {
   async find(@param.filter(DataSet) filter?: Filter<IDataSet>) {
     return this.datasetHelper.find({
       ...filter,
-      fields: ['id', 'tenantId', 'createdBy', 'valid', 'description'],
+      fields: ['id', 'tenantId', 'createdBy', 'votes', 'description'],
     });
   }
 
@@ -109,12 +111,22 @@ export class DataSetController {
     const [dataset] = await this.datasetHelper.find({
       where: {id},
       ...filter,
-      fields: ['id', 'tenantId', 'createdBy', 'valid', 'description'],
+      fields: ['id', 'tenantId', 'createdBy', 'votes', 'description'],
     } as Filter<IDataSet>);
+    const action = await this.datasetHelper.getLikes(id);
     if (!dataset) {
       throw new HttpErrors.NotFound(`Dataset with id ${id} not found`);
     }
-    return dataset;
+    return {
+      ...dataset,
+      liked:
+        action?.action === DatasetActionType.Liked
+          ? true
+          : action?.action === DatasetActionType.Disliked
+            ? false
+            : null,
+      feedback: action?.comment ?? undefined,
+    };
   }
 
   @authorize({permissions: [PermissionKey.UpdateDataset]})
@@ -127,9 +139,7 @@ export class DataSetController {
       [STATUS_CODE.NO_CONTENT]: {
         description: 'Update dataset with the given ID',
         content: {
-          [CONTENT_TYPE.JSON]: {
-            schema: getModelSchemaRef(DataSet),
-          },
+          [CONTENT_TYPE.JSON]: {},
         },
       },
     },
@@ -140,22 +150,12 @@ export class DataSetController {
       required: true,
       content: {
         [CONTENT_TYPE.JSON]: {
-          schema: {
-            type: 'object',
-            properties: {
-              valid: {type: 'boolean'},
-              feedback: {type: 'string'},
-            },
-            required: ['valid'],
-          },
+          schema: getModelSchemaRef(DatasetUpdateDTO),
         },
       },
     })
-    body: {valid: boolean; feedback?: string},
+    body: DatasetUpdateDTO,
   ) {
-    await this.datasetHelper.updateById(id, {
-      valid: body.valid,
-      feedback: body.feedback,
-    });
+    await this.datasetHelper.updateById(id, body);
   }
 }

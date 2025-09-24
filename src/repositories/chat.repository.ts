@@ -15,6 +15,7 @@ import {
 import {AuthenticationBindings} from 'loopback4-authentication';
 import {Chat, Message} from '../models';
 import {MessageRepository} from './message.repository';
+import {WriterDB} from '../keys';
 
 export class ChatRepository extends DefaultUserModifyCrudRepository<
   Chat,
@@ -27,7 +28,7 @@ export class ChatRepository extends DefaultUserModifyCrudRepository<
   >;
 
   constructor(
-    @inject('datasources.db') dataSource: juggler.DataSource,
+    @inject(`datasources.${WriterDB}`) dataSource: juggler.DataSource,
     @inject.getter(AuthenticationBindings.CURRENT_USER)
     protected readonly getCurrentUser: Getter<
       IAuthUserWithPermissions | undefined

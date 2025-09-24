@@ -4,11 +4,13 @@ import {
   DataObject,
   Entity,
   Filter,
+  FilterExcludingWhere,
   ModelDefinition,
   Where,
 } from '@loopback/repository';
 import {ModelConstructor} from '@sourceloop/core';
 import {SupportedDBs} from '../../types';
+import {DatasetActionType} from './constant';
 
 export enum EvaluationResult {
   Pass = 'pass',
@@ -49,9 +51,7 @@ export type Status =
   | Errors
   | GenerationError;
 
-export type DatasetServiceConfig = {
-  datasourceName: string;
-};
+export type DatasetServiceConfig = {};
 
 export type ColumnSchema = {
   type: string;
@@ -64,7 +64,7 @@ export type TableSchema = {
   columns: Record<string, ColumnSchema>;
   primaryKey: string[];
   description: string;
-  context: string[];
+  context: (string | Record<string, string>)[];
   hash: string;
 };
 export type ForeignKey = {
@@ -114,20 +114,31 @@ export type DbQueryConfig = {
   };
   columnSelection?: boolean;
 };
+
+export type IDatasetAction = {
+  datasetId: string;
+  userId: string;
+  action: DatasetActionType;
+  comment?: string | null;
+};
+
 export type IDataSet = {
   tenantId: string;
   query: string;
   description: string;
   tables: string[];
   schemaHash: string;
-  valid: boolean | null;
+  votes: number;
   prompt: string;
   createdBy?: string;
   id?: string;
-  feedback?: string;
 };
+
 export interface IDataSetStore {
-  findById(id: string): Promise<IDataSet>;
+  findById(
+    id: string,
+    filter?: FilterExcludingWhere<IDataSet>,
+  ): Promise<IDataSet>;
   find(filter?: Filter<IDataSet>): Promise<IDataSet[]>;
   create(data: IDataSet): Promise<IDataSet>;
   updateById(id: string, data: DataObject<IDataSet>): Promise<void>;
@@ -140,6 +151,12 @@ export interface IDataSetStore {
     limit?: number,
     offset?: number,
   ): Promise<T[]>;
+  updateLikes(
+    datasetId: string,
+    liked: boolean | null,
+    comment?: string,
+  ): Promise<IDataSet>;
+  getLikes(datasetId: string): Promise<IDatasetAction | null>;
 }
 
 export enum DbQueryStoredTypes {
@@ -161,7 +178,15 @@ export type QueryCacheMetadata = {
   type: DbQueryStoredTypes.DataSet;
 };
 
+export type QueryParam = string | number;
+
 export interface IDbConnector {
+  execute<T>(
+    query: string,
+    limit?: number,
+    offset?: number,
+    params?: QueryParam[],
+  ): Promise<T[]>;
   validate(query: string): Promise<void>;
   toDDL(dbSchema: DatabaseSchema): string;
 }

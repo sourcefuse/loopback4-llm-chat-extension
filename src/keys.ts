@@ -9,6 +9,7 @@ import {
   LLMProvider,
   ToolStore,
 } from './types';
+import {ILimitStrategy} from './services/limit-strategies/types';
 
 export namespace AiIntegrationBindings {
   export const Config = BindingKey.create<AIIntegrationConfig>(
@@ -39,4 +40,9 @@ export namespace AiIntegrationBindings {
     'services.ai-reporting.vector-store',
   );
   export const Cache = BindingKey.create<ICache>('services.ai-reporting.cache');
+  export const LimitStrategy = BindingKey.create<ILimitStrategy>(
+    'services.ai-reporting.limit-strategy',
+  );
 }
+export const WriterDB = 'writerdb';
+export const ReaderDB = 'readerdb';

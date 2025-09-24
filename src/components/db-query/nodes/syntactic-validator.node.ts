@@ -46,6 +46,11 @@ export class SyntacticValidatorNode implements IGraphNode<DbQueryState> {
       },
     });
 
+    config.writer?.({
+      type: LLMStreamEventType.Log,
+      data: `Validating the query syntactically.`,
+    });
+
     try {
       if (!state.sql) {
         throw new Error('No SQL query generated to validate');

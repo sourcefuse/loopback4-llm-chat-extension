@@ -1,5 +1,5 @@
 import {Entity, model, property} from '@loopback/repository';
-import {fileProperty} from '@sourceloop/file-utils';
+import {fileProperty, FileTypeValidator} from '@sourceloop/file-utils';
 
 @model({
   settings: {
@@ -19,7 +19,7 @@ export class UserRequestDto extends Entity {
   @fileProperty({
     type: 'object',
     // you can configure individual fields here
-    validators: [],
+    validators: [FileTypeValidator],
     extensions: ['.pdf'],
   })
   files: Express.Multer.File[];

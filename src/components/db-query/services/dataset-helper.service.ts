@@ -2,12 +2,11 @@ import {VectorStore} from '@langchain/core/vectorstores';
 import {inject, service} from '@loopback/core';
 import {Filter} from '@loopback/repository';
 import {HttpErrors} from '@loopback/rest';
-import {IAuthUserWithPermissions} from '@sourceloop/core';
-import {AuthenticationBindings} from 'loopback4-authentication';
 import {AiIntegrationBindings} from '../../../keys';
 import {DbQueryAIExtensionBindings} from '../keys';
 import {DbQueryStoredTypes, IDataSet, IDataSetStore} from '../types';
 import {PermissionHelper} from './permission-helper.service';
+import {DatasetUpdateDTO} from '../models/dataset-update-dto.model';
 
 export class DataSetHelper {
   constructor(
@@ -15,8 +14,6 @@ export class DataSetHelper {
     private readonly store: IDataSetStore,
     @service(PermissionHelper)
     private readonly permissionHelper: PermissionHelper,
-    @inject(AuthenticationBindings.CURRENT_USER)
-    private readonly currentUser: IAuthUserWithPermissions,
     @inject(AiIntegrationBindings.VectorStore)
     private readonly vectorStore: VectorStore,
   ) {}
@@ -52,31 +49,31 @@ export class DataSetHelper {
     return this.store.find(filter);
   }
 
-  async updateById(id: string, data: Partial<IDataSet>) {
-    const where = {
-      createdBy: this.currentUser.userTenantId,
-      id,
-    };
-    if (data.valid === true) {
-      const {prompt, query, valid} = await this.store.findById(id);
-      if (!valid) {
-        await this.vectorStore.addDocuments([
-          {
-            pageContent: prompt,
-            metadata: {
-              datasetId: id,
-              query,
-              type: DbQueryStoredTypes.DataSet,
-            },
+  async updateById(id: string, data: DatasetUpdateDTO) {
+    const dataset = await this.store.updateLikes(id, data.liked, data.comment);
+    // clear from cache and re-add if likes > 0
+    await this.vectorStore.delete({
+      filter: {
+        metadata: {
+          datasetId: id,
+        },
+      },
+    });
+    if (dataset.votes > 0) {
+      await this.vectorStore.addDocuments([
+        {
+          pageContent: dataset.description,
+          metadata: {
+            datasetId: id,
+            votes: dataset.votes,
+            type: DbQueryStoredTypes.DataSet,
           },
-        ]);
-      }
+        },
+      ]);
     }
-    if (data.valid === false && !data.feedback) {
-      throw new HttpErrors.UnprocessableEntity(
-        'Feedback is required when marking a dataset as invalid',
-      );
-    }
-    return this.store.updateAll(data, where);
+  }
+
+  async getLikes(id: string) {
+    return this.store.getLikes(id);
   }
 }

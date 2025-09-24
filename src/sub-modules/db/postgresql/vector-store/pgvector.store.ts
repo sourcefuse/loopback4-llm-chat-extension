@@ -13,11 +13,14 @@ import {
 import * as pg from 'pg';
 import {EmbeddingProvider} from '../../../../types';
 import {AiIntegrationBindings} from '../../../../keys';
+import {juggler} from '@loopback/repository';
 @injectable({scope: BindingScope.SINGLETON})
 export class PgVectorStore implements Provider<VectorStore> {
   constructor(
     @inject(AiIntegrationBindings.EmbeddingModel)
     private readonly embeddingModel: EmbeddingProvider,
+    @inject(`datasources.writerdb`)
+    private pgDataSource: juggler.DataSource,
   ) {}
   value(): ValueOrPromise<VectorStore> {
     if (
@@ -30,20 +33,14 @@ export class PgVectorStore implements Provider<VectorStore> {
         'Database connection details are not set. Please set DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, and DB_DATABASE environment variables.',
       );
     }
-    const reusablePool = new pg.Pool({
-      host: process.env.DB_HOST!,
-      port: +process.env.DB_PORT!,
-      user: process.env.DB_USER!,
-      password: process.env.DB_PASSWORD!,
-      database: process.env.DB_DATABASE!,
-    });
+    const reusablePool = this.pgDataSource.connector?.pg as pg.Pool;
+    const dsConfig = this.pgDataSource.connector?.settings;
 
     const config: PGVectorStoreArgs = {
       pool: reusablePool,
-      tableName: 'context',
-      collectionName: 'knowledge_base',
-      collectionTableName: 'embeddings_collections',
-      extensionSchemaName: process.env.EXTENSION_DB_SCHEMA ?? 'public',
+      schemaName: dsConfig.schema || 'public',
+      tableName: 'semantic_cache',
+      extensionSchemaName: dsConfig.schema || 'public',
       columns: {
         idColumnName: 'id',
         vectorColumnName: 'vector',

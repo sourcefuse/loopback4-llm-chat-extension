@@ -1,4 +1,4 @@
-import {Context} from '@loopback/core';
+import {Application, Context} from '@loopback/core';
 import {juggler} from '@loopback/repository';
 import {
   Client,
@@ -69,7 +69,7 @@ export function buildDatasetStoreStub() {
 }
 
 export async function seedEmployees(app: TestApp) {
-  const db = await app.get<juggler.DataSource>('datasources.db');
+  const db = await app.get<juggler.DataSource>('datasources.readerdb');
   await db.execute(`
             CREATE TABLE IF NOT EXISTS employees (
             id integer PRIMARY KEY AUTOINCREMENT,
@@ -87,7 +87,7 @@ export async function seedEmployees(app: TestApp) {
 }
 
 export async function seedCurrencies(app: TestApp) {
-  const db = await app.get<juggler.DataSource>('datasources.db');
+  const db = await app.get<juggler.DataSource>('datasources.readerdb');
   await db.execute(`
             CREATE TABLE IF NOT EXISTS currencies (
             id integer PRIMARY KEY AUTOINCREMENT,
@@ -101,7 +101,7 @@ export async function seedCurrencies(app: TestApp) {
 }
 
 export async function setupChats(appInstance: Context | TestApp) {
-  const db = await appInstance.get<juggler.DataSource>('datasources.db');
+  const db = await appInstance.get<juggler.DataSource>('datasources.readerdb');
   await db.execute(`
             CREATE TABLE IF NOT EXISTS chats (
             id integer PRIMARY KEY AUTOINCREMENT,
@@ -120,7 +120,7 @@ export async function setupChats(appInstance: Context | TestApp) {
 }
 
 export async function setupMessages(appInstance: Context | TestApp) {
-  const db = await appInstance.get<juggler.DataSource>('datasources.db');
+  const db = await appInstance.get<juggler.DataSource>('datasources.readerdb');
   await db.execute(`
             CREATE TABLE IF NOT EXISTS messages (
             id integer PRIMARY KEY AUTOINCREMENT,
@@ -142,7 +142,7 @@ export async function setupMessages(appInstance: Context | TestApp) {
 }
 
 export async function seedExchangeRates(app: TestApp) {
-  const db = await app.get<juggler.DataSource>('datasources.db');
+  const db = await app.get<juggler.DataSource>('datasources.readerdb');
   await db.execute(`
             CREATE TABLE IF NOT EXISTS exchange_rates (
             id integer PRIMARY KEY AUTOINCREMENT,
@@ -160,7 +160,7 @@ export async function seedExchangeRates(app: TestApp) {
 
 export async function seedDataset(appInstance: TestApp) {
   const ctx = new Context(appInstance);
-  const db = await ctx.get<juggler.DataSource>('datasources.db');
+  const db = await ctx.get<juggler.DataSource>('datasources.readerdb');
   await db.execute(`
             CREATE TABLE IF NOT EXISTS datasets (
             id integer PRIMARY KEY AUTOINCREMENT,
@@ -186,15 +186,14 @@ export async function seedDataset(appInstance: TestApp) {
     tables: ['employees'],
     schemaHash: 'test-hash',
     prompt: 'Test prompt',
-    valid: false,
   });
 }
 
-export function buildToken(permissions: string[]) {
+export function buildToken(permissions: string[], userTenantId = 'default') {
   return sign(
     {
       id: 'test-user',
-      userTenantId: 'default',
+      userTenantId,
       permissions,
       tenantId: 'default',
     },
@@ -243,6 +242,15 @@ export function buildFileStub() {
     type: 'text/plain',
     size: 1024,
   } as unknown as Express.Multer.File;
+}
+
+export async function getRepo(app: Application, repo: string) {
+  const ctx = new Context(app);
+  ctx.bind(AuthenticationBindings.CURRENT_USER).to({
+    id: 'test-user',
+    userTenantId: 'default',
+  } as unknown as IAuthUserWithPermissions);
+  return ctx.get<DataSetRepository>(`repositories.${DataSetRepository.name}`);
 }
 
 export interface AppWithClient {

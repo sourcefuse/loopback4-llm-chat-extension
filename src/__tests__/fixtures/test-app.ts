@@ -17,7 +17,6 @@ import {
 } from 'loopback4-authorization';
 import {AiIntegrationsComponent} from '../../component';
 import {
-  DatasetServiceBindings,
   DbQueryAIExtensionBindings,
   DbQueryComponent,
   SqliteConnector,
@@ -30,6 +29,7 @@ import {Employee} from './models/employee.model';
 import {EmployeeRepository} from './repositories';
 import {Ollama, OllamaEmbedding} from '../../sub-modules/providers/ollama';
 import {Cerebras} from '../../sub-modules/providers/cerebras';
+import {sinon} from '@loopback/testlab';
 export class TestApp extends BootMixin(
   ServiceMixin(RepositoryMixin(RestApplication)),
 ) {
@@ -60,7 +60,7 @@ export class TestApp extends BootMixin(
       this.bind(AiIntegrationBindings.FileLLM).to(options.llmStub);
       this.bind(AiIntegrationBindings.EmbeddingModel).to(options.llmStub);
     }
-    this.bind('datasources.db').to(
+    this.bind('datasources.readerdb').to(
       new juggler.DataSource({
         connector: 'sqlite3',
         file: ':memory:',
@@ -68,16 +68,19 @@ export class TestApp extends BootMixin(
         debug: true,
       }),
     );
-    this.bind('datasources.datasetdb').to(
-      new juggler.DataSource({
-        connector: 'memory',
-        name: 'datasetdb',
-      }),
-    );
-    this.component(AiIntegrationsComponent);
-    this.bind(DatasetServiceBindings.Config).to({
-      datasourceName: 'datasetdb',
+
+    const ds = new juggler.DataSource({
+      connector: 'memory',
+      name: 'datasetdb',
     });
+
+    const beginTransactionStub = sinon.stub().resolves({
+      commit: sinon.stub().resolves(),
+      rollback: sinon.stub().resolves(),
+    });
+    ds.beginTransaction = beginTransactionStub;
+    this.bind('datasources.writerdb').to(ds);
+    this.component(AiIntegrationsComponent);
     this.bind(DbQueryAIExtensionBindings.Config).to({
       models: [
         {
@@ -100,7 +103,9 @@ export class TestApp extends BootMixin(
       noKnowledgeGraph: options.noKnowledgeGraph ?? false,
     });
     this.component(DbQueryComponent);
-    this.bind(DbQueryAIExtensionBindings.Connector).toClass(SqliteConnector);
+    this.bind(DbQueryAIExtensionBindings.Connector)
+      .toClass(SqliteConnector)
+      .inScope(BindingScope.TRANSIENT);
 
     this.bind(AiIntegrationBindings.VectorStore)
       .toProvider(InMemoryVectorStore)

@@ -6,6 +6,7 @@ import {
   SqliteConnector,
 } from '../../../../components';
 import {LLMProvider, SupportedDBs} from '../../../../types';
+import {IAuthUserWithPermissions} from 'loopback4-authorization';
 
 describe('SqlGenerationNode Unit', function () {
   let node: SqlGenerationNode;
@@ -24,6 +25,7 @@ describe('SqlGenerationNode Unit', function () {
           name: 'db',
           debug: true,
         }),
+        {} as unknown as IAuthUserWithPermissions,
       ),
       {models: []},
     );
@@ -52,7 +54,8 @@ describe('SqlGenerationNode Unit', function () {
 
   it('should generate SQL query based on the provided prompt', async () => {
     llmStub.resolves({
-      content: '<think>thinking about it</think>SELECT * FROM employees;',
+      content:
+        '<think>thinking about it</think><sql>SELECT * FROM employees;</sql><description>Get all employees</description>',
     });
 
     const state = {
@@ -83,6 +86,7 @@ describe('SqlGenerationNode Unit', function () {
       datasetId: undefined,
       fromCache: false,
       resultArray: undefined,
+      description: undefined,
     };
 
     const result = await node.execute(state, {});
@@ -104,6 +108,7 @@ Adhere to these rules:
 - You can only generate a single query, so if you need multiple results you can use JOINs, subqueries, CTEs or UNIONS.
 - Do not make any assumptions about the user's intent beyond what is explicitly provided in the prompt.
 - Ensure proper grouping with brackets for where clauses with multiple conditions using AND and OR.
+- Follow each and every single rule in the "must-follow-rules" section carefully while writing the query. DO NOT SKIP ANY RULE.
 </instructions>
 <user-question>
 ${state.prompt}
@@ -124,14 +129,26 @@ You must keep these additional details in mind while writing the query -
 
 </context>
 <output-instructions>
-Return the SQL query as a string, without any additional text, quotations, code block, comments or any other non sql token.
-The output should be a valid SQL query that can run on the database schema provided.
+Return the output in the following format with exactly 2 parts within opening and closing tags - 
+<sql>
+Contains the required valid SQL satisfying all the constraints
+It should have no other character or symbol or character that is not part of SQLs.
+Every single line of SQL should have a comment above it explaining the purpose of that line
+</sql>
+<description>
+A very detailed but non-technical description of the SQL describing every single condition and concept used in the SQL statement. DO NOT OMMIT ANY DETAIL.
+It should just be a plain english text with no other special formatting or special character. 
+It should NOT use any technical jargon or database specific terminology like tables or columns.
+Try to keep it short and to the point while not omitting any detail.
+Do not use any DB concepts like enum numbers, joins, CTEs, subqueries etc. in the description.
+</description>
 </output-instructions>`);
   });
 
   it('should generate SQL query based on the provided prompt with a single feedback from some validation stage', async () => {
     llmStub.resolves({
-      content: '<think>thinking about it</think>SELECT * FROM employees;',
+      content:
+        '<think>thinking about it</think><sql>SELECT * FROM employees;</sql><description>Get all employees</description>',
     });
 
     const state = {
@@ -162,6 +179,7 @@ The output should be a valid SQL query that can run on the database schema provi
       datasetId: undefined,
       fromCache: false,
       resultArray: undefined,
+      description: undefined,
     };
 
     const result = await node.execute(state, {});
@@ -183,6 +201,7 @@ Adhere to these rules:
 - You can only generate a single query, so if you need multiple results you can use JOINs, subqueries, CTEs or UNIONS.
 - Do not make any assumptions about the user's intent beyond what is explicitly provided in the prompt.
 - Ensure proper grouping with brackets for where clauses with multiple conditions using AND and OR.
+- Follow each and every single rule in the "must-follow-rules" section carefully while writing the query. DO NOT SKIP ANY RULE.
 </instructions>
 <user-question>
 ${state.prompt}
@@ -217,14 +236,26 @@ This was the error in the latest query you generated - \n${state.feedbacks[0]}
 </feedback-instructions>
 </context>
 <output-instructions>
-Return the SQL query as a string, without any additional text, quotations, code block, comments or any other non sql token.
-The output should be a valid SQL query that can run on the database schema provided.
+Return the output in the following format with exactly 2 parts within opening and closing tags - 
+<sql>
+Contains the required valid SQL satisfying all the constraints
+It should have no other character or symbol or character that is not part of SQLs.
+Every single line of SQL should have a comment above it explaining the purpose of that line
+</sql>
+<description>
+A very detailed but non-technical description of the SQL describing every single condition and concept used in the SQL statement. DO NOT OMMIT ANY DETAIL.
+It should just be a plain english text with no other special formatting or special character. 
+It should NOT use any technical jargon or database specific terminology like tables or columns.
+Try to keep it short and to the point while not omitting any detail.
+Do not use any DB concepts like enum numbers, joins, CTEs, subqueries etc. in the description.
+</description>
 </output-instructions>`);
   });
 
   it('should generate SQL query based on the provided prompt with a multiple feedbacks from from previous loops', async () => {
     llmStub.resolves({
-      content: '<think>thinking about it</think>SELECT * FROM employees;',
+      content:
+        '<think>thinking about it</think><sql>SELECT * FROM employees;</sql><description>Get all employees</description>',
     });
 
     const state = {
@@ -259,6 +290,7 @@ The output should be a valid SQL query that can run on the database schema provi
       datasetId: undefined,
       fromCache: false,
       resultArray: undefined,
+      description: undefined,
     };
 
     const result = await node.execute(state, {});
@@ -280,6 +312,7 @@ Adhere to these rules:
 - You can only generate a single query, so if you need multiple results you can use JOINs, subqueries, CTEs or UNIONS.
 - Do not make any assumptions about the user's intent beyond what is explicitly provided in the prompt.
 - Ensure proper grouping with brackets for where clauses with multiple conditions using AND and OR.
+- Follow each and every single rule in the "must-follow-rules" section carefully while writing the query. DO NOT SKIP ANY RULE.
 </instructions>
 <user-question>
 ${state.prompt}
@@ -318,14 +351,26 @@ ${state.feedbacks[1]}
 </feedback-instructions>
 </context>
 <output-instructions>
-Return the SQL query as a string, without any additional text, quotations, code block, comments or any other non sql token.
-The output should be a valid SQL query that can run on the database schema provided.
+Return the output in the following format with exactly 2 parts within opening and closing tags - 
+<sql>
+Contains the required valid SQL satisfying all the constraints
+It should have no other character or symbol or character that is not part of SQLs.
+Every single line of SQL should have a comment above it explaining the purpose of that line
+</sql>
+<description>
+A very detailed but non-technical description of the SQL describing every single condition and concept used in the SQL statement. DO NOT OMMIT ANY DETAIL.
+It should just be a plain english text with no other special formatting or special character. 
+It should NOT use any technical jargon or database specific terminology like tables or columns.
+Try to keep it short and to the point while not omitting any detail.
+Do not use any DB concepts like enum numbers, joins, CTEs, subqueries etc. in the description.
+</description>
 </output-instructions>`);
   });
 
   it('should generate SQL query with sample queries when no feedbacks but has sample SQL', async () => {
     llmStub.resolves({
-      content: '<think>thinking about it</think>SELECT * FROM employees;',
+      content:
+        '<think>thinking about it</think><sql>SELECT * FROM employees;</sql><description>Get all employees</description>',
     });
 
     const state = {
@@ -356,6 +401,7 @@ The output should be a valid SQL query that can run on the database schema provi
       datasetId: undefined,
       fromCache: true,
       resultArray: undefined,
+      description: undefined,
     };
 
     const result = await node.execute(state, {});
@@ -375,7 +421,8 @@ The output should be a valid SQL query that can run on the database schema provi
 
   it('should generate SQL query with baseline sample queries when no feedbacks and not from cache', async () => {
     llmStub.resolves({
-      content: '<think>thinking about it</think>SELECT * FROM employees;',
+      content:
+        '<think>thinking about it</think><sql>SELECT * FROM employees;</sql><description>Get all employees</description>',
     });
 
     const state = {
@@ -406,6 +453,7 @@ The output should be a valid SQL query that can run on the database schema provi
       datasetId: undefined,
       fromCache: false,
       resultArray: undefined,
+      description: undefined,
     };
 
     const result = await node.execute(state, {});

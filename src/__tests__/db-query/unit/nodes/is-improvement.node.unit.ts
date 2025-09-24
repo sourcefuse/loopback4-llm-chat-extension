@@ -33,7 +33,7 @@ describe('IsImprovementNode Unit', function () {
       description: 'This is a test dataset',
       tables: ['employees'],
       schemaHash: 'test-schema-hash',
-      valid: true,
+      votes: 0,
     };
     store.findById.resolves(dataset);
 

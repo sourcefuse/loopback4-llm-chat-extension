@@ -247,14 +247,6 @@ this.bind(DbQueryAIExtensionBindings.Config).to({
 this.component(DbQueryComponent);
 ```
 
-You also need to create a loopback4 datasource with the name - `db`, but if you have an existing datasource that you want to use, you can provide it's name like this -
-
-```ts
-this.bind(DatasetServiceBindings.Config).to({
-  datasourceName: 'datasetdb',
-});
-```
-
 ## Writing Your Own Tool
 
 You can register your own tools by simply using the `@graphTool()` decorator and implementing the `IGraphTool` interface. Any such class would be automatically registered with the `/generate` endpoint and the LLM would be able to use it as a tool.

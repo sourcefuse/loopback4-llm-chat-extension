@@ -9,6 +9,7 @@ import {
 } from '../../../../components';
 import {LLMProvider} from '../../../../types';
 import {Employee, ExchangeRate} from '../../../fixtures/models';
+import {IAuthUserWithPermissions} from 'loopback4-authorization';
 
 describe('GetColumnsNode Unit', function () {
   let node: GetColumnsNode;
@@ -27,6 +28,7 @@ describe('GetColumnsNode Unit', function () {
           name: 'db',
           debug: true,
         }),
+        {} as unknown as IAuthUserWithPermissions,
       ),
       {models: []},
     );

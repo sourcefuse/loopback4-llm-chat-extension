@@ -12,7 +12,7 @@ import {AuthenticationBindings} from 'loopback4-authentication';
 import {CHAT_TITLE_MAX_LENGTH} from '../../constant';
 import {Chat, Message} from '../../models';
 import {ChatRepository} from '../../repositories';
-import {ChannelType} from '../../types';
+import {ChannelType, TokenMetadata} from '../../types';
 import {getTextContent, mergeAttachments} from '../../utils';
 import {SavedMessage} from '../types';
 import {
@@ -47,11 +47,13 @@ export class ChatStore {
     chatId: string,
     inputTokens: number,
     outputTokens: number,
+    newCountMap: TokenMetadata,
   ) {
     const existingChat = await this.chatRepository.findById(chatId);
     return this.chatRepository.updateById(chatId, {
       inputTokens: existingChat.inputTokens + inputTokens,
       outputTokens: existingChat.outputTokens + outputTokens,
+      metadata: this.mergeCountMap(existingChat.metadata, newCountMap),
     });
   }
 
@@ -81,6 +83,7 @@ export class ChatStore {
         inputTokens: 0,
         outputTokens: 0,
         title: prompt?.slice(0, CHAT_TITLE_MAX_LENGTH) ?? 'New Chat',
+        metadata: {},
       });
     }
   }
@@ -218,6 +221,19 @@ export class ChatStore {
     } else {
       // do nothing for other types
     }
+  }
+
+  private mergeCountMap(metadata: TokenMetadata, newData: TokenMetadata) {
+    const result: TokenMetadata = {...metadata};
+    for (const key of Object.keys(newData)) {
+      if (result[key]) {
+        result[key].inputTokens += newData[key].inputTokens;
+        result[key].outputTokens += newData[key].outputTokens;
+      } else {
+        result[key] = {...newData[key]};
+      }
+    }
+    return result;
   }
 
   private async _updateFilterWithUserId(filter?: Filter<Chat>) {
