@@ -146,41 +146,7 @@ Users can provide feedback on generated datasets through the dataset actions end
 
 ### Query Generation Flow
 
-```mermaid
----
-title: Query Generation Flow
----
-graph TD
-    A[User Query Input] --> B[Query Generation Tool]
-    B --> C[Datasets Store]
-    C --> D[API Response]
-    C --> DB
-    B5 --> LLM
-
-    subgraph "Query Generation Tool"
-        B5[Context Compression]
-        B1[Intent Analysis]
-        B2[SQL Generation]
-        B3[Semantic Validation]
-        B4[Syntactic Validation]
-        B6[Memory Retriever]
-    end
-
-    B6 --> Cache
-
-    subgraph "External Systems"
-        LLM[Model Connector]
-        DB[Database]
-        Cache[Vector Store]
-    end
-
-
-    B1 --> LLM
-    B2 --> LLM
-    B3 --> LLM
-    B --> Cache
-
-```
+![alt text](https://raw.githubusercontent.com/sourcefuse/llm-chat-component/refs/heads/main/db-query-graph.png)
 
 ## Providing Context
 
