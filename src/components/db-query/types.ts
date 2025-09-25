@@ -183,6 +183,8 @@ export type QueryCacheMetadata = {
   datasetId: string;
   query: string;
   type: DbQueryStoredTypes.DataSet;
+  description: string;
+  votes: number;
 };
 
 export type QueryParam = string | number;

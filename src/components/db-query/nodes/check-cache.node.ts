@@ -32,15 +32,16 @@ export class CheckCacheNode implements IGraphNode<DbQueryState> {
   ) {}
   prompt = PromptTemplate.fromTemplate(`
 <instructions>
-You are an expert Semantic analyser, you will be given a prompt and a list of past prompts that were successfully processed, and you need to return the most relevant prompt from the list and in which of the following ways is it relevant - 
+You are an expert Semantic analyser, you will be given a prompt from the user and a list of past prompts that were handled successfully, along with description of the sql generated from those prompts.
+You need to return the most relevant prompt from the list and in which of the following ways is it relevant - 
 - return '${CacheResults.AsIs}' if the prompt's result would contain the information the user is looking for without any changes in the result, and can be used as it is.
 - return '${CacheResults.Similar}' if the prompt's result would be similar to the question in the new prompt but not exactly, and can be modified to get the data user needs.
 - return '${CacheResults.NotRelevant}' if the prompt is not relevant to the new prompt at all.
 Remember that if the cached prompt has extra information, then still the old prompt could be considered exactly same as long as it does not contradict the new prompt.
 </instructions>
-<user-question>
+<user-prompt>
 {prompt}
-</user-question>
+</user-prompt>
 <queries>
 {queries}
 </queries>
@@ -81,7 +82,7 @@ If no queries are relevant, return '${CacheResults.NotRelevant}' and nothing els
         queries: relevantDocs
           .map(
             (doc, index) =>
-              `<query-${index + 1}>\n${doc.pageContent}\n</query-${index + 1}>`,
+              `<query-${index + 1}>\n<prompt>\n${doc.pageContent}\n</prompt>\n<description>${doc.metadata.description}</description></query-${index + 1}>`,
           )
           .join('\n'),
         prompt: state.prompt,

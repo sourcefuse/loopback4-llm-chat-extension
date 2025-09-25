@@ -54,21 +54,21 @@ export class DataSetHelper {
     // clear from cache and re-add if likes > 0
     await this.vectorStore.delete({
       filter: {
-        metadata: {
-          datasetId: id,
-          tenantId: dataset.tenantId,
-        },
+        datasetId: id,
+        tenantId: dataset.tenantId,
       },
     });
     if (dataset.votes > 0) {
       await this.vectorStore.addDocuments([
         {
-          pageContent: dataset.description,
+          pageContent: dataset.prompt,
           metadata: {
             datasetId: id,
             votes: dataset.votes,
+            description: dataset.description,
             type: DbQueryStoredTypes.DataSet,
             tenantId: dataset.tenantId,
+            query: dataset.query,
           },
         },
       ]);
