@@ -189,7 +189,10 @@ export async function seedDataset(appInstance: TestApp) {
   });
 }
 
-export function buildToken(permissions: string[], userTenantId = 'default') {
+export function buildToken(
+  permissions: string[],
+  userTenantId = 'default-user-id',
+) {
   return sign(
     {
       id: 'test-user',
@@ -248,7 +251,8 @@ export async function getRepo(app: Application, repo: string) {
   const ctx = new Context(app);
   ctx.bind(AuthenticationBindings.CURRENT_USER).to({
     id: 'test-user',
-    userTenantId: 'default',
+    userTenantId: 'default-user-id',
+    role: 'admin',
   } as unknown as IAuthUserWithPermissions);
   return ctx.get<DataSetRepository>(`repositories.${DataSetRepository.name}`);
 }

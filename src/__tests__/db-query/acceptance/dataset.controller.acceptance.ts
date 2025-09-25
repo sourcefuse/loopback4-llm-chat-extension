@@ -160,9 +160,13 @@ describe('DatasetController', () => {
         .send(updatedData)
         .expect(204);
 
-      const dataset = await repo.findById(dummyDataset.id, {
-        include: ['actions'],
-      });
+      const dataset = await repo.findById(
+        dummyDataset.id,
+        {
+          include: ['actions'],
+        },
+        {skipUserFilter: true},
+      );
       expect(dataset).to.have.property('votes', 1);
       expect(dataset.actions).to.be.Array();
       expect(dataset.actions).to.have.length(1);
@@ -270,7 +274,7 @@ describe('DatasetController', () => {
         .send(updatedData)
         .expect(400);
     });
-    it('should should increment votes for different user', async () => {
+    it('should increment votes for different user', async () => {
       await client
         .patch(`/datasets/${dummyDataset.id}`)
         .set(
@@ -288,14 +292,18 @@ describe('DatasetController', () => {
         )
         .send({liked: true})
         .expect(204);
-      const dataset = await repo.findById(dummyDataset.id, {
-        include: ['actions'],
-      });
+      const dataset = await repo.findById(
+        dummyDataset.id,
+        {
+          include: ['actions'],
+        },
+        {skipUserFilter: true},
+      );
       expect(dataset).to.have.property('votes', 2);
       expect(dataset.actions).to.be.Array();
       expect(dataset.actions).to.have.length(2);
     });
-    it('should should cancel votes for different user', async () => {
+    it('should cancel votes for different users', async () => {
       await client
         .patch(`/datasets/${dummyDataset.id}`)
         .set(
@@ -313,14 +321,18 @@ describe('DatasetController', () => {
         )
         .send({liked: false, comment: 'Not good'})
         .expect(204);
-      const dataset = await repo.findById(dummyDataset.id, {
-        include: ['actions'],
-      });
+      const dataset = await repo.findById(
+        dummyDataset.id,
+        {
+          include: ['actions'],
+        },
+        {skipUserFilter: true},
+      );
       expect(dataset).to.have.property('votes', 0);
       expect(dataset.actions).to.be.Array();
       expect(dataset.actions).to.have.length(2);
     });
-    it('should handle muliple dislikes only', async () => {
+    it('should handle muliple dislikes from different users', async () => {
       await client
         .patch(`/datasets/${dummyDataset.id}`)
         .set(
@@ -338,9 +350,13 @@ describe('DatasetController', () => {
         )
         .send({liked: false, comment: 'Not good'})
         .expect(204);
-      const dataset = await repo.findById(dummyDataset.id, {
-        include: ['actions'],
-      });
+      const dataset = await repo.findById(
+        dummyDataset.id,
+        {
+          include: ['actions'],
+        },
+        {skipUserFilter: true},
+      );
       expect(dataset).to.have.property('votes', -2);
       expect(dataset.actions).to.be.Array();
       expect(dataset.actions).to.have.length(2);
@@ -396,7 +412,7 @@ describe('DatasetController', () => {
     const ctx = new Context(appInstance);
     ctx.bind(AuthenticationBindings.CURRENT_USER).to({
       id: 'test-user',
-      userTenantId: 'default',
+      userTenantId: 'default-user-id',
     } as unknown as IAuthUserWithPermissions);
     const dsrepo = await ctx.get<DataSetRepository>(
       `repositories.${DataSetRepository.name}`,

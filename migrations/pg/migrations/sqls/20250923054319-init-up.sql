@@ -99,3 +99,5 @@ create trigger mdt_chats before
 update
     on
     chatbot.chats for each row execute function chatbot.moddatetime('modified_on');
+
+CREATE UNIQUE INDEX unique_user_action ON chatbot.dataset_actions(user_id, dataset_id);

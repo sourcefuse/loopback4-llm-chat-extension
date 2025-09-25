@@ -28,9 +28,12 @@ export class DatasetActionRepository extends DefaultTransactionalRepository<
     options?: Options,
   ): Promise<DatasetAction[]> {
     const user = await this.getCurrentUser();
+    if (options?.skipUserFilter === true) {
+      return super.find(filter, options);
+    }
     filter = filter ?? {};
     filter.where = {
-      and: [filter.where ?? {}, {userId: user.tenantId}],
+      and: [filter.where ?? {}, {userId: user.userTenantId}],
     };
     return super.find(filter, options);
   }
