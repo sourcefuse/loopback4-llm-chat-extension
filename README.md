@@ -355,3 +355,112 @@ export class AddTool implements IGraphTool {
   }
 }
 ```
+
+# Testing
+
+## Generation Acceptance Builder
+
+The `generation.acceptance.builder.ts` file provides a utility to run acceptance tests for the `llm-chat-component`. These tests validate the functionality of the `/reply` endpoint and ensure that the generated SQL queries and their results align with expectations.
+
+## Overview
+
+This builder facilitates the execution of multiple test cases, each defined with specific prompts, expected results, and configurations. It also generates detailed reports to analyze the performance and correctness of the tests.
+
+## Key Features
+
+- **Dynamic Prompt Parsing**: Replaces placeholders in prompts with environment-specific values.
+- **Token Generation**: Creates JWT tokens with required permissions for test execution.
+- **Query Execution**: Executes the generated SQL queries and compares the results with expected outputs.
+- **Detailed Reporting**: Generates markdown reports with metrics such as success rates, token usage, and execution times.
+
+## Usage
+
+### Importing the Builder
+
+```typescript
+import {generationAcceptanceBuilder} from './generation.acceptance.builder';
+```
+
+### Running Tests
+
+To use the builder, define your test cases as an array of `GenerationAcceptanceTestCase` objects and pass them to the `generationAcceptanceBuilder` function along with the required parameters.
+
+#### Example
+
+```typescript
+const testCases = [
+  {
+    case: 'Test Case 1',
+    prompt: 'Find all the active resources',
+    outputInstructions:
+      'The output should have a single column `resource_name` arranged in alphabetical order.',
+    resultQuery:
+      'SELECT name as resource_name FROM resource WHERE status = 1 ORDER BY name',
+    count: 1,
+  },
+];
+
+const result = await generationAcceptanceBuilder(
+  testCases,
+  client,
+  app,
+  1,
+  true,
+);
+console.log(result);
+```
+
+### Parameters
+
+- `cases`: An array of test cases to execute.
+- `client`: The LoopBack test client.
+- `app`: The LoopBack application instance.
+- `countPerPrompt`: Number of iterations per test case (default: 1).
+- `writeReport`: Whether to generate a markdown report (default: false).
+
+### Test Case Structure
+
+Each test case should follow the `GenerationAcceptanceTestCase` interface:
+
+```typescript
+interface GenerationAcceptanceTestCase {
+  case: string; // Name of the test case
+  prompt: string; // Prompt to send to the LLM
+  outputInstructions: string; // Additional instructions for the output
+  resultQuery: string; // Expected SQL query
+  count?: number; // Number of iterations (optional)
+  only?: boolean; // Run only this test case (optional)
+  skip?: boolean; // Skip this test case (optional)
+}
+```
+
+## Report Generation
+
+The builder generates a markdown report summarizing the test results. The report includes:
+
+- Success metrics
+- Time metrics
+- Token usage metrics
+- Detailed results for each test case
+- Failed queries with actual and expected results
+
+The report is saved in the `llm-reports` directory with a filename based on the model name.
+
+## Environment Variables
+
+The builder relies on the following environment variables:
+
+- `SAMPLE_DEAL_NAME`: Default value for `<testDeal>` placeholder.
+- `TEST_TENANT_ID`: Tenant ID for token generation.
+- `JWT_SECRET`: Secret key for signing JWT tokens.
+- `JWT_ISSUER`: Issuer for JWT tokens.
+
+## Dependencies
+
+- `@loopback/testlab`
+- `@loopback/core`
+- `@loopback/repository`
+- `@sourceloop/core`
+- `jsonwebtoken`
+- `crypto`
+- `fs`

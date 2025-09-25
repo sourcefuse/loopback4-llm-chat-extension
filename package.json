@@ -46,8 +46,8 @@
       "default": "./dist/sub-modules/providers/pg/index.js"
     },
     "./db-query/testing": {
-      "type": "./dist/sub-modules/providers/db-query/testing/index.d.ts",
-      "default": "./dist/sub-modules/providers/db-query/testing/index.js"
+      "type": "./dist/components/db-query/testing/index.d.ts",
+      "default": "./dist/components/db-query/testing/index.js"
     }
   },
   "typesVersions": {
@@ -77,7 +77,7 @@
         "dist/sub-modules/providers/pg/index.d.ts"
       ],
       "db-query/testing": [
-        "dist/sub-modules/providers/db-query/testing/index.d.ts"
+        "dist/components/db-query/testing/index.d.ts"
       ]
     }
   },
