@@ -1,5 +1,7 @@
+import {PromptTemplate} from '@langchain/core/prompts';
+import {RunnableSequence} from '@langchain/core/runnables';
 import {LangGraphRunnableConfig} from '@langchain/langgraph';
-import {inject} from '@loopback/core';
+import {inject, service} from '@loopback/core';
 import {HttpErrors} from '@loopback/rest';
 import {IAuthUserWithPermissions} from '@sourceloop/core';
 import {createHash} from 'crypto';
@@ -8,12 +10,14 @@ import {graphNode} from '../../../decorators';
 import {IGraphNode, LLMStreamEventType, ToolStatus} from '../../../graphs';
 import {AiIntegrationBindings} from '../../../keys';
 import {LLMProvider} from '../../../types';
+import {stripThinkingTokens} from '../../../utils';
 import {DbQueryAIExtensionBindings} from '../keys';
 import {DbQueryNodes} from '../nodes.enum';
 import {DbQueryState} from '../state';
 import {DatabaseSchema, DbQueryConfig, IDataSetStore} from '../types';
 import {DEFAULT_MAX_READ_ROWS_FOR_AI} from '../constant';
 import {AnyObject} from '@loopback/repository';
+import {DbSchemaHelperService} from '../services';
 
 @graphNode(DbQueryNodes.SaveDataset)
 export class SaveDataSetNode implements IGraphNode<DbQueryState> {
@@ -26,7 +30,23 @@ export class SaveDataSetNode implements IGraphNode<DbQueryState> {
     private readonly config: DbQueryConfig,
     @inject(AuthenticationBindings.CURRENT_USER)
     private readonly user: IAuthUserWithPermissions,
+    @service(DbSchemaHelperService)
+    private readonly dbSchemaHelper: DbSchemaHelperService,
+    @inject(DbQueryAIExtensionBindings.GlobalContext, {optional: true})
+    private readonly checks?: string[],
   ) {}
+
+  prompt =
+    PromptTemplate.fromTemplate(`You are an AI assitant that generates a short description of a query based on a given schema, providing a summary of the query's intent and user's demand in a way that is short but does not miss any importance detail.
+
+  Here is the query that you need to describe - {query}
+
+  And here is the schema that was used to generate the query -
+  {schema}
+
+
+  {checks}
+  The output should be a valid description of the query that is easy to understand by the user in plain text, without any formatting`);
 
   async execute(
     state: DbQueryState,
@@ -44,8 +64,20 @@ export class SaveDataSetNode implements IGraphNode<DbQueryState> {
     if (!state.sql) {
       throw new HttpErrors.InternalServerError();
     }
+
     if (!state.description) {
-      throw new HttpErrors.InternalServerError();
+      const chain = RunnableSequence.from([this.prompt, this.llm]);
+
+      const output = await chain.invoke({
+        checks: [
+          'You must keep these additional details in consideration while describing the query -',
+          ...(this.checks ?? []),
+        ].join('\n'),
+        query: state.sql,
+        schema: this.dbSchemaHelper.asString(state.schema),
+      });
+
+      state.description = stripThinkingTokens(output);
     }
 
     const dataset = await this.store.create({
@@ -56,11 +88,6 @@ export class SaveDataSetNode implements IGraphNode<DbQueryState> {
       tables: this._getTableList(state.schema),
       schemaHash: this._hashSchema(state.schema),
       votes: 0,
-    });
-
-    config.writer?.({
-      type: LLMStreamEventType.Log,
-      data: `Dataset saved with id ${dataset.id}`,
     });
 
     config.writer?.({

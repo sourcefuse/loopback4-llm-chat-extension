@@ -1,8 +1,14 @@
 import {HttpErrors} from '@loopback/rest';
-import {expect, sinon} from '@loopback/testlab';
+import {
+  createStubInstance,
+  expect,
+  sinon,
+  StubbedInstanceWithSinonAccessor,
+} from '@loopback/testlab';
 import {IAuthUserWithPermissions} from '@sourceloop/core';
 import {
   DbQueryState,
+  DbSchemaHelperService,
   IDataSetStore,
   SaveDataSetNode,
 } from '../../../../components';
@@ -14,16 +20,24 @@ describe('SaveDataSetNode Unit', function () {
   let node: SaveDataSetNode;
   let llmStub: sinon.SinonStub;
   let store: sinon.SinonStubbedInstance<IDataSetStore>;
+  let helper: StubbedInstanceWithSinonAccessor<DbSchemaHelperService>;
 
   beforeEach(() => {
     llmStub = sinon.stub();
     const llm = llmStub as unknown as LLMProvider;
     store = buildDatasetStoreStub();
-    node = new SaveDataSetNode(llm, store, {models: []}, {
-      tenantId: 'test-tenant',
-      userTenantId: 'test-tenant',
-      permissions: ['1'],
-    } as IAuthUserWithPermissions);
+    helper = createStubInstance(DbSchemaHelperService);
+    node = new SaveDataSetNode(
+      llm,
+      store,
+      {models: []},
+      {
+        tenantId: 'test-tenant',
+        userTenantId: 'test-tenant',
+        permissions: ['1'],
+      } as IAuthUserWithPermissions,
+      helper,
+    );
   });
 
   it('should return state with dataset id', async () => {
@@ -63,6 +77,7 @@ describe('SaveDataSetNode Unit', function () {
         userTenantId: 'test-tenant',
         permissions: ['1'],
       } as IAuthUserWithPermissions,
+      helper,
     );
     llmStub.resolves({
       content: 'dataset desc',
@@ -95,10 +110,16 @@ describe('SaveDataSetNode Unit', function () {
 
   it('should throw error if user does not have tenantId', async () => {
     const llm = llmStub as unknown as LLMProvider;
-    node = new SaveDataSetNode(llm, store, {models: []}, {
-      userTenantId: 'test-tenant',
-      permissions: ['1'],
-    } as IAuthUserWithPermissions);
+    node = new SaveDataSetNode(
+      llm,
+      store,
+      {models: []},
+      {
+        userTenantId: 'test-tenant',
+        permissions: ['1'],
+      } as IAuthUserWithPermissions,
+      helper,
+    );
     await expect(
       node.execute(
         {
@@ -118,11 +139,17 @@ describe('SaveDataSetNode Unit', function () {
 
   it('should throw error if sql is not present in state', async () => {
     const llm = llmStub as unknown as LLMProvider;
-    node = new SaveDataSetNode(llm, store, {models: []}, {
-      tenantId: 'test-tenant',
-      userTenantId: 'test-tenant',
-      permissions: ['1'],
-    } as IAuthUserWithPermissions);
+    node = new SaveDataSetNode(
+      llm,
+      store,
+      {models: []},
+      {
+        tenantId: 'test-tenant',
+        userTenantId: 'test-tenant',
+        permissions: ['1'],
+      } as IAuthUserWithPermissions,
+      helper,
+    );
     await expect(
       node.execute(
         {

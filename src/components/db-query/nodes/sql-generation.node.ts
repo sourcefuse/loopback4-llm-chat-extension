@@ -45,11 +45,14 @@ Adhere to these rules:
 {feedbacks}
 </context>
 <output-instructions>
-Return the output in the following format with exactly 2 parts within opening and closing tags - 
+{outputFormat}
+</output-instructions>`);
+
+  outputWithDescriptionPrompt = `Return the output in the following format with exactly 2 parts within opening and closing tags - 
 <sql>
 Contains the required valid SQL satisfying all the constraints
 It should have no other character or symbol or character that is not part of SQLs.
-Every single line of SQL should have a comment above it explaining the purpose of that line
+Every single line of SQL should have a comment above it explaining the purpose of that line.
 </sql>
 <description>
 A very detailed but non-technical description of the SQL describing every single condition and concept used in the SQL statement. DO NOT OMMIT ANY DETAIL.
@@ -57,8 +60,13 @@ It should just be a plain english text with no other special formatting or speci
 It should NOT use any technical jargon or database specific terminology like tables or columns.
 Try to keep it short and to the point while not omitting any detail.
 Do not use any DB concepts like enum numbers, joins, CTEs, subqueries etc. in the description.
-</description>
-</output-instructions>`);
+</description>`;
+
+  outputWithoutDescription = `
+Output should only be a valid SQL query with no other special character or formatting.
+Contains the required valid SQL satisfying all the constraints.
+It should have no other character or symbol or character that is not part of SQLs.
+Every single line of SQL should have a comment above it explaining the purpose of that line.`;
 
   feedbackPrompt = PromptTemplate.fromTemplate(`
 <feedback-instructions>
@@ -105,6 +113,9 @@ In the last attempt, you generated this SQL query -
       },
     });
 
+    const generateDesc =
+      this.config.nodes?.sqlGenerationWithDescription !== false;
+
     const output = await chain.invoke({
       dialect: this.config.db?.dialect ?? SupportedDBs.PostgreSQL,
       question: state.prompt,
@@ -122,16 +133,31 @@ In the last attempt, you generated this SQL query -
       exampleQueries: state.feedbacks?.length
         ? ''
         : await this.sampleQueries(state),
+      outputFormat: generateDesc
+        ? this.outputWithDescriptionPrompt
+        : this.outputWithoutDescription,
     });
     const response = stripThinkingTokens(output);
 
-    const sqlMatch = response.match(/<sql>(.*?)<\/sql>/s);
-    const descMatch = response.match(/<description>(.*?)<\/description>/s);
+    let sql: string | undefined = '';
+    let description: undefined | string = undefined;
 
-    const description = descMatch ? descMatch[1] : '';
-    const sql = sqlMatch ? sqlMatch[1] : null;
+    if (generateDesc) {
+      const sqlMatch = response.match(/<sql>(.*?)<\/sql>/s);
+      const descMatch = response.match(/<description>(.*?)<\/description>/s);
 
-    if (!sql || !description) {
+      description = descMatch ? descMatch[1] : undefined;
+      sql = sqlMatch ? sqlMatch[1] : undefined;
+
+      config.writer?.({
+        type: LLMStreamEventType.Log,
+        data: `SQL query description: ${description}`,
+      });
+    } else {
+      sql = response.trim();
+    }
+
+    if (!sql) {
       config.writer?.({
         type: LLMStreamEventType.Log,
         data: `SQL generation failed: ${response}`,
@@ -145,27 +171,8 @@ In the last attempt, you generated this SQL query -
     }
 
     config.writer?.({
-      type: LLMStreamEventType.ToolStatus,
-      data: {
-        status: 'SQL query generated successfully',
-      },
-    });
-
-    config.writer?.({
-      type: LLMStreamEventType.ToolStatus,
-      data: {
-        status: 'DESCRIPTION: ' + description,
-      },
-    });
-
-    config.writer?.({
       type: LLMStreamEventType.Log,
       data: `Generated SQL query: ${sql}`,
-    });
-
-    config.writer?.({
-      type: LLMStreamEventType.Log,
-      data: `SQL query description: ${description}`,
     });
 
     return {

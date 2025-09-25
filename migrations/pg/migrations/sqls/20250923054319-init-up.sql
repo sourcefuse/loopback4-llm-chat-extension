@@ -12,6 +12,7 @@ CREATE TABLE chatbot.chats (
 	title varchar(200) NOT NULL,
 	input_tokens int4 DEFAULT 0 NOT NULL,
 	output_tokens int4 DEFAULT 0 NOT NULL,
+    metadata jsonb NOT NULL,
 	created_by uuid NULL,
 	created_on timestamptz DEFAULT CURRENT_TIMESTAMP NOT NULL,
 	deleted bool DEFAULT false NOT NULL,

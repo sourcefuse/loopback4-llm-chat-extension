@@ -112,6 +112,9 @@ export type DbQueryConfig = {
     // max cluster size
     maxClusterSize?: number;
   };
+  nodes?: {
+    sqlGenerationWithDescription?: boolean;
+  };
   columnSelection?: boolean;
 };
 

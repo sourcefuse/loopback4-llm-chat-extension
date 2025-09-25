@@ -133,7 +133,7 @@ Return the output in the following format with exactly 2 parts within opening an
 <sql>
 Contains the required valid SQL satisfying all the constraints
 It should have no other character or symbol or character that is not part of SQLs.
-Every single line of SQL should have a comment above it explaining the purpose of that line
+Every single line of SQL should have a comment above it explaining the purpose of that line.
 </sql>
 <description>
 A very detailed but non-technical description of the SQL describing every single condition and concept used in the SQL statement. DO NOT OMMIT ANY DETAIL.
@@ -240,7 +240,7 @@ Return the output in the following format with exactly 2 parts within opening an
 <sql>
 Contains the required valid SQL satisfying all the constraints
 It should have no other character or symbol or character that is not part of SQLs.
-Every single line of SQL should have a comment above it explaining the purpose of that line
+Every single line of SQL should have a comment above it explaining the purpose of that line.
 </sql>
 <description>
 A very detailed but non-technical description of the SQL describing every single condition and concept used in the SQL statement. DO NOT OMMIT ANY DETAIL.
@@ -355,7 +355,7 @@ Return the output in the following format with exactly 2 parts within opening an
 <sql>
 Contains the required valid SQL satisfying all the constraints
 It should have no other character or symbol or character that is not part of SQLs.
-Every single line of SQL should have a comment above it explaining the purpose of that line
+Every single line of SQL should have a comment above it explaining the purpose of that line.
 </sql>
 <description>
 A very detailed but non-technical description of the SQL describing every single condition and concept used in the SQL statement. DO NOT OMMIT ANY DETAIL.
