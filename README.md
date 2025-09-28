@@ -1,4 +1,4 @@
-# LLM Chat Component
+# A Loopback4 LLM Chat Extension 
 
 A Loopack4 based component to integrate a basic Langgraph.js based endpoint in your application which can use any tool that you register using the provided decorator.
 
