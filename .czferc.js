@@ -25,6 +25,7 @@ const types = [
 
 const scopes = [
   {name: 'chore'},
+  {name: 'docs'},
   {name: 'component'},
   {name: 'tools'},
   {name: 'types'},
