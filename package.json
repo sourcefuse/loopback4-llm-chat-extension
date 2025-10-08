@@ -1,5 +1,5 @@
 {
-  "name": "lb4-llm-chat-component",
+  "name": "lb4-llm-chat-component.",
   "version": "1.11.0",
   "description": "Package to integrate LLM based capabilities into any loopback4 application",
   "keywords": [
