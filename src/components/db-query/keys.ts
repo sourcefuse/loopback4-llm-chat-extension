@@ -42,3 +42,5 @@ export namespace DatasetServiceBindings {
     'services.ai-integration.dataset.service.config',
   );
 }
+
+export const POST_DATASET_TAG = `ai-integration.post-dataset-generation.node`;
