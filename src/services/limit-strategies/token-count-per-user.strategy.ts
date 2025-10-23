@@ -33,11 +33,14 @@ export class TokenCountPerUserStrategy implements ILimitStrategy {
         ?.find(p => p.startsWith('TokenUsage:'))
         ?.split(':')[1] ?? '';
     if (tokenUsageLimitStr === 'unlimited') return;
-    const tokenUsageLimit = parseInt(tokenUsageLimitStr, 10);
+    let tokenUsageLimit = parseInt(tokenUsageLimitStr, 10);
     if (isNaN(tokenUsageLimit)) {
-      throw new HttpErrors.Forbidden(
-        `User does not have permission to use tokens.`,
-      );
+      if (!config.tokenLimit) {
+        throw new HttpErrors.Forbidden(
+          'User does not have permission to use tokens.',
+        );
+      }
+      tokenUsageLimit = config.tokenLimit;
     }
     const chats = await this.chatRepo.find({
       where: {

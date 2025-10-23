@@ -55,7 +55,7 @@ export class GenerateQueryTool implements IGraphTool {
       name: this.key,
       description: `Query tool for generating SQL queries for a users request. Use it to find data from the database based on the user's request.
                 Note that it does not return the query, instead only a dataset ID that is not relevant to the user. 
-                It internally fires an event that renders the dataset on the UI for the user to see.`,
+                It internally fires an event that renders a grid for the dataset on the UI for the user to see.`,
       schema,
     });
   }

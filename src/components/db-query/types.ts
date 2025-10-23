@@ -114,6 +114,7 @@ export type DbQueryConfig = {
   };
   nodes?: {
     sqlGenerationWithDescription?: boolean;
+    renderNode?: boolean;
   };
   columnSelection?: boolean;
 };
