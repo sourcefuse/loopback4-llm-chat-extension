@@ -14,7 +14,7 @@ export class OpenAI implements Provider<LLMProvider> {
     return OpenAI.createInstance({
       model: process.env.OPENAI_MODEL!,
       config: {
-        temperature: parseFloat(process.env.OPENAI_TEMPERATURE ?? '0'),
+        temperature: Number.parseFloat(process.env.OPENAI_TEMPERATURE ?? '0'),
         configuration: {
           baseURL: process.env.OPENAI_API_BASE_URL,
         },
