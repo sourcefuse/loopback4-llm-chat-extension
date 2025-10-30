@@ -16,6 +16,7 @@ import {
 } from './nodes';
 import {GenerateVisualizationTool} from './tools/generate-visualization.tool';
 import {PieVisualizer, BarVisualizer, LineVisualizer} from './visualizers';
+import {GetVisualizationContextTool} from './tools';
 
 export class VisualizerComponent implements Component {
   services: ServiceOrProviderClass[] | undefined;
@@ -35,6 +36,7 @@ export class VisualizerComponent implements Component {
       VisualizationGraph,
       // tools
       GenerateVisualizationTool,
+      GetVisualizationContextTool,
       // nodes
       GetDatasetDataNode,
       SelectVisualizationNode,

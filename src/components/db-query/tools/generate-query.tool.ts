@@ -48,7 +48,7 @@ export class GenerateQueryTool implements IGraphTool {
       prompt: z
         .string()
         .describe(
-          `Prompt from the user that will be used for generating the query. This should be exactly as the user asked without any assumptions.`,
+          `Prompt from the user that will be used for generating the query.`,
         ),
     }) as AnyObject[string];
     return graph.asTool({

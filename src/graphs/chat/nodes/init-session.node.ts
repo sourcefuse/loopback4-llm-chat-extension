@@ -50,6 +50,7 @@ export class InitSessionNode implements IGraphNode<ChatState> {
           If you are not sure about the result, you can ask the user to review the result and provide feedback.
           Only use a single tool in a single message, but you can use multiple tools over subsequent messages if it could help with the user's requirements.
           If the user provides feedback, you can use that feedback to improve the result.
+          Do not write any redundant messages before or after tool calls, be as concise as possible.
           Do not hallucinate details or make up information.
           Do not make assumptions about user's intent beyond what is explicitly provided in the prompt, and keep this in mind while calling tools.
           Do not use technical jargon in the response, show any internal IDs, or implementation details to the user.`,

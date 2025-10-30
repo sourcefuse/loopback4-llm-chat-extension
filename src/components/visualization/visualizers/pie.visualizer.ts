@@ -33,6 +33,9 @@ You are an expert data visualization assistant. Your task is to create a pie cha
 </user-prompt>
 </inputs>`);
 
+  context?: string | undefined =
+    `A pie chart requires data with at least two columns: one for the labels (categories) and one for the values (numerical data). Ensure that the values are non-negative and represent parts of a whole, as pie charts are used to visualize proportions and percentages among different categories.`;
+
   schema = z.object({
     labelColumn: z
       .string()

@@ -33,6 +33,9 @@ You are an expert data visualization assistant. Your task is to create a bar cha
 </user-prompt>
 </inputs>`);
 
+  context?: string | undefined =
+    `A bar chart requires data with at least two columns: one for the categories (x-axis) and one for the values (y-axis). Ensure that the category column contains discrete values representing different groups or categories, while the value column contains numerical data that can be compared across these categories. Bar charts can be oriented either vertically or horizontally depending on the data representation needs.`;
+
   schema = z.object({
     categoryColumn: z
       .string()

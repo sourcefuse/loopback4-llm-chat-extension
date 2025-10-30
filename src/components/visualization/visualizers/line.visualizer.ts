@@ -12,13 +12,17 @@ import {visualizer} from '../decorators/visualizer.decorator';
 @visualizer()
 export class LineVisualizer implements IVisualizer {
   name = 'line';
+
+  context?: string | undefined =
+    `A line chart requires data with at least two columns: one for the x-axis (typically time or sequential data) and one for the y-axis (values). Optionally, a third list of columns can be used to differentiate multiple series (lines) in the chart, this is usually the field to group the data on. Ensure that the x-axis data is continuous and ordered to accurately represent trends over time.`;
+
   description = `Renders the data in a line chart format. Best for showing trends and changes over time or continuous data.`;
   renderPrompt = PromptTemplate.fromTemplate(`
 <instructions>
 You are an expert data visualization assistant. Your task is to create a line chart config based on the provided SQL query, it's description and user prompt. Follow these steps:
 1. Analyze the SQL query results to understand the data structure.
 2. Identify the x-axis column (typically time or sequential data) and y-axis column (values) for the line chart.
-3. Determine if there are multiple series to be plotted (multiple lines).
+3. Determine if there are multiple series to be plotted (multiple lines) with combination of multiple columns, or single series based on single column.
 4. Create a configuration object for the line chart using the identified columns.
 5. Return the line chart configuration object.
 </instructions>
@@ -38,15 +42,17 @@ You are an expert data visualization assistant. Your task is to create a line ch
     xAxisColumn: z
       .string()
       .describe(
-        'Column to be used for x-axis in the line chart (typically time or sequential data)',
+        'Single column name to be used for x-axis in the line chart (typically time or sequential data)',
       ),
     yAxisColumn: z
       .string()
-      .describe('Column to be used for y-axis values in the line chart'),
-    seriesColumn: z
+      .describe(
+        'Single column name to be used for y-axis values in the line chart',
+      ),
+    seriesColumns: z
       .string()
       .describe(
-        'Optional column to group data into multiple lines/series, leave it as empty string if not needed',
+        'Optional column to group data into multiple lines/series, leave it as empty string if not needed. It can cover multiple columns separated by comma if the query needs to show multiple lines based on multiple columns. The UI supports multiple series in line chart by forming a combined key.',
       ),
   }) as z.AnyZodObject;
 
@@ -73,8 +79,15 @@ You are an expert data visualization assistant. Your task is to create a line ch
       description: state.queryDescription!,
       userPrompt: state.prompt!,
     });
-    if (settings.seriesColumn === '' || settings.seriesColumn === undefined) {
-      settings.seriesColumn = null;
+    if (
+      settings.seriesColumns === '' ||
+      settings.seriesColumns === undefined ||
+      settings.seriesColumns === null
+    ) {
+      settings.seriesColumns = null;
+    } else {
+      settings.seriesColumns =
+        settings.seriesColumns?.split(',').map((s: string) => s.trim()) ?? [];
     }
     return settings;
   }

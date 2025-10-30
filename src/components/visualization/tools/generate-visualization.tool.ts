@@ -24,7 +24,11 @@ export class GenerateVisualizationTool implements IGraphTool {
     if (result.error) {
       return `Visualization could not be generated. Reason: ${result.error}`;
     }
-    return `Visualization rendered for the user.`;
+    return `Visualization rendered for the user with the following config: ${JSON.stringify(
+      result.visualizerConfig,
+      undefined,
+      2,
+    )}`;
   }
 
   getMetadata(result: Record<string, string>): AnyObject {
