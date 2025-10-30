@@ -51,7 +51,7 @@ export class ImproveQueryTool implements IGraphTool {
       prompt: z
         .string()
         .describe(
-          `A single prompt that describes the user's requirement for the query considering all the feedbacks and past attempts at query generation.`,
+          `A prompt that describes what needs to be improved in the existing query.`,
         ),
     }) as AnyObject[string];
     return graph.asTool({

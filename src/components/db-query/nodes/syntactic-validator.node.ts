@@ -32,6 +32,7 @@ export class SyntacticValidatorNode implements IGraphNode<DbQueryState> {
   and here is the query that resulted in the error -
   {query}
 
+  Any error that indicates a table or column is missing should be categorized as table_not_found, all other errors should be categorized as query_error.
   Return only one of these two options as a string, without any additional text or comments.
   `);
 
