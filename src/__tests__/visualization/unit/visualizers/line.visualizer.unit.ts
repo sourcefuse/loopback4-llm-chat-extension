@@ -38,7 +38,7 @@ describe('LineVisualizer Unit', function () {
     const validData = {
       xAxisColumn: 'date',
       yAxisColumn: 'value',
-      seriesColumn: 'category',
+      seriesColumns: 'category',
     };
 
     const result = schema.safeParse(validData);
@@ -54,7 +54,7 @@ describe('LineVisualizer Unit', function () {
     const dataWithNullSeries = {
       xAxisColumn: 'date',
       yAxisColumn: 'value',
-      seriesColumn: '',
+      seriesColumns: '',
     };
 
     const result = schema.safeParse(dataWithNullSeries);
@@ -143,7 +143,7 @@ describe('LineVisualizer Unit', function () {
     const mockLLMResponse = {
       xAxisColumn: 'month',
       yAxisColumn: 'revenue',
-      seriesColumn: 'product_line',
+      seriesColumns: 'product_line',
     };
 
     const mockInvoke = sinon.stub().resolves(mockLLMResponse);
@@ -181,7 +181,7 @@ describe('LineVisualizer Unit', function () {
     const mockLLMResponse = {
       xAxisColumn: 'month',
       yAxisColumn: 'total_sales',
-      seriesColumn: null,
+      seriesColumns: null,
     };
 
     const mockInvoke = sinon.stub().resolves(mockLLMResponse);
@@ -197,7 +197,7 @@ describe('LineVisualizer Unit', function () {
     const config = await visualizer.getConfig(validState);
 
     expect(config).to.deepEqual(mockLLMResponse);
-    expect(config.seriesColumn).to.be.null();
+    expect(config.seriesColumns).to.be.null();
   });
 
   it('should handle LLM errors gracefully', async () => {

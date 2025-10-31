@@ -78,8 +78,9 @@ describe('GetTablesNode Unit', function () {
     expect(llmStub.getCalls()[0].args[0].value.trim()).equal(
       `<instructions>
 You are an AI assistant that extracts table names that are relevant to the users query that will be used to generate an SQL query later.
-- Ensure that table names are exact and match the names in the input including schema if given.
-- Use only and only the tables that are relevant to the query.
+- Consider not just the user query but also the context and the table descriptions while selecting the tables.
+- Carefully consider each and every table before including or excluding it.
+- If doubtful about a table's relevance, include it anyway to give the SQL generation step more options to choose from.
 - Assume that the table would have appropriate columns for relating them to any other table even if the description does not mention it.
 - If you are not sure about the tables to select from the given schema, just return your doubt asking the user for more details or to rephrase the question in the following format -
 failed attempt: reason for failure
@@ -96,14 +97,15 @@ Get me the employee with name Akshat
 </user-question>
 
 <must-follow-rules>
-test context
-employee salary must be converted to USD, using the currency_id column and the exchange rate table
+- test context
+- employee salary must be converted to USD, using the currency_id column and the exchange rate table
 </must-follow-rules>
 
 
 
 <output-format>
 The output should be just a comma separated list of table names with no other text, comments or formatting.
+Ensure that table names are exact and match the names in the input including schema if given.
 <example-output>
 public.employees, public.departments
 </example-output>

@@ -32,7 +32,6 @@ export class GetTablesNode implements IGraphNode<DbQueryState> {
   prompt = PromptTemplate.fromTemplate(`
 <instructions>
 You are an AI assistant that extracts table names that are relevant to the users query that will be used to generate an SQL query later.
-
 - Consider not just the user query but also the context and the table descriptions while selecting the tables.
 - Carefully consider each and every table before including or excluding it.
 - If doubtful about a table's relevance, include it anyway to give the SQL generation step more options to choose from.
