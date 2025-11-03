@@ -14,7 +14,7 @@ jobs:
           # fetch-depth is necessary to get all tags
           # otherwise lerna can't detect the changes and will end up bumping the versions for all packages
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.RELEASE_COMMIT_GH_PAT }}
           persist-credentials: false
       - name: Setup Node
         uses: actions/setup-node@v3
@@ -26,8 +26,9 @@ jobs:
         run: |
           git config --global user.name $CONFIG_USERNAME
           git config --global user.email $CONFIG_EMAIL
-          git remote set-url origin https://$GITHUB_ACTOR@github.com/sourcefuse/llm-chat-component
+          git remote set-url origin https://$GITHUB_ACTOR:$GITHUB_PAT@github.com/sourcefuse/llm-chat-component
         env:
+          GITHUB_PAT: ${{ secrets.RELEASE_COMMIT_GH_PAT }}
           CONFIG_USERNAME: ${{ vars.RELEASE_COMMIT_USERNAME }}
           CONFIG_EMAIL: ${{ vars.RELEASE_COMMIT_EMAIL }}
 
@@ -41,5 +42,5 @@ jobs:
           npm config set provenance true
           npx semantic-release
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.RELEASE_COMMIT_GH_PAT }}
           HUSKY: 0
