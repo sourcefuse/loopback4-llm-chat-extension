@@ -18,10 +18,9 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v3
         with:
-        with:
           node-version: '22'
           registry-url: 'https://registry.npmjs.org'
-          always-auth: false  # important for trusted publishing
+          always-auth: false # important for trusted publishing
       - name: Configure CI Git User
         run: |
           git config --global user.name $CONFIG_USERNAME
