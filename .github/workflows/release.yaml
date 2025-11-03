@@ -26,9 +26,8 @@ jobs:
         run: |
           git config --global user.name $CONFIG_USERNAME
           git config --global user.email $CONFIG_EMAIL
-          git remote set-url origin https://$GITHUB_ACTOR:$GITHUB_PAT@github.com/sourcefuse/llm-chat-component
+          git remote set-url origin https://$GITHUB_ACTOR@github.com/sourcefuse/llm-chat-component
         env:
-          GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
           CONFIG_USERNAME: ${{ vars.RELEASE_COMMIT_USERNAME }}
           CONFIG_EMAIL: ${{ vars.RELEASE_COMMIT_EMAIL }}
 
