@@ -214,7 +214,14 @@
         }
       ],
       "@semantic-release/release-notes-generator",
-      "@semantic-release/npm",
+      [
+        "@semantic-release/npm",
+        {
+          "npmPublish": true,
+          "pkgRoot": ".",
+          "tarballDir": "dist"
+        }
+      ],
       [
         "@semantic-release/git",
         {
@@ -227,6 +234,6 @@
       ],
       "@semantic-release/github"
     ],
-    "repositoryUrl": "git@github.com:sourcefuse/llm-chat-component.git"
+    "repositoryUrl": "https://github.com/sourcefuse/llm-chat-component.git"
   }
 }
