@@ -3,7 +3,7 @@
 name: Release [Manual]
 on: workflow_dispatch
 permissions:
-  contents: write
+  contents: read,write
   id-token: write
 jobs:
   Release:
@@ -14,7 +14,7 @@ jobs:
           # fetch-depth is necessary to get all tags
           # otherwise lerna can't detect the changes and will end up bumping the versions for all packages
           fetch-depth: 0
-          token: ${{ secrets.RELEASE_COMMIT_GH_PAT }}
+          token: ${{ secrets.GITHUB_TOKEN }}
       - name: Setup Node
         uses: actions/setup-node@v3
         with:
@@ -41,5 +41,5 @@ jobs:
           npm config set provenance true
           HUSKY=0 npx semantic-release
         env:
-          GH_TOKEN: ${{ secrets.RELEASE_COMMIT_GH_PAT }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
