@@ -153,7 +153,7 @@ export class AiIntegrationsComponent implements Component {
         !this.config.tokenCounterConfig.bufferTokens
       ) {
         debug(
-          `Token limit strategy enabled with ${this.config.tokenCounterConfig.tokenLimit} tokens per ${this.config.tokenCounterConfig.period} seconds`,
+          `Token count per user strategy enabled with ${this.config.tokenCounterConfig.tokenLimit} tokens per ${this.config.tokenCounterConfig.period} seconds`,
         );
         this.application
           .bind(AiIntegrationBindings.LimitStrategy)
@@ -161,7 +161,7 @@ export class AiIntegrationsComponent implements Component {
           .inScope(BindingScope.REQUEST);
       } else if (this.config.tokenCounterConfig.period) {
         debug(
-          `Token count per user strategy enabled with buffer of ${this.config.tokenCounterConfig.bufferTokens ?? 0} tokens and limit of ${this.config.tokenCounterConfig.tokenLimit} tokens per ${this.config.tokenCounterConfig.period} seconds`,
+          `Token count per user by token permission strategy enabled with buffer of ${this.config.tokenCounterConfig.bufferTokens ?? 0} tokens and limit of ${this.config.tokenCounterConfig.tokenLimit} tokens per ${this.config.tokenCounterConfig.period} seconds`,
         );
         this.application
           .bind(AiIntegrationBindings.LimitStrategy)
