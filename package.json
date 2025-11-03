@@ -234,6 +234,6 @@
       ],
       "@semantic-release/github"
     ],
-    "repositoryUrl": "https://github.com/sourcefuse/llm-chat-component.git"
+    "repositoryUrl": "https://github.com/sourcefuse/loopback4-llm-chat-extension.git"
   }
 }
