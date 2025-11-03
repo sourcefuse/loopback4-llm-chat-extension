@@ -101,7 +101,7 @@
     "coverage": "nyc npm run test",
     "migrate:pg:up": "db-migrate up --config migrations/pg/database.json --migrations-dir migrations/pg/migrations",
     "migrate:pg:down": "db-migrate down --config migrations/pg/database.json --migrations-dir migrations/pg/migrations",
-    "prepare": "husky install"
+    "prepare": "test \"$HUSKY\" = \"0\" || husky install"
   },
   "repository": {
     "type": "git",
@@ -219,7 +219,8 @@
         {
           "npmPublish": true,
           "pkgRoot": ".",
-          "tarballDir": "dist"
+          "tarballDir": "dist",
+          "npmPublishSkipScripts": true
         }
       ],
       [
