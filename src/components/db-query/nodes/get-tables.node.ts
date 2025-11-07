@@ -13,13 +13,17 @@ import {DbSchemaHelperService} from '../services';
 import {SchemaStore} from '../services/schema.store';
 import {TableSearchService} from '../services/search/table-search.service';
 import {DbQueryState} from '../state';
-import {DatabaseSchema, GenerationError} from '../types';
+import {DatabaseSchema, DbQueryConfig, GenerationError} from '../types';
 
 @graphNode(DbQueryNodes.GetTables)
 export class GetTablesNode implements IGraphNode<DbQueryState> {
   constructor(
+    @inject(AiIntegrationBindings.CheapLLM)
+    private readonly llmCheap: LLMProvider,
     @inject(AiIntegrationBindings.SmartLLM)
-    private readonly llm: LLMProvider,
+    private readonly llmSmart: LLMProvider,
+    @inject(DbQueryAIExtensionBindings.Config)
+    private readonly config: DbQueryConfig,
     @service(DbSchemaHelperService)
     private readonly schemaHelper: DbSchemaHelperService,
     @service(SchemaStore)
@@ -95,7 +99,10 @@ Use these if they are relevant to the table selection, otherwise ignore them, th
       );
     }
 
-    const chain = RunnableSequence.from([this.prompt, this.llm]);
+    const useSmartLLM = this.config.nodes?.getTablesNode?.useSmartLLM ?? false;
+    const llm = useSmartLLM ? this.llmSmart : this.llmCheap;
+
+    const chain = RunnableSequence.from([this.prompt, llm]);
     config.writer?.({
       type: LLMStreamEventType.ToolStatus,
       data: {

@@ -114,7 +114,7 @@ In the last attempt, you generated this SQL query -
     });
 
     const generateDesc =
-      this.config.nodes?.sqlGenerationWithDescription !== false;
+      this.config.nodes?.sqlGenerationNode?.generateDescription !== false;
 
     const output = await chain.invoke({
       dialect: this.config.db?.dialect ?? SupportedDBs.PostgreSQL,

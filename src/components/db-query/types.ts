@@ -113,8 +113,12 @@ export type DbQueryConfig = {
     maxClusterSize?: number;
   };
   nodes?: {
-    sqlGenerationWithDescription?: boolean;
-    renderNode?: boolean;
+    sqlGenerationNode?: {
+      generateDescription?: boolean;
+    };
+    getTablesNode?: {
+      useSmartLLM?: boolean;
+    };
   };
   columnSelection?: boolean;
 };
