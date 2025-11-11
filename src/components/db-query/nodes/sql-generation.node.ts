@@ -86,6 +86,8 @@ In the last attempt, you generated this SQL query -
   constructor(
     @inject(AiIntegrationBindings.SmartLLM)
     private readonly sqlLLM: LLMProvider,
+    @inject(AiIntegrationBindings.CheapLLM)
+    private readonly cheapllm: LLMProvider,
     @inject(DbQueryAIExtensionBindings.Config)
     private readonly config: DbQueryConfig,
     @service(DbSchemaHelperService)
@@ -97,10 +99,17 @@ In the last attempt, you generated this SQL query -
     state: DbQueryState,
     config: LangGraphRunnableConfig,
   ): Promise<DbQueryState> {
-    const chain = RunnableSequence.from([
-      this.sqlGenerationPrompt,
-      this.sqlLLM,
-    ]);
+    let llm = this.sqlLLM;
+
+    if (
+      this.config.nodes?.sqlGenerationNode?.generateDescription !== false &&
+      state.schema.tables &&
+      Object.keys(state.schema.tables).length === 1
+    ) {
+      llm = this.cheapllm;
+    }
+
+    const chain = RunnableSequence.from([this.sqlGenerationPrompt, llm]);
 
     config.writer?.({
       type: LLMStreamEventType.Log,

@@ -36,7 +36,9 @@ describe('SemanticValidatorNode Unit', function () {
       .stub(schemaHelper, 'getTablesContext')
       .returns(['employee salary must be converted to USD']);
 
-    node = new SemanticValidatorNode(llm, schemaHelper, ['test context']);
+    node = new SemanticValidatorNode(llm, llm, {models: []}, schemaHelper, [
+      'test context',
+    ]);
   });
 
   afterEach(() => {

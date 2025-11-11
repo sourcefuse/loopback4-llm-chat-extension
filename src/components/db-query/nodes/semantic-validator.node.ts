@@ -12,13 +12,17 @@ import {DbQueryAIExtensionBindings} from '../keys';
 import {DbQueryNodes} from '../nodes.enum';
 import {DbSchemaHelperService} from '../services';
 import {DbQueryState} from '../state';
-import {EvaluationResult} from '../types';
+import {DbQueryConfig, EvaluationResult} from '../types';
 
 @graphNode(DbQueryNodes.SemanticValidator)
 export class SemanticValidatorNode implements IGraphNode<DbQueryState> {
   constructor(
     @inject(AiIntegrationBindings.SmartLLM)
-    private readonly llm: LLMProvider,
+    private readonly smartllm: LLMProvider,
+    @inject(AiIntegrationBindings.CheapLLM)
+    private readonly cheapllm: LLMProvider,
+    @inject(DbQueryAIExtensionBindings.Config)
+    private readonly config: DbQueryConfig,
     @service(DbSchemaHelperService)
     private readonly schemaHelper: DbSchemaHelperService,
     @inject(DbQueryAIExtensionBindings.GlobalContext, {optional: true})
@@ -87,7 +91,10 @@ Keep these feedbacks in mind while validating the new query.
       type: LLMStreamEventType.Log,
       data: `Validating the query semantically.`,
     });
-    const chain = RunnableSequence.from([this.prompt, this.llm]);
+    const useSmartLLM =
+      this.config.nodes?.semanticValidatorNode?.useSmartLLM ?? false;
+    const llm = useSmartLLM ? this.smartllm : this.cheapllm;
+    const chain = RunnableSequence.from([this.prompt, llm]);
     const output = await chain.invoke({
       query: state.sql,
       prompt: state.prompt,

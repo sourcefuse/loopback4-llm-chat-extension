@@ -37,6 +37,7 @@ describe('SqlGenerationNode Unit', function () {
 
     node = new SqlGenerationNode(
       llm,
+      llm,
       {
         db: {
           dialect: SupportedDBs.SQLite,

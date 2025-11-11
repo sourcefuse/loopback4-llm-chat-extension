@@ -115,8 +115,12 @@ export type DbQueryConfig = {
   nodes?: {
     sqlGenerationNode?: {
       generateDescription?: boolean;
+      useSmartLLMForSingleTableQueries?: boolean;
     };
     getTablesNode?: {
+      useSmartLLM?: boolean;
+    };
+    semanticValidatorNode?: {
       useSmartLLM?: boolean;
     };
   };
