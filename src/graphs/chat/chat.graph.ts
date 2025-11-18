@@ -7,6 +7,7 @@ import {ToolStore} from '../../types';
 import {BaseGraph} from '../base.graph';
 import {ChatGraphAnnotation, ChatState} from '../state';
 import {ChatNodes} from './nodes.enum';
+import {AnyObject} from '@loopback/repository';
 
 @injectable({scope: BindingScope.REQUEST})
 export class ChatGraph extends BaseGraph<ChatState> {
@@ -15,6 +16,8 @@ export class ChatGraph extends BaseGraph<ChatState> {
     private readonly tools: ToolStore,
     @inject('services.TokenCounter')
     private readonly tokenCounter: TokenCounter,
+    @inject(AiIntegrationBindings.ObfHandler, {optional: true})
+    protected readonly obfHandler?: AnyObject[string],
   ) {
     super();
   }
@@ -71,6 +74,7 @@ export class ChatGraph extends BaseGraph<ChatState> {
             this.tokenCounter.handleLlmEnd(runId, output);
           },
         },
+        this.obfHandler ? this.obfHandler : {},
       ],
     });
   }

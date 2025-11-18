@@ -48,6 +48,10 @@
     "./db-query/testing": {
       "type": "./dist/components/db-query/testing/index.d.ts",
       "default": "./dist/components/db-query/testing/index.js"
+    },
+    "./langfuse": {
+      "type": "./dist/sub-modules/obf/langfuse/index.d.ts",
+      "default": "./dist/sub-modules/obf/langfuse/index.js"
     }
   },
   "typesVersions": {
@@ -78,6 +82,9 @@
       ],
       "db-query/testing": [
         "dist/components/db-query/testing/index.d.ts"
+      ],
+      "langfuse": [
+        "dist/sub-modules/obf/langfuse/index.d.ts"
       ]
     }
   },
@@ -144,6 +151,8 @@
     "@langchain/groq": "^0.2.3",
     "@langchain/ollama": "^0.2.3",
     "@langchain/openai": "^0.6.11",
+    "@langfuse/core": "^4.4.2",
+    "@langfuse/langchain": "^4.4.2",
     "@loopback/build": "^11.0.9",
     "@loopback/eslint-config": "^15.0.5",
     "@loopback/testlab": "^7.0.9",

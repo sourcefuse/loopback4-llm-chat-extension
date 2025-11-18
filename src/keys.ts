@@ -43,6 +43,9 @@ export namespace AiIntegrationBindings {
   export const LimitStrategy = BindingKey.create<ILimitStrategy>(
     'services.ai-reporting.limit-strategy',
   );
+  export const ObfHandler = BindingKey.create<Function>(
+    'services.ai-reporting.obf-handler',
+  );
 }
 export const WriterDB = 'writerdb';
 export const ReaderDB = 'readerdb';
