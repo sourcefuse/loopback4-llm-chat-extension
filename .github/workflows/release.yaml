@@ -34,6 +34,10 @@ jobs:
 
       - name: Install 📌
         run: npm ci --ignore-scripts
+
+      - name: Build the pending packages 🏗️
+        run: npm rebuild sqlite3
+
       - name: Test 🔧
         run: npm run test
       - name: Semantic Publish to NPM 🚀
