@@ -46,6 +46,9 @@ export namespace AiIntegrationBindings {
   export const ObfHandler = BindingKey.create<Function>(
     'services.ai-reporting.obf-handler',
   );
+  export const SystemContext = BindingKey.create<string[]>(
+    `services.ai-reporting.system-context`,
+  );
 }
 export const WriterDB = 'writerdb';
 export const ReaderDB = 'readerdb';
