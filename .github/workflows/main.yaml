@@ -21,7 +21,10 @@ jobs:
           node-version: '20.x'
 
       - name: Install Dependencies 📌
-        run: npm ci
+        run: npm ci --ignore-scripts
+
+      - name: Build the pending packages 🏗️
+        run: npm rebuild sqlite3
 
       - name: Run Test Cases 🔧
         run: npm run test

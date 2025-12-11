@@ -48,8 +48,8 @@ You need to suggest a visualisation from a list of visualisation that would best
 <output-format>
 <instructions>
 The output should be a single string that has the name from the visualizations list and nothing else.
-If the required visualization would not be possible due to the structure of the data, return "none" followed by the changes required in the data to be able to render the visualization.
-Do not try to force fit the data to any visualization if it does not make sense. Prefer to returning none with appropriate reason instead.
+If the required visualization would not be possible due to the structure of the data or any other reason, return "none" followed by the changes required in the data to be able to render the visualization.
+Do not try to force fit the data to any visualization if it does not make sense, prefer returning none with appropriate reason instead.
 </instructions>
 <output-example-1>
 type-of-visualization

@@ -43,4 +43,51 @@ describe(`InitSessionNode Unit`, function () {
       },
     });
   });
+
+  it('should have date in system message', async () => {
+    const writerStub = sinon.stub();
+    chatStore.stubs.init.callsFake(async () => {
+      return new Chat({
+        id: 'test-session-id',
+      });
+    });
+    const result = await node.execute(
+      {prompt: 'Hello'} as unknown as ChatState,
+      {
+        writer: writerStub,
+      },
+    );
+    const systemMessage = result.messages?.find(
+      msg => msg.getType() === 'system',
+    )?.content;
+    if (typeof systemMessage !== 'string') {
+      throw new Error('System message is not a string');
+    }
+    expect(
+      systemMessage?.includes(`Current date is ${new Date().toDateString()}`),
+    ).to.be.true();
+  });
+
+  it('should have extra provided context in system context', async () => {
+    node = new InitSessionNode(chatStore, ['Test context.']);
+    const writerStub = sinon.stub();
+    chatStore.stubs.init.callsFake(async () => {
+      return new Chat({
+        id: 'test-session-id',
+      });
+    });
+    const result = await node.execute(
+      {prompt: 'Hello'} as unknown as ChatState,
+      {
+        writer: writerStub,
+      },
+    );
+    const systemMessage = result.messages?.find(
+      msg => msg.getType() === 'system',
+    )?.content;
+    if (typeof systemMessage !== 'string') {
+      throw new Error('System message is not a string');
+    }
+    expect(systemMessage?.includes(`Test context.`)).to.be.true();
+  });
 });

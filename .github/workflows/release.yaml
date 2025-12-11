@@ -33,7 +33,11 @@ jobs:
           CONFIG_EMAIL: ${{ vars.RELEASE_COMMIT_EMAIL }}
 
       - name: Install 📌
-        run: npm install
+        run: npm ci --ignore-scripts
+
+      - name: Build the pending packages 🏗️
+        run: npm rebuild sqlite3
+
       - name: Test 🔧
         run: npm run test
       - name: Semantic Publish to NPM 🚀
