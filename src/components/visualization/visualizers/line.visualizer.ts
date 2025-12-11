@@ -14,7 +14,7 @@ export class LineVisualizer implements IVisualizer {
   name = 'line';
 
   context?: string | undefined =
-    `A line chart requires data with exactly 3 columns: one for the x-axis (typically time or sequential data) and one for the y-axis (values), one for each series type (type column). Type column is important to distinguish multiple lines in the chart.`;
+    `A line chart requires data with exactly 3 columns: one for the x-axis (typically time or sequential data), one for the y-axis (values), and one series type column to distinguish multiple lines/series in the chart. The series type column is important for grouping data into separate lines.`;
 
   description = `Renders the data in a line chart format. Best for showing trends and changes over time or continuous data.`;
   renderPrompt = PromptTemplate.fromTemplate(`
