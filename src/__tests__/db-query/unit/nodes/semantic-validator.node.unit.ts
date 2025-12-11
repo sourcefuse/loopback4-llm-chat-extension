@@ -126,7 +126,8 @@ describe('SemanticValidatorNode Unit', function () {
 <instructions>
 You are an AI assistant that judges whether the generated and syntactically verified SQL query will satisfy the user's query and the additional checks provided.
 The query has already been validated for syntax and correctness, so you only need to check if it satisfies the user's query and all the additional checks provided.
-Note that query has already been validated for syntax and correctness, so you only need to check if it satisfies the user's query and all the additional checks provided.
+DO NOT check for syntax issues as the query is confirmed to run correctly on the database. only the relevant or correctness of results is to be checked.
+DO NOT make up issues or flaws that do not exist in the query, or reporting missing checks that are not actually missing.
 You must create a checklist and ensure that the query satisfies all the points in the checklist.
 </instructions>
 
@@ -206,7 +207,8 @@ valid
 <instructions>
 You are an AI assistant that judges whether the generated and syntactically verified SQL query will satisfy the user's query and the additional checks provided.
 The query has already been validated for syntax and correctness, so you only need to check if it satisfies the user's query and all the additional checks provided.
-Note that query has already been validated for syntax and correctness, so you only need to check if it satisfies the user's query and all the additional checks provided.
+DO NOT check for syntax issues as the query is confirmed to run correctly on the database. only the relevant or correctness of results is to be checked.
+DO NOT make up issues or flaws that do not exist in the query, or reporting missing checks that are not actually missing.
 You must create a checklist and ensure that the query satisfies all the points in the checklist.
 </instructions>
 

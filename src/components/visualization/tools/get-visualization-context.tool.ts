@@ -35,7 +35,7 @@ export class GetVisualizationContextTool implements IGraphTool {
         name: this.key,
         description:
           'Tool to get the context information for a specific visualization type. ' +
-          'Always call this before using generate/improve query tool if a visualization is needed or expected in the future. ' +
+          'This MUST be the first tool to use if a visualization is expected or required, even before generating query or visualization. ' +
           'The query to be generated must match the expected structure described in the response of this tool, including column types, and logical requirements as specified for the selected visualization.',
         schema: z.object({
           type: z
