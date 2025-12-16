@@ -64,9 +64,9 @@ export class GenerateVisualizationTool implements IGraphTool {
     return graph.asTool({
       name: this.key,
       description: `
-It takes in a prompt and the dataset ID that needs to be visualized.
-Use this if the user request would be better served with a visualization rather than a tabular representation of the data, even if the user does not explicitly ask for it.
-Ensure before using this that the query generation tool has created a query that would could help in the visualization expected.
+It takes in a prompt and an optional dataset ID that needs to be visualized.
+Must use this over 'generate-query' tool if the user request would be better served with a visualization rather than a tabular representation of the data, even if the user does not explicitly ask for it.
+No need to call query generation tool before this, if the dataset ID is not provided, the tool will internally call the query generation tool to get the data to be visualized.
 It does not return anything, instead it fires an event internally that renders the visualization on the UI for the user to see.
 It supports followings types of visualizations: ${visualizations.map(v => v.name).join(', ')}.`,
       schema,

@@ -72,6 +72,7 @@ describe('SemanticValidatorNode Unit', function () {
       fromCache: false,
       resultArray: undefined,
       description: undefined,
+      directCall: false,
     };
     llmStub.resolves({
       content: 'valid',
@@ -110,6 +111,7 @@ describe('SemanticValidatorNode Unit', function () {
       sampleSql: '',
       fromCache: false,
       resultArray: undefined,
+      directCall: false,
       description: undefined,
     };
     llmStub.resolves({
@@ -193,6 +195,7 @@ valid
       sampleSql: '',
       fromCache: false,
       description: undefined,
+      directCall: false,
       resultArray: undefined,
     };
     llmStub.resolves({

@@ -17,6 +17,7 @@ export const DbQueryGraphStateAnnotation = Annotation.Root({
   done: Annotation<boolean | undefined>,
   resultArray: Annotation<AnyObject[string][] | undefined>,
   description: Annotation<string | undefined>,
+  directCall: Annotation<boolean | undefined>,
 });
 
 export type DbQueryState = typeof DbQueryGraphStateAnnotation.State;

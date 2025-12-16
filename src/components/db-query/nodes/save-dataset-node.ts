@@ -90,15 +90,17 @@ export class SaveDataSetNode implements IGraphNode<DbQueryState> {
       votes: 0,
     });
 
-    config.writer?.({
-      type: LLMStreamEventType.ToolStatus,
-      data: {
-        status: ToolStatus.Completed,
+    if (!state.directCall) {
+      config.writer?.({
+        type: LLMStreamEventType.ToolStatus,
         data: {
-          datasetId: dataset.id,
+          status: ToolStatus.Completed,
+          data: {
+            datasetId: dataset.id,
+          },
         },
-      },
-    });
+      });
+    }
 
     let result: undefined | AnyObject[] = undefined;
     if (this.config.readAccessForAI && dataset.id) {

@@ -148,15 +148,18 @@ If no queries are relevant, return '${CacheResults.NotRelevant}' and nothing els
         return state;
       }
       const datasetId = relevantDocs[indexNum].metadata.datasetId;
-      config.writer?.({
-        type: LLMStreamEventType.ToolStatus,
-        data: {
-          status: ToolStatus.Completed,
+      if (!state.directCall) {
+        config.writer?.({
+          type: LLMStreamEventType.ToolStatus,
           data: {
-            datasetId,
+            status: ToolStatus.Completed,
+            data: {
+              datasetId,
+            },
           },
-        },
-      });
+        });
+      }
+
       return {
         ...state,
         fromCache: true,

@@ -85,7 +85,7 @@ export class PgConnector implements IDbConnector {
       const columnDefinitions = Object.keys(columns).map(columnName => {
         const column = columns[columnName];
         const dataType = this.mapColumnToDbType(columnName, column);
-        const notNull = column.required || column.id ? ' NOT NULL' : '';
+        const notNull = column.required ? ' NOT NULL' : '';
         let descriptionString = '';
         if (column.description) {
           descriptionString = ` -- ${column.description.replace(/'/g, "''")}\n`;

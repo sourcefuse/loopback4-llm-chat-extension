@@ -25,7 +25,7 @@ describe(`PgConnector Unit`, () => {
     expect(ddl).to.be.equal(`-- Model representing an employee in the system.
 CREATE TABLE public.employees (
  -- Unique identifier for the employee record
-  id UUID NOT NULL,
+  id UUID,
  -- Name of the employee
   name TEXT NOT NULL,
  -- Unique code for the employee, used for identification

@@ -87,6 +87,7 @@ describe('SqlGenerationNode Unit', function () {
       datasetId: undefined,
       fromCache: false,
       resultArray: undefined,
+      directCall: false,
       description: undefined,
     };
 
@@ -180,6 +181,7 @@ Do not use any DB concepts like enum numbers, joins, CTEs, subqueries etc. in th
       datasetId: undefined,
       fromCache: false,
       resultArray: undefined,
+      directCall: false,
       description: undefined,
     };
 
@@ -291,6 +293,7 @@ Do not use any DB concepts like enum numbers, joins, CTEs, subqueries etc. in th
       datasetId: undefined,
       fromCache: false,
       resultArray: undefined,
+      directCall: false,
       description: undefined,
     };
 
@@ -402,6 +405,7 @@ Do not use any DB concepts like enum numbers, joins, CTEs, subqueries etc. in th
       datasetId: undefined,
       fromCache: true,
       resultArray: undefined,
+      directCall: false,
       description: undefined,
     };
 
@@ -454,6 +458,7 @@ Do not use any DB concepts like enum numbers, joins, CTEs, subqueries etc. in th
       datasetId: undefined,
       fromCache: false,
       resultArray: undefined,
+      directCall: false,
       description: undefined,
     };
 
