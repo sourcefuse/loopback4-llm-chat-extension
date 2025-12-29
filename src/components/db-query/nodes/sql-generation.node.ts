@@ -101,11 +101,16 @@ In the last attempt, you generated this SQL query -
   ): Promise<DbQueryState> {
     let llm = this.sqlLLM;
 
-    if (
+    // Check if cheap LLM should be used based on cache relevance (Similar match)
+    const useCheapLLMForCachedQueries =
+      (process.env.OPTIMIZE_CACHED_QUERIES ?? 'true') === 'true';
+
+    const isSingleTable =
       this.config.nodes?.sqlGenerationNode?.generateDescription !== false &&
       state.schema.tables &&
-      Object.keys(state.schema.tables).length === 1
-    ) {
+      Object.keys(state.schema.tables).length === 1;
+
+    if ((useCheapLLMForCachedQueries && !!state.sampleSql) || isSingleTable) {
       llm = this.cheapllm;
     }
 

@@ -476,4 +476,370 @@ Do not use any DB concepts like enum numbers, joins, CTEs, subqueries etc. in th
       /This was generated for the following question - \nGet employee name by id/,
     );
   });
+
+  describe('Cheap LLM usage optimization', () => {
+    let smartLLMStub: sinon.SinonStub;
+    let cheapLLMStub: sinon.SinonStub;
+    let nodeWithTwoLLMs: SqlGenerationNode;
+    let originalEnv: string | undefined;
+
+    beforeEach(() => {
+      smartLLMStub = sinon.stub();
+      cheapLLMStub = sinon.stub();
+      originalEnv = process.env.OPTIMIZE_CACHED_QUERIES;
+
+      const smartLLM = smartLLMStub as unknown as LLMProvider;
+      const cheapLLM = cheapLLMStub as unknown as LLMProvider;
+
+      nodeWithTwoLLMs = new SqlGenerationNode(
+        smartLLM,
+        cheapLLM,
+        {
+          db: {
+            dialect: SupportedDBs.SQLite,
+          },
+          models: [],
+        },
+        schemaHelper,
+        ['test context'],
+      );
+    });
+
+    afterEach(() => {
+      if (originalEnv === undefined) {
+        delete process.env.OPTIMIZE_CACHED_QUERIES;
+      } else {
+        process.env.OPTIMIZE_CACHED_QUERIES = originalEnv;
+      }
+    });
+
+    it('should use cheap LLM when OPTIMIZE_CACHED_QUERIES is true and sampleSql exists', async () => {
+      process.env.OPTIMIZE_CACHED_QUERIES = 'true';
+      cheapLLMStub.resolves({
+        content:
+          '<sql>SELECT * FROM employees WHERE id = 1;</sql><description>Get employee by id</description>',
+      });
+
+      const state = {
+        prompt: 'Get employee by id 1',
+        schema: {
+          tables: {
+            employees: {
+              columns: {
+                id: {type: 'number', required: true, id: true},
+                name: {type: 'string', required: true, id: false},
+              },
+              primaryKey: ['id'],
+              description: 'Employee table',
+              context: [],
+              hash: 'hash1',
+            },
+            departments: {
+              columns: {
+                id: {type: 'number', required: true, id: true},
+                name: {type: 'string', required: true, id: false},
+              },
+              primaryKey: ['id'],
+              description: 'Department table',
+              context: [],
+              hash: 'hash2',
+            },
+          },
+          relations: [],
+        },
+        feedbacks: [],
+        sampleSql: 'SELECT name FROM employees WHERE id = 5',
+        sampleSqlPrompt: 'Get employee name',
+        done: false,
+        sql: undefined,
+        status: undefined,
+        id: '123',
+        replyToUser: undefined,
+        datasetId: undefined,
+        fromCache: true,
+        resultArray: undefined,
+        directCall: false,
+        description: undefined,
+      };
+
+      const result = await nodeWithTwoLLMs.execute(state, {});
+
+      expect(result.sql).to.equal('SELECT * FROM employees WHERE id = 1;');
+      sinon.assert.calledOnce(cheapLLMStub);
+      sinon.assert.notCalled(smartLLMStub);
+    });
+
+    it('should use smart LLM when OPTIMIZE_CACHED_QUERIES is false and sampleSql exists', async () => {
+      process.env.OPTIMIZE_CACHED_QUERIES = 'false';
+      smartLLMStub.resolves({
+        content:
+          '<sql>SELECT * FROM employees WHERE id = 1;</sql><description>Get employee by id</description>',
+      });
+
+      const state = {
+        prompt: 'Get employee by id 1',
+        schema: {
+          tables: {
+            employees: {
+              columns: {
+                id: {type: 'number', required: true, id: true},
+                name: {type: 'string', required: true, id: false},
+              },
+              primaryKey: ['id'],
+              description: 'Employee table',
+              context: [],
+              hash: 'hash1',
+            },
+            departments: {
+              columns: {
+                id: {type: 'number', required: true, id: true},
+                name: {type: 'string', required: true, id: false},
+              },
+              primaryKey: ['id'],
+              description: 'Department table',
+              context: [],
+              hash: 'hash2',
+            },
+          },
+          relations: [],
+        },
+        feedbacks: [],
+        sampleSql: 'SELECT name FROM employees WHERE id = 5',
+        sampleSqlPrompt: 'Get employee name',
+        done: false,
+        sql: undefined,
+        status: undefined,
+        id: '123',
+        replyToUser: undefined,
+        datasetId: undefined,
+        fromCache: true,
+        resultArray: undefined,
+        directCall: false,
+        description: undefined,
+      };
+
+      const result = await nodeWithTwoLLMs.execute(state, {});
+
+      expect(result.sql).to.equal('SELECT * FROM employees WHERE id = 1;');
+      sinon.assert.calledOnce(smartLLMStub);
+      sinon.assert.notCalled(cheapLLMStub);
+    });
+
+    it('should use cheap LLM for single table schemas regardless of cache', async () => {
+      process.env.OPTIMIZE_CACHED_QUERIES = 'false';
+      cheapLLMStub.resolves({
+        content:
+          '<sql>SELECT * FROM employees;</sql><description>Get all employees</description>',
+      });
+
+      const state = {
+        prompt: 'Get all employees',
+        schema: {
+          tables: {
+            employees: {
+              columns: {
+                id: {type: 'number', required: true, id: true},
+                name: {type: 'string', required: true, id: false},
+              },
+              primaryKey: ['id'],
+              description: 'Employee table',
+              context: [],
+              hash: 'hash1',
+            },
+          },
+          relations: [],
+        },
+        feedbacks: [],
+        sampleSql: undefined,
+        sampleSqlPrompt: undefined,
+        done: false,
+        sql: undefined,
+        status: undefined,
+        id: '123',
+        replyToUser: undefined,
+        datasetId: undefined,
+        fromCache: false,
+        resultArray: undefined,
+        directCall: false,
+        description: undefined,
+      };
+
+      const result = await nodeWithTwoLLMs.execute(state, {});
+
+      expect(result.sql).to.equal('SELECT * FROM employees;');
+      sinon.assert.calledOnce(cheapLLMStub);
+      sinon.assert.notCalled(smartLLMStub);
+    });
+
+    it('should use smart LLM for multiple tables without cached queries', async () => {
+      process.env.OPTIMIZE_CACHED_QUERIES = 'true';
+      smartLLMStub.resolves({
+        content:
+          '<sql>SELECT e.name, d.name FROM employees e JOIN departments d ON e.dept_id = d.id;</sql><description>Get employee and department names</description>',
+      });
+
+      const state = {
+        prompt: 'Get employees with their departments',
+        schema: {
+          tables: {
+            employees: {
+              columns: {
+                id: {type: 'number', required: true, id: true},
+                name: {type: 'string', required: true, id: false},
+                deptId: {type: 'number', required: false, id: false},
+              },
+              primaryKey: ['id'],
+              description: 'Employee table',
+              context: [],
+              hash: 'hash1',
+            },
+            departments: {
+              columns: {
+                id: {type: 'number', required: true, id: true},
+                name: {type: 'string', required: true, id: false},
+              },
+              primaryKey: ['id'],
+              description: 'Department table',
+              context: [],
+              hash: 'hash2',
+            },
+          },
+          relations: [],
+        },
+        feedbacks: [],
+        sampleSql: undefined,
+        sampleSqlPrompt: undefined,
+        done: false,
+        sql: undefined,
+        status: undefined,
+        id: '123',
+        replyToUser: undefined,
+        datasetId: undefined,
+        fromCache: false,
+        resultArray: undefined,
+        directCall: false,
+        description: undefined,
+      };
+
+      const result = await nodeWithTwoLLMs.execute(state, {});
+
+      expect(result.sql).to.equal(
+        'SELECT e.name, d.name FROM employees e JOIN departments d ON e.dept_id = d.id;',
+      );
+      sinon.assert.calledOnce(smartLLMStub);
+      sinon.assert.notCalled(cheapLLMStub);
+    });
+
+    it('should default to true for OPTIMIZE_CACHED_QUERIES when env var is not set', async () => {
+      delete process.env.OPTIMIZE_CACHED_QUERIES;
+      cheapLLMStub.resolves({
+        content:
+          '<sql>SELECT * FROM employees WHERE id = 1;</sql><description>Get employee by id</description>',
+      });
+
+      const state = {
+        prompt: 'Get employee by id 1',
+        schema: {
+          tables: {
+            employees: {
+              columns: {
+                id: {type: 'number', required: true, id: true},
+                name: {type: 'string', required: true, id: false},
+              },
+              primaryKey: ['id'],
+              description: 'Employee table',
+              context: [],
+              hash: 'hash1',
+            },
+            departments: {
+              columns: {
+                id: {type: 'number', required: true, id: true},
+                name: {type: 'string', required: true, id: false},
+              },
+              primaryKey: ['id'],
+              description: 'Department table',
+              context: [],
+              hash: 'hash2',
+            },
+          },
+          relations: [],
+        },
+        feedbacks: [],
+        sampleSql: 'SELECT name FROM employees WHERE id = 5',
+        sampleSqlPrompt: 'Get employee name',
+        done: false,
+        sql: undefined,
+        status: undefined,
+        id: '123',
+        replyToUser: undefined,
+        datasetId: undefined,
+        fromCache: true,
+        resultArray: undefined,
+        directCall: false,
+        description: undefined,
+      };
+
+      const result = await nodeWithTwoLLMs.execute(state, {});
+
+      expect(result.sql).to.equal('SELECT * FROM employees WHERE id = 1;');
+      sinon.assert.calledOnce(cheapLLMStub);
+      sinon.assert.notCalled(smartLLMStub);
+    });
+
+    it('should use smart LLM when sampleSql is null despite optimization being enabled', async () => {
+      process.env.OPTIMIZE_CACHED_QUERIES = 'true';
+      smartLLMStub.resolves({
+        content:
+          '<sql>SELECT * FROM employees, departments;</sql><description>Get all data</description>',
+      });
+
+      const state = {
+        prompt: 'Get all data',
+        schema: {
+          tables: {
+            employees: {
+              columns: {
+                id: {type: 'number', required: true, id: true},
+                name: {type: 'string', required: true, id: false},
+              },
+              primaryKey: ['id'],
+              description: 'Employee table',
+              context: [],
+              hash: 'hash1',
+            },
+            departments: {
+              columns: {
+                id: {type: 'number', required: true, id: true},
+                name: {type: 'string', required: true, id: false},
+              },
+              primaryKey: ['id'],
+              description: 'Department table',
+              context: [],
+              hash: 'hash2',
+            },
+          },
+          relations: [],
+        },
+        feedbacks: [],
+        sampleSql: undefined,
+        sampleSqlPrompt: undefined,
+        done: false,
+        sql: undefined,
+        status: undefined,
+        id: '123',
+        replyToUser: undefined,
+        datasetId: undefined,
+        fromCache: false,
+        resultArray: undefined,
+        directCall: false,
+        description: undefined,
+      };
+
+      const result = await nodeWithTwoLLMs.execute(state, {});
+
+      expect(result.sql).to.equal('SELECT * FROM employees, departments;');
+      sinon.assert.calledOnce(smartLLMStub);
+      sinon.assert.notCalled(cheapLLMStub);
+    });
+  });
 });
