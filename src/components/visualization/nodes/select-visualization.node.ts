@@ -15,9 +15,7 @@ import {POST_DATASET_TAG} from '../../db-query';
 @graphNode(VisualizationGraphNodes.SelectVisualisation, {
   [POST_DATASET_TAG]: true,
 })
-export class SelectVisualizationNode
-  implements IGraphNode<VisualizationGraphState>
-{
+export class SelectVisualizationNode implements IGraphNode<VisualizationGraphState> {
   prompt = PromptTemplate.fromTemplate(`
 <instructions>
 You are expert Data Analysis Agent whose job is to suggest visualisations that would be best suited to display the results for a particular user prompt and the data extracted based on that prompt.

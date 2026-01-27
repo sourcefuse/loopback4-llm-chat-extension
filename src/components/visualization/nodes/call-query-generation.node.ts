@@ -8,9 +8,7 @@ import {VisualizationGraphState} from '../state';
 @graphNode(VisualizationGraphNodes.CallQueryGeneration, {
   [POST_DATASET_TAG]: true,
 })
-export class CallQueryGenerationNode
-  implements IGraphNode<VisualizationGraphState>
-{
+export class CallQueryGenerationNode implements IGraphNode<VisualizationGraphState> {
   constructor(
     @service(DbQueryGraph)
     private readonly queryPipeline: DbQueryGraph,

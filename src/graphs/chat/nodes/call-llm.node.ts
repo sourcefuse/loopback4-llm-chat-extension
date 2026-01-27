@@ -17,7 +17,7 @@ const debug = require('debug')('ai-integration:chat:call-llm.node');
 @graphNode(ChatNodes.CallLLM)
 export class CallLLMNode implements IGraphNode<ChatState> {
   constructor(
-    @inject(AiIntegrationBindings.CheapLLM)
+    @inject(AiIntegrationBindings.ChatLLM)
     private readonly llm: LLMProvider,
     @inject(AiIntegrationBindings.Tools)
     private readonly tools: ToolStore,
