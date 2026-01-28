@@ -37,6 +37,7 @@ describe('CallLLMNode Unit', function () {
     context.bind(AuthenticationBindings.CURRENT_USER).to(stubUser());
     context.bind(AiIntegrationBindings.SmartLLM).to(llmProvider);
     context.bind(AiIntegrationBindings.CheapLLM).to(llmProvider);
+    context.bind(AiIntegrationBindings.ChatLLM).to(llmProvider);
     context.bind('datasources.readerdb').to(
       new juggler.DataSource({
         connector: 'sqlite3',

@@ -24,6 +24,9 @@ export namespace AiIntegrationBindings {
   export const FileLLM = BindingKey.create<LLMProvider>(
     'services.ai-reporting.fileLLMProvider',
   );
+  export const ChatLLM = BindingKey.create<LLMProvider>(
+    'services.ai-reporting.chatLLMProvider',
+  );
   export const EmbeddingModel = BindingKey.create<EmbeddingProvider>(
     'services.ai-reporting.embeddingModel',
   );

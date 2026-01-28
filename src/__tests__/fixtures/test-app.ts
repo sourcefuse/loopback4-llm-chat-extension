@@ -44,6 +44,7 @@ export class TestApp extends BootMixin(
       this.bind(AiIntegrationBindings.CheapLLM).toProvider(Ollama);
       this.bind(AiIntegrationBindings.SmartLLM).toProvider(Ollama);
       this.bind(AiIntegrationBindings.FileLLM).toProvider(Ollama);
+      this.bind(AiIntegrationBindings.ChatLLM).toProvider(Ollama);
       this.bind(AiIntegrationBindings.EmbeddingModel).toProvider(
         OllamaEmbedding,
       );
@@ -51,6 +52,7 @@ export class TestApp extends BootMixin(
       this.bind(AiIntegrationBindings.CheapLLM).toProvider(Cerebras);
       this.bind(AiIntegrationBindings.SmartLLM).toProvider(Cerebras);
       this.bind(AiIntegrationBindings.FileLLM).toProvider(Cerebras);
+      this.bind(AiIntegrationBindings.ChatLLM).toProvider(Cerebras);
       this.bind(AiIntegrationBindings.EmbeddingModel).toProvider(
         OllamaEmbedding,
       );
@@ -58,6 +60,7 @@ export class TestApp extends BootMixin(
       this.bind(AiIntegrationBindings.CheapLLM).to(options.llmStub);
       this.bind(AiIntegrationBindings.SmartLLM).to(options.llmStub);
       this.bind(AiIntegrationBindings.FileLLM).to(options.llmStub);
+      this.bind(AiIntegrationBindings.ChatLLM).to(options.llmStub);
       this.bind(AiIntegrationBindings.EmbeddingModel).to(options.llmStub);
     }
     this.bind('datasources.readerdb').to(
