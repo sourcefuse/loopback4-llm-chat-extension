@@ -27,37 +27,45 @@ describe(`DbQueryGraph Unit`, function () {
         });
       stubMap[key] = stub.execute;
     }
+    // Parallel branches must return partial state to avoid LastValue conflicts
+    stubMap[DbQueryNodes.GetTables].callsFake(async () => ({}));
+    stubMap[DbQueryNodes.CheckCache].callsFake(async () => ({}));
+    // Checklist + Description run in parallel — must return partial state
+    stubMap[DbQueryNodes.GenerateChecklist].callsFake(async () => ({
+      validationChecklist: '1. Test check',
+    }));
+    stubMap[DbQueryNodes.GenerateDescription].callsFake(async (state: Record<string, unknown>) =>
+      state.description ? {} : {description: 'Test description'},
+    );
+    // VerifyChecklist runs in parallel with SqlGeneration — must return partial state
+    stubMap[DbQueryNodes.VerifyChecklist].callsFake(async () => ({}));
+    // Validators run in parallel — must return partial state
+    stubMap[DbQueryNodes.SyntacticValidator].callsFake(async () => ({
+      syntacticStatus: EvaluationResult.Pass,
+    }));
+    stubMap[DbQueryNodes.SemanticValidator].callsFake(async () => ({
+      semanticStatus: EvaluationResult.Pass,
+    }));
     graph = await context.get<DbQueryGraph>('DbQueryGraph');
   });
 
   it('should follow the ideal flow of the graph for proper SQL generation', async () => {
     const compiledGraph = await graph.build();
 
-    stubMap[DbQueryNodes.SyntacticValidator].callsFake(state => {
-      return {
-        ...state,
-        status: EvaluationResult.Pass,
-      };
-    });
-    stubMap[DbQueryNodes.SemanticValidator].callsFake(state => {
-      return {
-        ...state,
-        status: EvaluationResult.Pass,
-      };
-    });
-
-    await compiledGraph.invoke({
-      prompt: 'test prompt',
-      schema: {
-        tables: {},
-        relations: [],
+    await compiledGraph.invoke(
+      {
+        prompt: 'test prompt',
+        schema: {
+          tables: {},
+          relations: [],
+        },
       },
-    });
+      {recursionLimit: 100},
+    );
 
     expect(stubMap[DbQueryNodes.IsImprovement].calledOnce).to.be.true();
     expect(stubMap[DbQueryNodes.CheckCache].calledOnce).to.be.true();
     expect(stubMap[DbQueryNodes.GetTables].calledOnce).to.be.true();
-    expect(stubMap[DbQueryNodes.CheckPermissions].calledOnce).to.be.true();
     expect(stubMap[DbQueryNodes.SqlGeneration].calledOnce).to.be.true();
     expect(stubMap[DbQueryNodes.SyntacticValidator].calledOnce).to.be.true();
     expect(stubMap[DbQueryNodes.SemanticValidator].calledOnce).to.be.true();
@@ -67,165 +75,131 @@ describe(`DbQueryGraph Unit`, function () {
 
   it('should retry generation if syntactic validation fails with query error', async () => {
     const compiledGraph = await graph.build();
-    let retryCount = 0;
-    stubMap[DbQueryNodes.SyntacticValidator].callsFake(state => {
-      if (retryCount < 1) {
-        retryCount++;
+    let syntacticRetryCount = 0;
+    stubMap[DbQueryNodes.SyntacticValidator].callsFake(async () => {
+      if (syntacticRetryCount < 1) {
+        syntacticRetryCount++;
         return {
-          ...state,
-          status: EvaluationResult.QueryError,
-          feedbacks: ['Syntactic validation failed'],
+          syntacticStatus: EvaluationResult.QueryError,
+          syntacticFeedback: 'Syntactic validation failed',
         };
       }
-      return {
-        ...state,
-        status: EvaluationResult.Pass,
-      };
-    });
-    stubMap[DbQueryNodes.SemanticValidator].callsFake(state => {
-      return {
-        ...state,
-        status: EvaluationResult.Pass,
-      };
+      return {syntacticStatus: EvaluationResult.Pass};
     });
 
-    await compiledGraph.invoke({
-      prompt: 'test prompt',
-      schema: {
-        tables: {},
-        relations: [],
+    await compiledGraph.invoke(
+      {
+        prompt: 'test prompt',
+        schema: {
+          tables: {},
+          relations: [],
+        },
       },
-    });
+      {recursionLimit: 100},
+    );
 
     expect(stubMap[DbQueryNodes.IsImprovement].calledOnce).to.be.true();
     expect(stubMap[DbQueryNodes.CheckCache].calledOnce).to.be.true();
     expect(stubMap[DbQueryNodes.GetTables].calledOnce).to.be.true();
-    expect(stubMap[DbQueryNodes.CheckPermissions].calledOnce).to.be.true();
     expect(stubMap[DbQueryNodes.SqlGeneration].calledTwice).to.be.true();
     expect(stubMap[DbQueryNodes.SyntacticValidator].calledTwice).to.be.true();
-    expect(stubMap[DbQueryNodes.SemanticValidator].calledOnce).to.be.true();
+    // Semantic runs in parallel with syntactic on both attempts
+    expect(stubMap[DbQueryNodes.SemanticValidator].calledTwice).to.be.true();
     expect(stubMap[DbQueryNodes.SaveDataset].calledOnce).to.be.true();
     expect(stubMap[DbQueryNodes.Failed].called).to.be.false();
   });
 
   it('should retry table select if syntactic validation fails with table error', async () => {
     const compiledGraph = await graph.build();
-    let retryCount = 0;
-    stubMap[DbQueryNodes.SyntacticValidator].callsFake(state => {
-      if (retryCount < 1) {
-        retryCount++;
+    let syntacticRetryCount = 0;
+    stubMap[DbQueryNodes.SyntacticValidator].callsFake(async () => {
+      if (syntacticRetryCount < 1) {
+        syntacticRetryCount++;
         return {
-          ...state,
-          status: EvaluationResult.TableError,
-          feedbacks: ['Table not found'],
+          syntacticStatus: EvaluationResult.TableError,
+          syntacticFeedback: 'Table not found',
         };
       }
-      return {
-        ...state,
-        status: EvaluationResult.Pass,
-      };
-    });
-    stubMap[DbQueryNodes.SemanticValidator].callsFake(state => {
-      return {
-        ...state,
-        status: EvaluationResult.Pass,
-      };
+      return {syntacticStatus: EvaluationResult.Pass};
     });
 
-    await compiledGraph.invoke({
-      prompt: 'test prompt',
-      schema: {
-        tables: {},
-        relations: [],
+    await compiledGraph.invoke(
+      {
+        prompt: 'test prompt',
+        schema: {
+          tables: {},
+          relations: [],
+        },
       },
-    });
+      {recursionLimit: 100},
+    );
 
     expect(stubMap[DbQueryNodes.IsImprovement].calledOnce).to.be.true();
     expect(stubMap[DbQueryNodes.CheckCache].calledOnce).to.be.true();
     expect(stubMap[DbQueryNodes.GetTables].calledTwice).to.be.true();
-    expect(stubMap[DbQueryNodes.CheckPermissions].calledTwice).to.be.true();
     expect(stubMap[DbQueryNodes.SqlGeneration].calledTwice).to.be.true();
     expect(stubMap[DbQueryNodes.SyntacticValidator].calledTwice).to.be.true();
-    expect(stubMap[DbQueryNodes.SemanticValidator].calledOnce).to.be.true();
     expect(stubMap[DbQueryNodes.SaveDataset].calledOnce).to.be.true();
     expect(stubMap[DbQueryNodes.Failed].called).to.be.false();
   });
 
   it('should fail if syntactic validation fails more than max attempts allowed', async () => {
     const compiledGraph = await graph.build();
-    const feedbacks: string[] = [];
-    stubMap[DbQueryNodes.SyntacticValidator].callsFake(state => {
-      feedbacks.push('Syntactic validation failed');
-      return {
-        ...state,
-        status: EvaluationResult.QueryError,
-        feedbacks,
-      };
-    });
-    stubMap[DbQueryNodes.SemanticValidator].callsFake(state => {
-      return {
-        ...state,
-        status: EvaluationResult.Pass,
-      };
-    });
+    stubMap[DbQueryNodes.SyntacticValidator].callsFake(async () => ({
+      syntacticStatus: EvaluationResult.QueryError,
+      syntacticFeedback: 'Syntactic validation failed',
+    }));
 
-    await compiledGraph.invoke({
-      prompt: 'test prompt',
-      schema: {
-        tables: {},
-        relations: [],
+    await compiledGraph.invoke(
+      {
+        prompt: 'test prompt',
+        schema: {
+          tables: {},
+          relations: [],
+        },
       },
-    });
+      {recursionLimit: 100},
+    );
 
     expect(stubMap[DbQueryNodes.IsImprovement].calledOnce).to.be.true();
     expect(stubMap[DbQueryNodes.CheckCache].calledOnce).to.be.true();
     expect(stubMap[DbQueryNodes.GetTables].calledOnce).to.be.true();
-    expect(stubMap[DbQueryNodes.CheckPermissions].calledOnce).to.be.true();
-    // generated 5 times, to get out of loop with failure
-    expect(stubMap[DbQueryNodes.SqlGeneration].getCalls().length).to.be.eql(5);
+    expect(stubMap[DbQueryNodes.SqlGeneration].getCalls().length).to.be.eql(MAX_ATTEMPTS);
     expect(
       stubMap[DbQueryNodes.SyntacticValidator].getCalls().length,
-    ).to.be.eql(5);
+    ).to.be.eql(MAX_ATTEMPTS);
     expect(stubMap[DbQueryNodes.Failed].calledOnce).to.be.true();
     expect(stubMap[DbQueryNodes.SaveDataset].calledOnce).to.be.false();
   });
 
   it('should retry generation if semantic validation fails with query error', async () => {
     const compiledGraph = await graph.build();
-    let retryCount = 0;
-    stubMap[DbQueryNodes.SemanticValidator].callsFake(state => {
-      if (retryCount < 1) {
-        retryCount++;
+    let semanticRetryCount = 0;
+    stubMap[DbQueryNodes.SemanticValidator].callsFake(async () => {
+      if (semanticRetryCount < 1) {
+        semanticRetryCount++;
         return {
-          ...state,
-          status: EvaluationResult.QueryError,
-          feedbacks: ['Semantic validation failed'],
+          semanticStatus: EvaluationResult.QueryError,
+          semanticFeedback: 'Semantic validation failed',
         };
       }
-      return {
-        ...state,
-        status: EvaluationResult.Pass,
-      };
-    });
-    stubMap[DbQueryNodes.SyntacticValidator].callsFake(state => {
-      return {
-        ...state,
-        status: EvaluationResult.Pass,
-      };
+      return {semanticStatus: EvaluationResult.Pass};
     });
 
-    await compiledGraph.invoke({
-      prompt: 'test prompt',
-      schema: {
-        tables: {},
-        relations: [],
+    await compiledGraph.invoke(
+      {
+        prompt: 'test prompt',
+        schema: {
+          tables: {},
+          relations: [],
+        },
       },
-    });
+      {recursionLimit: 100},
+    );
 
     expect(stubMap[DbQueryNodes.IsImprovement].calledOnce).to.be.true();
     expect(stubMap[DbQueryNodes.CheckCache].calledOnce).to.be.true();
     expect(stubMap[DbQueryNodes.GetTables].calledOnce).to.be.true();
-    expect(stubMap[DbQueryNodes.CheckPermissions].calledOnce).to.be.true();
     expect(stubMap[DbQueryNodes.SqlGeneration].calledTwice).to.be.true();
     expect(stubMap[DbQueryNodes.SyntacticValidator].calledTwice).to.be.true();
     expect(stubMap[DbQueryNodes.SemanticValidator].calledTwice).to.be.true();
@@ -233,61 +207,33 @@ describe(`DbQueryGraph Unit`, function () {
     expect(stubMap[DbQueryNodes.Failed].called).to.be.false();
   });
 
-  it('should fail if semantic or syntactic validation fails more than max attempts allowed', async () => {
+  it('should fail if validation fails more than max attempts allowed', async () => {
     const compiledGraph = await graph.build();
-    let skipSemantic = false;
-    const semanticFailureCount = 3;
-    stubMap[DbQueryNodes.SyntacticValidator].callsFake(state => {
-      if (skipSemantic) {
-        return {
-          ...state,
-          status: EvaluationResult.Pass,
-        };
-      }
-      if (state.feedbacks.length === semanticFailureCount) {
-        skipSemantic = true;
-        return {
-          ...state,
-          status: EvaluationResult.Pass,
-        };
-      }
-      state.feedbacks.push('Syntactic validation failed');
-      return {
-        ...state,
-        status: EvaluationResult.QueryError,
-      };
-    });
-    stubMap[DbQueryNodes.SemanticValidator].callsFake(state => {
-      state.feedbacks.push('Semantic validation failed');
-      return {
-        ...state,
-        status: EvaluationResult.QueryError,
-      };
-    });
+    stubMap[DbQueryNodes.SyntacticValidator].callsFake(async () => ({
+      syntacticStatus: EvaluationResult.QueryError,
+      syntacticFeedback: 'Syntactic validation failed',
+    }));
+    stubMap[DbQueryNodes.SemanticValidator].callsFake(async () => ({
+      semanticStatus: EvaluationResult.QueryError,
+      semanticFeedback: 'Semantic validation failed',
+    }));
 
-    await compiledGraph.invoke({
-      prompt: 'test prompt',
-      schema: {
-        tables: {},
-        relations: [],
+    await compiledGraph.invoke(
+      {
+        prompt: 'test prompt',
+        schema: {
+          tables: {},
+          relations: [],
+        },
       },
-      feedbacks: [],
-    });
+      {recursionLimit: 100},
+    );
 
     expect(stubMap[DbQueryNodes.IsImprovement].calledOnce).to.be.true();
     expect(stubMap[DbQueryNodes.CheckCache].calledOnce).to.be.true();
     expect(stubMap[DbQueryNodes.GetTables].calledOnce).to.be.true();
-    expect(stubMap[DbQueryNodes.CheckPermissions].calledOnce).to.be.true();
-    // generated 5 times, to get out of loop with failure
     expect(stubMap[DbQueryNodes.SqlGeneration].getCalls().length).to.be.eql(
-      MAX_ATTEMPTS + 1,
-    );
-    expect(
-      stubMap[DbQueryNodes.SyntacticValidator].getCalls().length,
-    ).to.be.eql(MAX_ATTEMPTS + 1);
-    // as syntactic validation would fail thrice before passing, this would only be able to fail twice
-    expect(stubMap[DbQueryNodes.SemanticValidator].getCalls().length).to.be.eql(
-      MAX_ATTEMPTS - semanticFailureCount,
+      MAX_ATTEMPTS,
     );
     expect(stubMap[DbQueryNodes.Failed].calledOnce).to.be.true();
     expect(stubMap[DbQueryNodes.SaveDataset].calledOnce).to.be.false();

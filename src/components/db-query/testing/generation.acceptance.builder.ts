@@ -100,6 +100,7 @@ export async function generationAcceptanceBuilder(
         outputTokens: 0,
         emptyOutput: false,
         generationCount: 0,
+        usedCache: false,
         query: '',
         case: query.case,
         description: '',
@@ -143,6 +144,13 @@ export async function generationAcceptanceBuilder(
             v.type === LLMStreamEventType.ToolStatus &&
             v.data.status === 'Generating SQL query from the prompt',
         ).length;
+        result.usedCache = body.some(
+          (v: LLMStreamEvent) =>
+            v.type === LLMStreamEventType.ToolStatus &&
+            (v.data.status === 'Found relevant query in cache' ||
+              v.data.status ===
+                'Found similar query in cache, using it as example'),
+        );
         if (lastStatus.data.status === ToolStatus.Completed) {
           const dataset = await datasetStore.findById(
             lastStatus.data.data?.['datasetId'],
@@ -237,6 +245,7 @@ function writeResultSoFar(results: GenerationAcceptanceTestResult[]) {
       'Input Tokens Used': result.inputTokens,
       'Output Tokens Used': result.outputTokens,
       'Generation Count': result.generationCount,
+      Cache: result.usedCache ? ':white_check_mark:' : '',
     })),
   );
   report += `\n## Failed Queries and Results\n`;

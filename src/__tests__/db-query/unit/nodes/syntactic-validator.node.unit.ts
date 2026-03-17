@@ -53,8 +53,7 @@ describe('SyntacticValidatorNode Unit', function () {
     const result = await node.execute(state, {});
     expect(llmStub.calledOnce).to.be.false();
     expect(result).to.deepEqual({
-      ...state,
-      status: EvaluationResult.Pass,
+      syntacticStatus: EvaluationResult.Pass,
     });
   });
 
@@ -69,13 +68,10 @@ describe('SyntacticValidatorNode Unit', function () {
     llmStub.resolves({content: EvaluationResult.TableError});
 
     const result = await node.execute(state, {});
-    expect(result.status).to.equal(EvaluationResult.TableError);
+    expect(result.syntacticStatus).to.equal(EvaluationResult.TableError);
     expect(result).to.deepEqual({
-      ...state,
-      status: EvaluationResult.TableError,
-      feedbacks: [
-        `Query Validation Failed by DB: ${EvaluationResult.TableError} with error SQLITE_ERROR: no such table: users_wrong`,
-      ],
+      syntacticStatus: EvaluationResult.TableError,
+      syntacticFeedback: `Query Validation Failed by DB: ${EvaluationResult.TableError} with error SQLITE_ERROR: no such table: users_wrong`,
     });
   });
 
@@ -90,13 +86,10 @@ describe('SyntacticValidatorNode Unit', function () {
     llmStub.resolves({content: EvaluationResult.QueryError});
 
     const result = await node.execute(state, {});
-    expect(result.status).to.equal(EvaluationResult.QueryError);
+    expect(result.syntacticStatus).to.equal(EvaluationResult.QueryError);
     expect(result).to.deepEqual({
-      ...state,
-      status: EvaluationResult.QueryError,
-      feedbacks: [
-        `Query Validation Failed by DB: ${EvaluationResult.QueryError} with error SQLITE_ERROR: near \"users\": syntax error`,
-      ],
+      syntacticStatus: EvaluationResult.QueryError,
+      syntacticFeedback: `Query Validation Failed by DB: ${EvaluationResult.QueryError} with error SQLITE_ERROR: near \"users\": syntax error`,
     });
   });
 });

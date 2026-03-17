@@ -10,7 +10,7 @@ export type RunnableConfig = LangGraphRunnableConfig & {
 };
 
 export interface IGraphNode<T extends object> {
-  execute: (state: T, config: RunnableConfig) => Promise<T | Command>;
+  execute: (state: T, config: RunnableConfig) => Promise<Partial<T> | Command>;
 }
 
 export type SavedMessage = HumanMessage | AIMessage | ToolMessage;

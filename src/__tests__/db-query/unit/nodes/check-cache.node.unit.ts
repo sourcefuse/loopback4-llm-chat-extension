@@ -45,7 +45,7 @@ describe('CheckCacheNode Unit', function () {
 
     const result = await node.execute(state, {});
 
-    expect(result).to.deepEqual(state);
+    expect(result).to.deepEqual({});
   });
 
   it('should return state with sampleSql if relevant query found in cache', async () => {
@@ -65,7 +65,6 @@ describe('CheckCacheNode Unit', function () {
     const result = await node.execute(state, {});
 
     expect(result).to.deepEqual({
-      ...state,
       sampleSql: "SELECT * FROM employees WHERE name = 'Akshat'",
       sampleSqlPrompt: 'What is the salary of Akshat?',
     });
@@ -106,7 +105,6 @@ describe('CheckCacheNode Unit', function () {
     const result = await node.execute(state, {});
 
     expect(result).to.deepEqual({
-      ...state,
       fromCache: true,
       datasetId: '123',
       replyToUser: `I found this dataset in the cache - What is the salary of Akshat?`,
@@ -154,7 +152,6 @@ describe('CheckCacheNode Unit', function () {
     const result = await node.execute(state, {});
 
     expect(result).to.deepEqual({
-      ...state,
       fromCache: true,
       datasetId: '123',
       replyToUser: `I found this dataset in the cache - What is the salary of Akshat?`,
@@ -201,9 +198,7 @@ describe('CheckCacheNode Unit', function () {
 
     const result = await node.execute(state, {});
 
-    expect(result).to.deepEqual({
-      ...state,
-    });
+    expect(result).to.deepEqual({});
   });
 
   it('should return existing state if exact query found in cache but with missing permissions', async () => {
@@ -226,9 +221,7 @@ describe('CheckCacheNode Unit', function () {
 
     const result = await node.execute(state, {});
 
-    expect(result).to.deepEqual({
-      ...state,
-    });
+    expect(result).to.deepEqual({});
   });
 
   it('should return state as is if sampleSql already exists', async () => {
@@ -239,7 +232,7 @@ describe('CheckCacheNode Unit', function () {
 
     const result = await node.execute(state, {});
 
-    expect(result).to.deepEqual(state);
+    expect(result).to.deepEqual({});
     sinon.assert.notCalled(cacheStub);
     sinon.assert.notCalled(llmStub);
   });
@@ -263,7 +256,7 @@ describe('CheckCacheNode Unit', function () {
 
     const result = await node.execute(state, {});
 
-    expect(result).to.deepEqual(state);
+    expect(result).to.deepEqual({});
   });
 
   it('should return state as is if LLM returns non-numeric index', async () => {
@@ -285,7 +278,7 @@ describe('CheckCacheNode Unit', function () {
 
     const result = await node.execute(state, {});
 
-    expect(result).to.deepEqual(state);
+    expect(result).to.deepEqual({});
   });
 
   it('should return state as is if LLM returns not-relevant', async () => {
@@ -307,6 +300,6 @@ describe('CheckCacheNode Unit', function () {
 
     const result = await node.execute(state, {});
 
-    expect(result).to.deepEqual(state);
+    expect(result).to.deepEqual({});
   });
 });

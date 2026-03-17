@@ -58,9 +58,8 @@ export class SyntacticValidatorNode implements IGraphNode<DbQueryState> {
       }
       await this.connector.validate(state.sql);
       return {
-        ...state,
-        status: EvaluationResult.Pass,
-      };
+        syntacticStatus: EvaluationResult.Pass,
+      } as DbQueryState;
     } catch (error) {
       const chain = RunnableSequence.from([this.prompt, this.llm]);
       const output = await chain.invoke({
@@ -73,13 +72,9 @@ export class SyntacticValidatorNode implements IGraphNode<DbQueryState> {
         data: `Query Validation Failed by DB: ${result} with error ${error.message}`,
       });
       return {
-        ...state,
-        status: result.trim() as EvaluationResult,
-        feedbacks: [
-          ...(state.feedbacks ?? []),
-          `Query Validation Failed by DB: ${result} with error ${error.message}`,
-        ],
-      };
+        syntacticStatus: result.trim() as EvaluationResult,
+        syntacticFeedback: `Query Validation Failed by DB: ${result} with error ${error.message}`,
+      } as DbQueryState;
     }
   }
 }

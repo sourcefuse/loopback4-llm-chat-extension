@@ -33,7 +33,7 @@ export class CheckCacheNode implements IGraphNode<DbQueryState> {
   prompt = PromptTemplate.fromTemplate(`
 <instructions>
 You are an expert Semantic analyser, you will be given a prompt from the user and a list of past prompts that were handled successfully, along with description of the sql generated from those prompts.
-You need to return the most relevant prompt from the list and in which of the following ways is it relevant - 
+You need to return the most relevant prompt from the list and in which of the following ways is it relevant -
 - return '${CacheResults.AsIs}' if the prompt's result would contain the information the user is looking for without any changes in the result, and can be used as it is.
 - return '${CacheResults.Similar}' if the prompt's result would be similar to the question in the new prompt but not exactly, and can be modified to get the data user needs.
 - return '${CacheResults.NotRelevant}' if the prompt is not relevant to the new prompt at all.
@@ -48,7 +48,7 @@ Remember that if the cached prompt has extra information, then still the old pro
 <output-format>
 format -
 relevant index-of-query-starting-from-1
-examples - 
+examples -
 ${CacheResults.AsIs} 2
 
 ${CacheResults.Similar} 1
@@ -63,13 +63,13 @@ If no queries are relevant, return '${CacheResults.NotRelevant}' and nothing els
   async execute(
     state: DbQueryState,
     config: RunnableConfig,
-  ): Promise<DbQueryState> {
+  ): Promise<Partial<DbQueryState>> {
     if (state.sampleSql) {
-      return state;
+      return {};
     }
     const relevantDocs = await this.cache.invoke(state.prompt, config);
     if (relevantDocs.length === 0) {
-      return state;
+      return {};
     }
     const chain = RunnableSequence.from([
       this.prompt,
@@ -97,7 +97,7 @@ If no queries are relevant, return '${CacheResults.NotRelevant}' and nothing els
         type: LLMStreamEventType.Log,
         data: `No relevant queries found in cache for this prompt`,
       });
-      return state;
+      return {};
     }
     if (indexNum >= relevantDocs.length || indexNum < 0 || isNaN(indexNum)) {
       config.writer?.({
@@ -105,7 +105,7 @@ If no queries are relevant, return '${CacheResults.NotRelevant}' and nothing els
         data: `Index ${index} is out of bounds for the list of relevant queries.
           Available queries: ${this._buildCacheLog(relevantDocs)}`,
       });
-      return state;
+      return {};
     }
     if (relevance === CacheResults.AsIs) {
       const missingPermissions = await this.dataSetHelper.checkPermissions(
@@ -118,7 +118,7 @@ If no queries are relevant, return '${CacheResults.NotRelevant}' and nothing els
             ', ',
           )} so generating new query`,
         });
-        return state;
+        return {};
       }
       config.writer?.({
         type: LLMStreamEventType.Log,
@@ -145,7 +145,7 @@ If no queries are relevant, return '${CacheResults.NotRelevant}' and nothing els
           type: LLMStreamEventType.Log,
           data: `Found relevant query in cache, but the dataset was not found or was disliked by the user, so generating new query`,
         });
-        return state;
+        return {};
       }
       const datasetId = relevantDocs[indexNum].metadata.datasetId;
       if (!state.directCall) {
@@ -161,7 +161,6 @@ If no queries are relevant, return '${CacheResults.NotRelevant}' and nothing els
       }
 
       return {
-        ...state,
         fromCache: true,
         datasetId,
         replyToUser: `I found this dataset in the cache - ${relevantDocs[indexNum].pageContent}`,
@@ -185,12 +184,11 @@ If no queries are relevant, return '${CacheResults.NotRelevant}' and nothing els
         },
       });
       return {
-        ...state,
         sampleSql: relevantDocs[indexNum].metadata.query,
         sampleSqlPrompt: relevantDocs[indexNum].pageContent,
       };
     }
-    return state;
+    return {};
   }
 
   private _buildCacheLog(

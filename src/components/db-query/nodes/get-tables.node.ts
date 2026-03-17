@@ -9,7 +9,7 @@ import {LLMProvider} from '../../../types';
 import {stripThinkingTokens} from '../../../utils';
 import {DbQueryAIExtensionBindings} from '../keys';
 import {DbQueryNodes} from '../nodes.enum';
-import {DbSchemaHelperService} from '../services';
+import {DbSchemaHelperService, PermissionHelper} from '../services';
 import {SchemaStore} from '../services/schema.store';
 import {TableSearchService} from '../services/search/table-search.service';
 import {DbQueryState} from '../state';
@@ -32,6 +32,8 @@ export class GetTablesNode implements IGraphNode<DbQueryState> {
     private readonly tableSearchService: TableSearchService,
     @inject(DbQueryAIExtensionBindings.GlobalContext, {optional: true})
     private readonly checks?: string[],
+    @service(PermissionHelper)
+    private readonly permissionHelper?: PermissionHelper,
   ) {}
   prompt = PromptTemplate.fromTemplate(`
 <instructions>
@@ -85,13 +87,14 @@ Use these if they are relevant to the table selection, otherwise ignore them, th
   async execute(
     state: DbQueryState,
     config: RunnableConfig,
-  ): Promise<DbQueryState> {
+  ): Promise<Partial<DbQueryState>> {
     const tableList = await this.tableSearchService.getTables(state.prompt, 10);
+    const accessibleTables = this._filterByPermissions(tableList);
     config.writer?.({
       type: LLMStreamEventType.Log,
-      data: `Selecting from tables: ${tableList}`,
+      data: `Selecting from tables: ${accessibleTables}`,
     });
-    const dbSchema = this.schemaStore.filteredSchema(tableList);
+    const dbSchema = this.schemaStore.filteredSchema(accessibleTables);
     const allTables = this._getTablesFromSchema(dbSchema);
     if (allTables.length === 0) {
       throw new Error(
@@ -136,7 +139,6 @@ Use these if they are relevant to the table selection, otherwise ignore them, th
           data: `Table selection failed: ${output}`,
         });
         return {
-          ...state,
           status: GenerationError.Failed,
           replyToUser: output.replace('failed attempt: ', ''),
         };
@@ -149,7 +151,6 @@ Use these if they are relevant to the table selection, otherwise ignore them, th
       } else {
         if (attempts === 3) {
           return {
-            ...state,
             status: GenerationError.Failed,
             replyToUser: `Not able to select relevant tables from the schema. Please rephrase the question or provide more details.`,
           };
@@ -173,7 +174,6 @@ Use these if they are relevant to the table selection, otherwise ignore them, th
     }
 
     return {
-      ...state,
       schema: this.schemaStore.filteredSchema(requiredTables),
     };
   }
@@ -205,6 +205,18 @@ Use these if they are relevant to the table selection, otherwise ignore them, th
     return Object.keys(schema.tables).map(tableName => {
       const table = schema.tables[tableName];
       return `${tableName}: ${table.description}`;
+    });
+  }
+
+  private _filterByPermissions(tables: string[]): string[] {
+    if (!this.permissionHelper) {
+      return tables;
+    }
+    return tables.filter(t => {
+      const name = t.toLowerCase().slice(t.indexOf('.') + 1);
+      return (
+        this.permissionHelper!.findMissingPermissions([name]).length === 0
+      );
     });
   }
 

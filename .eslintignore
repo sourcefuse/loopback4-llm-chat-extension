@@ -6,3 +6,4 @@ mochawesome-report
 commitlint.config.js
 .czferc.js
 /migrations
+/scripts

@@ -123,6 +123,12 @@ export type DbQueryConfig = {
     semanticValidatorNode?: {
       useSmartLLM?: boolean;
     };
+    generateChecklistNode?: {
+      parallelism?: number;
+    };
+    verifyChecklistNode?: {
+      evaluation?: boolean;
+    };
   };
   columnSelection?: boolean;
 };

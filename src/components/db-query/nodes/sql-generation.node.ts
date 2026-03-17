@@ -48,25 +48,10 @@ Adhere to these rules:
 {outputFormat}
 </output-instructions>`);
 
-  outputWithDescriptionPrompt = `Return the output in the following format with exactly 2 parts within opening and closing tags - 
-<sql>
-Contains the required valid SQL satisfying all the constraints
-It should have no other character or symbol or character that is not part of SQLs.
-Every single line of SQL should have a comment above it explaining the purpose of that line.
-</sql>
-<description>
-A very detailed but non-technical description of the SQL describing every single condition and concept used in the SQL statement. DO NOT OMMIT ANY DETAIL.
-It should just be a plain english text with no other special formatting or special character. 
-It should NOT use any technical jargon or database specific terminology like tables or columns.
-Try to keep it short and to the point while not omitting any detail.
-Do not use any DB concepts like enum numbers, joins, CTEs, subqueries etc. in the description.
-</description>`;
-
-  outputWithoutDescription = `
+  outputFormat = `
 Output should only be a valid SQL query with no other special character or formatting.
 Contains the required valid SQL satisfying all the constraints.
-It should have no other character or symbol or character that is not part of SQLs.
-Every single line of SQL should have a comment above it explaining the purpose of that line.`;
+It should have no other character or symbol or character that is not part of SQLs.`;
 
   feedbackPrompt = PromptTemplate.fromTemplate(`
 <feedback-instructions>
@@ -106,11 +91,21 @@ In the last attempt, you generated this SQL query -
       (process.env.OPTIMIZE_CACHED_QUERIES ?? 'true') === 'true';
 
     const isSingleTable =
-      this.config.nodes?.sqlGenerationNode?.generateDescription !== false &&
       state.schema.tables &&
       Object.keys(state.schema.tables).length === 1;
 
-    if ((useCheapLLMForCachedQueries && !!state.sampleSql) || isSingleTable) {
+    // Use cheap LLM for validation fix retries — the query is close, just needs small corrections
+    const isValidationFixRetry =
+      state.feedbacks?.length &&
+      state.feedbacks[state.feedbacks.length - 1].startsWith(
+        'Query Validation Failed',
+      );
+
+    if (
+      (useCheapLLMForCachedQueries && !!state.sampleSql) ||
+      isSingleTable ||
+      isValidationFixRetry
+    ) {
       llm = this.cheapllm;
     }
 
@@ -127,49 +122,24 @@ In the last attempt, you generated this SQL query -
       },
     });
 
-    const generateDesc =
-      this.config.nodes?.sqlGenerationNode?.generateDescription !== false;
-
     const output = await chain.invoke({
       dialect: this.config.db?.dialect ?? SupportedDBs.PostgreSQL,
       question: state.prompt,
       dbschema: this.schemaHelper.asString(state.schema),
-      checks: [
-        '<must-follow-rules>',
-        'You must keep these additional details in mind while writing the query -',
-        ...(this.checks ?? []).map(check => `- ${check}`),
-        ...this.schemaHelper
-          .getTablesContext(state.schema)
-          .map(check => `- ${check}`),
-        '</must-follow-rules>',
-      ].join('\n'),
+      checks: this._buildChecks(state),
       feedbacks: await this.getFeedbacks(state),
       exampleQueries: state.feedbacks?.length
         ? ''
         : await this.sampleQueries(state),
-      outputFormat: generateDesc
-        ? this.outputWithDescriptionPrompt
-        : this.outputWithoutDescription,
+      outputFormat: this.outputFormat,
     });
     const response = stripThinkingTokens(output);
 
-    let sql: string | undefined = '';
-    let description: undefined | string = undefined;
-
-    if (generateDesc) {
-      const sqlMatch = response.match(/<sql>(.*?)<\/sql>/s);
-      const descMatch = response.match(/<description>(.*?)<\/description>/s);
-
-      description = descMatch ? descMatch[1] : undefined;
-      sql = sqlMatch ? sqlMatch[1] : undefined;
-
-      config.writer?.({
-        type: LLMStreamEventType.Log,
-        data: `SQL query description: ${description}`,
-      });
-    } else {
-      sql = response.trim();
-    }
+    const sql =
+      response
+        .replace(/^```(?:sql)?\s*/i, '')
+        .replace(/```\s*$/, '')
+        .trim() || undefined;
 
     if (!sql) {
       config.writer?.({
@@ -177,11 +147,10 @@ In the last attempt, you generated this SQL query -
         data: `SQL generation failed: ${response}`,
       });
       return {
-        ...state,
         status: GenerationError.Failed,
         replyToUser:
           'Failed to generate SQL query. Please try rephrasing your question or provide more details.',
-      };
+      } as DbQueryState;
     }
 
     config.writer?.({
@@ -190,11 +159,9 @@ In the last attempt, you generated this SQL query -
     });
 
     return {
-      ...state,
       status: EvaluationResult.Pass,
       sql,
-      description,
-    };
+    } as DbQueryState;
   }
 
   async getFeedbacks(state: DbQueryState) {
@@ -233,5 +200,27 @@ ${state.sampleSql}
 This was generated for the following question - \n${state.sampleSqlPrompt} \n\n
 ${endTag}`
       : '';
+  }
+
+  private _buildChecks(state: DbQueryState): string {
+    // Use the filtered checklist from GenerateChecklist if available
+    if (state.validationChecklist) {
+      return [
+        '<must-follow-rules>',
+        'You must keep these additional details in mind while writing the query -',
+        ...state.validationChecklist.split('\n').map(check => `- ${check}`),
+        '</must-follow-rules>',
+      ].join('\n');
+    }
+    // Fallback to full checks
+    return [
+      '<must-follow-rules>',
+      'You must keep these additional details in mind while writing the query -',
+      ...(this.checks ?? []).map(check => `- ${check}`),
+      ...this.schemaHelper
+        .getTablesContext(state.schema)
+        .map(check => `- ${check}`),
+      '</must-follow-rules>',
+    ].join('\n');
   }
 }

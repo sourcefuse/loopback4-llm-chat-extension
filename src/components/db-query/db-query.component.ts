@@ -17,6 +17,8 @@ import {DbQueryAIExtensionBindings} from './keys';
 import {
   CheckCacheNode,
   CheckPermissionsNode,
+  GenerateChecklistNode,
+  GenerateDescriptionNode,
   FailedNode,
   GetColumnsNode,
   GetTablesNode,
@@ -25,6 +27,7 @@ import {
   SemanticValidatorNode,
   SqlGenerationNode,
   SyntacticValidatorNode,
+  VerifyChecklistNode,
 } from './nodes';
 import {TableSeedObserver} from './observers';
 import {DatasetRetriever} from './providers';
@@ -81,6 +84,9 @@ export class DbQueryComponent implements Component {
       FailedNode,
       SaveDataSetNode,
       CheckCacheNode,
+      GenerateChecklistNode,
+      GenerateDescriptionNode,
+      VerifyChecklistNode,
       GetColumnsNode,
     ];
     this.components = [DatasetServiceComponent];

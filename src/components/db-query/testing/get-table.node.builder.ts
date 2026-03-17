@@ -26,6 +26,11 @@ export function getTableNodeTests(cases: GetTableNodeTestCase[]) {
           resultArray: undefined,
           directCall: false,
           description: undefined,
+          validationChecklist: undefined,
+          syntacticStatus: undefined,
+          syntacticFeedback: undefined,
+          semanticStatus: undefined,
+          semanticFeedback: undefined,
         },
         {
           writer: (event: AnyObject[string]) => {},
