@@ -37,8 +37,8 @@ import {SchemaStore} from './services/schema.store';
 import {TableSearchService} from './services/search/table-search.service';
 import {
   AskAboutDatasetTool,
-  GenerateQueryTool,
-  ImproveQueryTool,
+  GetDataAsDatasetTool,
+  ImproveDatasetTool,
 } from './tools';
 import {PgWithRlsConnector} from './connectors/pg';
 
@@ -72,8 +72,8 @@ export class DbQueryComponent implements Component {
       DbQueryGraph,
       // tools
       AskAboutDatasetTool,
-      GenerateQueryTool,
-      ImproveQueryTool,
+      GetDataAsDatasetTool,
+      ImproveDatasetTool,
       // nodes
       IsImprovementNode,
       GetTablesNode,

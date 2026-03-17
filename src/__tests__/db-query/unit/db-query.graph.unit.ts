@@ -34,8 +34,9 @@ describe(`DbQueryGraph Unit`, function () {
     stubMap[DbQueryNodes.GenerateChecklist].callsFake(async () => ({
       validationChecklist: '1. Test check',
     }));
-    stubMap[DbQueryNodes.GenerateDescription].callsFake(async (state: Record<string, unknown>) =>
-      state.description ? {} : {description: 'Test description'},
+    stubMap[DbQueryNodes.GenerateDescription].callsFake(
+      async (state: Record<string, unknown>) =>
+        state.description ? {} : {description: 'Test description'},
     );
     // VerifyChecklist runs in parallel with SqlGeneration — must return partial state
     stubMap[DbQueryNodes.VerifyChecklist].callsFake(async () => ({}));
@@ -164,7 +165,9 @@ describe(`DbQueryGraph Unit`, function () {
     expect(stubMap[DbQueryNodes.IsImprovement].calledOnce).to.be.true();
     expect(stubMap[DbQueryNodes.CheckCache].calledOnce).to.be.true();
     expect(stubMap[DbQueryNodes.GetTables].calledOnce).to.be.true();
-    expect(stubMap[DbQueryNodes.SqlGeneration].getCalls().length).to.be.eql(MAX_ATTEMPTS);
+    expect(stubMap[DbQueryNodes.SqlGeneration].getCalls().length).to.be.eql(
+      MAX_ATTEMPTS,
+    );
     expect(
       stubMap[DbQueryNodes.SyntacticValidator].getCalls().length,
     ).to.be.eql(MAX_ATTEMPTS);

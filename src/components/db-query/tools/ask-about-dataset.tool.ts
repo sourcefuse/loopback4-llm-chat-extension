@@ -82,7 +82,7 @@ export class AskAboutDatasetTool implements IGraphTool {
       {
         name: this.key,
         description:
-          'Tool for answering questions about a query, note that it does not run the query and can only answer questions about the query itself, not the data it returns on execution. Call this only if you have a valid dataset ID available.',
+          'Tool for answering questions about an existing dataset, note that it can only answer questions about the dataset definition, not the data it contains. Call this only if you have a valid dataset ID available.',
         schema,
       },
     );

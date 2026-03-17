@@ -37,7 +37,7 @@ export function getTableNodeTests(cases: GetTableNodeTestCase[]) {
         } as unknown as RunnableConfig,
       );
       testCase.expectedTables.forEach(table => {
-        expect(result.schema.tables).to.have.property(table);
+        expect(result.schema?.tables).to.have.property(table);
       });
     },
   }));

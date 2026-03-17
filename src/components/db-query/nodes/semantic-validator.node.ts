@@ -101,9 +101,7 @@ Keep these feedbacks in mind while validating the new query.
         semanticStatus: EvaluationResult.Pass,
       } as DbQueryState;
     } else {
-      const reason = invalidMatch
-        ? invalidMatch[1].trim()
-        : response.trim();
+      const reason = invalidMatch ? invalidMatch[1].trim() : response.trim();
       config.writer?.({
         type: LLMStreamEventType.Log,
         data: `Query Validation Failed by LLM: ${reason}`,

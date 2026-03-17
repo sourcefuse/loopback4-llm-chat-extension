@@ -55,8 +55,7 @@ describe('SqlGenerationNode Unit', function () {
 
   it('should generate SQL query based on the provided prompt', async () => {
     llmStub.resolves({
-      content:
-        '<think>thinking about it</think>SELECT * FROM employees;',
+      content: '<think>thinking about it</think>SELECT * FROM employees;',
     });
 
     const state = {
@@ -145,8 +144,7 @@ It should have no other character or symbol or character that is not part of SQL
 
   it('should generate SQL query based on the provided prompt with a single feedback from some validation stage', async () => {
     llmStub.resolves({
-      content:
-        '<think>thinking about it</think>SELECT * FROM employees;',
+      content: '<think>thinking about it</think>SELECT * FROM employees;',
     });
 
     const state = {
@@ -249,8 +247,7 @@ It should have no other character or symbol or character that is not part of SQL
 
   it('should generate SQL query based on the provided prompt with a multiple feedbacks from from previous loops', async () => {
     llmStub.resolves({
-      content:
-        '<think>thinking about it</think>SELECT * FROM employees;',
+      content: '<think>thinking about it</think>SELECT * FROM employees;',
     });
 
     const state = {
@@ -361,8 +358,7 @@ It should have no other character or symbol or character that is not part of SQL
 
   it('should generate SQL query with sample queries when no feedbacks but has sample SQL', async () => {
     llmStub.resolves({
-      content:
-        '<think>thinking about it</think>SELECT * FROM employees;',
+      content: '<think>thinking about it</think>SELECT * FROM employees;',
     });
 
     const state = {
@@ -419,8 +415,7 @@ It should have no other character or symbol or character that is not part of SQL
 
   it('should generate SQL query with baseline sample queries when no feedbacks and not from cache', async () => {
     llmStub.resolves({
-      content:
-        '<think>thinking about it</think>SELECT * FROM employees;',
+      content: '<think>thinking about it</think>SELECT * FROM employees;',
     });
 
     const state = {
@@ -514,8 +509,7 @@ It should have no other character or symbol or character that is not part of SQL
     it('should use cheap LLM when OPTIMIZE_CACHED_QUERIES is true and sampleSql exists', async () => {
       process.env.OPTIMIZE_CACHED_QUERIES = 'true';
       cheapLLMStub.resolves({
-        content:
-          'SELECT * FROM employees WHERE id = 1;',
+        content: 'SELECT * FROM employees WHERE id = 1;',
       });
 
       const state = {
@@ -575,8 +569,7 @@ It should have no other character or symbol or character that is not part of SQL
     it('should use smart LLM when OPTIMIZE_CACHED_QUERIES is false and sampleSql exists', async () => {
       process.env.OPTIMIZE_CACHED_QUERIES = 'false';
       smartLLMStub.resolves({
-        content:
-          'SELECT * FROM employees WHERE id = 1;',
+        content: 'SELECT * FROM employees WHERE id = 1;',
       });
 
       const state = {
@@ -636,8 +629,7 @@ It should have no other character or symbol or character that is not part of SQL
     it('should use cheap LLM for single table schemas regardless of cache', async () => {
       process.env.OPTIMIZE_CACHED_QUERIES = 'false';
       cheapLLMStub.resolves({
-        content:
-          'SELECT * FROM employees;',
+        content: 'SELECT * FROM employees;',
       });
 
       const state = {
@@ -751,8 +743,7 @@ It should have no other character or symbol or character that is not part of SQL
     it('should default to true for OPTIMIZE_CACHED_QUERIES when env var is not set', async () => {
       delete process.env.OPTIMIZE_CACHED_QUERIES;
       cheapLLMStub.resolves({
-        content:
-          'SELECT * FROM employees WHERE id = 1;',
+        content: 'SELECT * FROM employees WHERE id = 1;',
       });
 
       const state = {
@@ -812,8 +803,7 @@ It should have no other character or symbol or character that is not part of SQL
     it('should use smart LLM when sampleSql is null despite optimization being enabled', async () => {
       process.env.OPTIMIZE_CACHED_QUERIES = 'true';
       smartLLMStub.resolves({
-        content:
-          'SELECT * FROM employees, departments;',
+        content: 'SELECT * FROM employees, departments;',
       });
 
       const state = {

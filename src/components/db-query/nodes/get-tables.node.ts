@@ -214,9 +214,7 @@ Use these if they are relevant to the table selection, otherwise ignore them, th
     }
     return tables.filter(t => {
       const name = t.toLowerCase().slice(t.indexOf('.') + 1);
-      return (
-        this.permissionHelper!.findMissingPermissions([name]).length === 0
-      );
+      return this.permissionHelper!.findMissingPermissions([name]).length === 0;
     });
   }
 

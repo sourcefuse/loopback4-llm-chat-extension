@@ -1,8 +1,5 @@
 import {expect, sinon} from '@loopback/testlab';
-import {
-  EvaluationResult,
-  SemanticValidatorNode,
-} from '../../../../components';
+import {EvaluationResult, SemanticValidatorNode} from '../../../../components';
 import {LLMProvider} from '../../../../types';
 
 describe('SemanticValidatorNode Unit', function () {

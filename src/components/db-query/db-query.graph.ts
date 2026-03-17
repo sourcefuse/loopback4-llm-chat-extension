@@ -59,56 +59,53 @@ export class DbQueryGraph extends BaseGraph<DbQueryState> {
       .addNode(DbQueryNodes.PostCacheAndTables, async () => ({}))
       .addNode(DbQueryNodes.PreValidation, async () => ({}))
       // PostValidation: merges syntactic + semantic results into status/feedbacks
-      .addNode(
-        DbQueryNodes.PostValidation,
-        async (state: DbQueryState) => {
-          // Syntactic failures take priority
-          if (
-            state.syntacticStatus &&
-            state.syntacticStatus !== EvaluationResult.Pass
-          ) {
-            return {
-              status: state.syntacticStatus,
-              feedbacks: [
-                ...(state.feedbacks ?? []),
-                ...(state.syntacticFeedback ? [state.syntacticFeedback] : []),
-              ],
-              syntacticStatus: undefined,
-              syntacticFeedback: undefined,
-              semanticStatus: undefined,
-              semanticFeedback: undefined,
-            };
-          }
-          // Semantic failure
-          if (
-            state.semanticStatus &&
-            state.semanticStatus !== EvaluationResult.Pass
-          ) {
-            return {
-              status: state.semanticStatus,
-              feedbacks: [
-                ...(state.feedbacks ?? []),
-                ...(state.semanticFeedback ? [state.semanticFeedback] : []),
-              ],
-              syntacticStatus: undefined,
-              syntacticFeedback: undefined,
-              semanticStatus: undefined,
-              semanticFeedback: undefined,
-            };
-          }
-          // Both passed — clear internal validator feedbacks
+      .addNode(DbQueryNodes.PostValidation, async (state: DbQueryState) => {
+        // Syntactic failures take priority
+        if (
+          state.syntacticStatus &&
+          state.syntacticStatus !== EvaluationResult.Pass
+        ) {
           return {
-            status: EvaluationResult.Pass,
-            feedbacks: (state.feedbacks ?? []).filter(
-              f => !f.startsWith('Query Validation Failed'),
-            ),
+            status: state.syntacticStatus,
+            feedbacks: [
+              ...(state.feedbacks ?? []),
+              ...(state.syntacticFeedback ? [state.syntacticFeedback] : []),
+            ],
             syntacticStatus: undefined,
             syntacticFeedback: undefined,
             semanticStatus: undefined,
             semanticFeedback: undefined,
           };
-        },
-      )
+        }
+        // Semantic failure
+        if (
+          state.semanticStatus &&
+          state.semanticStatus !== EvaluationResult.Pass
+        ) {
+          return {
+            status: state.semanticStatus,
+            feedbacks: [
+              ...(state.feedbacks ?? []),
+              ...(state.semanticFeedback ? [state.semanticFeedback] : []),
+            ],
+            syntacticStatus: undefined,
+            syntacticFeedback: undefined,
+            semanticStatus: undefined,
+            semanticFeedback: undefined,
+          };
+        }
+        // Both passed — clear internal validator feedbacks
+        return {
+          status: EvaluationResult.Pass,
+          feedbacks: (state.feedbacks ?? []).filter(
+            f => !f.startsWith('Query Validation Failed'),
+          ),
+          syntacticStatus: undefined,
+          syntacticFeedback: undefined,
+          semanticStatus: undefined,
+          semanticFeedback: undefined,
+        };
+      })
       // === EDGES ===
       // Parallel fan-out: cache check and table selection
       .addEdge(START, DbQueryNodes.IsImprovement)

@@ -91,8 +91,7 @@ In the last attempt, you generated this SQL query -
       (process.env.OPTIMIZE_CACHED_QUERIES ?? 'true') === 'true';
 
     const isSingleTable =
-      state.schema.tables &&
-      Object.keys(state.schema.tables).length === 1;
+      state.schema.tables && Object.keys(state.schema.tables).length === 1;
 
     // Use cheap LLM for validation fix retries — the query is close, just needs small corrections
     const isValidationFixRetry =
