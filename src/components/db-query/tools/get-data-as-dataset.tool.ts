@@ -53,8 +53,9 @@ export class GetDataAsDatasetTool implements IGraphTool {
     }) as AnyObject[string];
     return graph.asTool({
       name: this.key,
-      description: `Query tool for generating SQL queries for a users request. Use it to find data from the database based on the user's request.
-                Note that it does not return the query, instead only a dataset ID that is not relevant to the user. 
+      description: `Query tool for generating SQL queries for a users request. Use it only when the user needs raw tabular data from the database.
+                Do not use this tool if the user's request involves trends, growth, decline, comparisons, distributions, patterns, or any form of analytical insight — use the 'generate-visualization' tool instead.
+                Note that it does not return the query, instead only a dataset ID that is not relevant to the user.
                 It internally fires an event that renders a grid for the dataset on the UI for the user to see.`,
       schema,
     });

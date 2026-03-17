@@ -84,8 +84,8 @@ Return a short bulleted list where each bullet is one condition, filter, or piec
       if (token) {
         output += token;
         config.writer?.({
-          type: LLMStreamEventType.Message,
-          data: {message: token},
+          type: LLMStreamEventType.ToolStatus,
+          data: {thinkingToken: token},
         });
       }
     }
