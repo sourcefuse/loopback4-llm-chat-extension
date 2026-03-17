@@ -1,7 +1,7 @@
 import {PromptTemplate} from '@langchain/core/prompts';
 import {RunnableSequence} from '@langchain/core/runnables';
 import {LangGraphRunnableConfig} from '@langchain/langgraph';
-import {inject} from '@loopback/context';
+import {inject, service} from '@loopback/core';
 import {graphNode} from '../../../decorators';
 import {IGraphNode, LLMStreamEventType} from '../../../graphs';
 import {AiIntegrationBindings} from '../../../keys';
@@ -9,6 +9,7 @@ import {LLMProvider} from '../../../types';
 import {stripThinkingTokens} from '../../../utils';
 import {DbQueryAIExtensionBindings} from '../keys';
 import {DbQueryNodes} from '../nodes.enum';
+import {DbSchemaHelperService} from '../services';
 import {DbQueryState} from '../state';
 import {DbQueryConfig, EvaluationResult} from '../types';
 
@@ -21,6 +22,8 @@ export class SemanticValidatorNode implements IGraphNode<DbQueryState> {
     private readonly cheapllm: LLMProvider,
     @inject(DbQueryAIExtensionBindings.Config)
     private readonly config: DbQueryConfig,
+    @service(DbSchemaHelperService)
+    private readonly schemaHelper: DbSchemaHelperService,
   ) {}
 
   prompt = PromptTemplate.fromTemplate(`
@@ -31,9 +34,17 @@ Go through each checklist item and verify it against the SQL query.
 DO NOT make up issues that do not exist in the query.
 </instructions>
 
+<user-question>
+{userPrompt}
+</user-question>
+
 <sql-query>
 {query}
 </sql-query>
+
+<database-schema>
+{schema}
+</database-schema>
 
 <validation-checklist>
 {checklist}
@@ -86,13 +97,15 @@ Keep these feedbacks in mind while validating the new query.
     const llm = useSmartLLM ? this.smartllm : this.cheapllm;
     const chain = RunnableSequence.from([this.prompt, llm]);
     const output = await chain.invoke({
+      userPrompt: state.prompt,
       query: state.sql,
+      schema: this.schemaHelper.asString(state.schema),
       checklist: state.validationChecklist ?? 'No checklist provided.',
       feedbacks: await this.getFeedbacks(state),
     });
     const response = stripThinkingTokens(output);
 
-    const invalidMatch = response.match(/<invalid>(.*?)<\/invalid>/s);
+    const invalidMatch = /<invalid>(.*?)<\/invalid>/s.exec(response);
     const isValid =
       response.includes('<valid/>') || response.includes('<valid />');
 

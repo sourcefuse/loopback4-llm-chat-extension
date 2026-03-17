@@ -7,6 +7,7 @@ import {IGraphNode, LLMStreamEventType} from '../../../graphs';
 import {AiIntegrationBindings} from '../../../keys';
 import {LLMProvider} from '../../../types';
 import {stripThinkingTokens} from '../../../utils';
+import {AIMessage} from '@langchain/core/messages';
 import {DbQueryAIExtensionBindings} from '../keys';
 import {DbQueryNodes} from '../nodes.enum';
 import {DbSchemaHelperService} from '../services';
@@ -93,15 +94,15 @@ If no rules are relevant:
     state: DbQueryState,
     config: LangGraphRunnableConfig,
   ): Promise<DbQueryState> {
-    // Skip on retry — checklist was already verified on the first pass
+    const empty = {} as DbQueryState;
+
     if (state.feedbacks?.length) {
-      return {} as DbQueryState;
+      return empty;
     }
 
-    // Skip for small schemas (1-2 tables) — context is already small enough
     const tableCount = Object.keys(state.schema?.tables ?? {}).length;
     if (tableCount <= 2) {
-      return {} as DbQueryState;
+      return empty;
     }
 
     const allChecks = [
@@ -110,7 +111,7 @@ If no rules are relevant:
     ];
 
     if (allChecks.length === 0) {
-      return {} as DbQueryState;
+      return empty;
     }
 
     config.writer?.({
@@ -118,6 +119,26 @@ If no rules are relevant:
       data: 'Verifying validation checklist with chain-of-thought.',
     });
 
+    const output = await this.invokeVerification(state, allChecks);
+    const verifiedIndexes = this.parseVerifiedIndexes(output, allChecks.length);
+
+    if (verifiedIndexes.length === 0) {
+      return empty;
+    }
+
+    const validationChecklist = this.mergeWithExisting(
+      state.validationChecklist,
+      verifiedIndexes,
+      allChecks,
+    );
+
+    return {validationChecklist} as DbQueryState;
+  }
+
+  private async invokeVerification(
+    state: DbQueryState,
+    allChecks: string[],
+  ): Promise<AIMessage> {
     const indexedChecks = allChecks
       .map((check, i) => `${i + 1}. ${check}`)
       .join('\n');
@@ -130,42 +151,40 @@ If no rules are relevant:
           ? this.evaluationOutputInstructions
           : this.simpleOutputInstructions),
     );
+
     const chain = RunnableSequence.from([promptTemplate, this.llm]);
-    const output = await chain.invoke({
+    return chain.invoke({
       prompt: state.prompt,
       tables: Object.keys(state.schema?.tables ?? {}).join(', '),
       schema: this.schemaHelper.asString(state.schema),
       indexedChecks,
     });
+  }
 
+  private parseVerifiedIndexes(output: AIMessage, maxIndex: number): number[] {
     const response = stripThinkingTokens(output).trim();
-    const resultMatch = response.match(/<result>(.*?)<\/result>/s);
+    const resultMatch = /<result>(.*?)<\/result>/s.exec(response);
     const indexStr = resultMatch ? resultMatch[1].trim() : response;
 
-    if (indexStr === 'none' || !indexStr) {
-      return {} as DbQueryState;
-    }
+    if (!indexStr || indexStr === 'none') return [];
 
-    const verifiedIndexes = indexStr
+    return indexStr
       .split(',')
-      .map(s => parseInt(s.trim(), 10))
-      .filter(n => !isNaN(n) && n >= 1 && n <= allChecks.length);
+      .map(s => Number.parseInt(s.trim(), 10))
+      .filter(n => !Number.isNaN(n) && n >= 1 && n <= maxIndex);
+  }
 
-    if (verifiedIndexes.length === 0) {
-      return {} as DbQueryState;
-    }
-
-    // Merge with existing checklist — union of both passes
+  private mergeWithExisting(
+    existing: string | undefined,
+    verifiedIndexes: number[],
+    allChecks: string[],
+  ): string {
     const existingChecks = new Set(
-      (state.validationChecklist ?? '').split('\n').filter(c => c.length > 0),
+      (existing ?? '').split('\n').filter(c => c.length > 0),
     );
-    const verifiedChecks = verifiedIndexes.map(i => allChecks[i - 1]);
-    for (const check of verifiedChecks) {
+    for (const check of verifiedIndexes.map(i => allChecks[i - 1])) {
       existingChecks.add(check);
     }
-
-    const validationChecklist = Array.from(existingChecks).join('\n');
-
-    return {validationChecklist} as DbQueryState;
+    return Array.from(existingChecks).join('\n');
   }
 }

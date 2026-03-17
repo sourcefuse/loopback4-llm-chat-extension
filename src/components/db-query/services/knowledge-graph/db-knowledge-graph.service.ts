@@ -18,9 +18,10 @@ import {Concept, GraphEdge, GraphNode, KnowledgeGraph} from './types';
 const debug = require('debug')('ai-integration:knowledge-graph');
 
 @injectable({scope: BindingScope.SINGLETON})
-export class DbKnowledgeGraphService
-  implements KnowledgeGraph<string, DatabaseSchema>
-{
+export class DbKnowledgeGraphService implements KnowledgeGraph<
+  string,
+  DatabaseSchema
+> {
   edges: Map<string, GraphEdge[]>;
   nodes: Map<string, GraphNode>;
   private vectorWeight: number;

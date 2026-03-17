@@ -8,9 +8,7 @@ import {POST_DATASET_TAG} from '../../db-query';
 @graphNode(VisualizationGraphNodes.RenderVisualization, {
   [POST_DATASET_TAG]: true,
 })
-export class RenderVisualizationNode
-  implements IGraphNode<VisualizationGraphState>
-{
+export class RenderVisualizationNode implements IGraphNode<VisualizationGraphState> {
   constructor() {}
 
   async execute(

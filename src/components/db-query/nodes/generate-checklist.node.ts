@@ -7,6 +7,7 @@ import {IGraphNode, LLMStreamEventType} from '../../../graphs';
 import {AiIntegrationBindings} from '../../../keys';
 import {LLMProvider} from '../../../types';
 import {stripThinkingTokens} from '../../../utils';
+import {AIMessage} from '@langchain/core/messages';
 import {DbQueryAIExtensionBindings} from '../keys';
 import {DbQueryNodes} from '../nodes.enum';
 import {DbSchemaHelperService} from '../services';
@@ -68,15 +69,14 @@ If no rules are relevant, return: none
     state: DbQueryState,
     config: LangGraphRunnableConfig,
   ): Promise<DbQueryState> {
-    // Skip if checklist was already generated (e.g. retry paths)
+    const empty = {} as DbQueryState;
     if (state.validationChecklist) {
-      return {} as DbQueryState;
+      return empty;
     }
 
-    // Skip for small schemas (1-2 tables) — context is already small enough
     const tableCount = Object.keys(state.schema?.tables ?? {}).length;
     if (tableCount <= 2) {
-      return {} as DbQueryState;
+      return empty;
     }
 
     const allChecks = [
@@ -85,7 +85,7 @@ If no rules are relevant, return: none
     ];
 
     if (allChecks.length === 0) {
-      return {} as DbQueryState;
+      return empty;
     }
 
     config.writer?.({
@@ -93,6 +93,24 @@ If no rules are relevant, return: none
       data: 'Filtering validation checklist for semantic validation.',
     });
 
+    const mergedIndexes = await this.runParallelChecklist(state, allChecks);
+
+    if (mergedIndexes.size === 0) {
+      return empty;
+    }
+
+    const validationChecklist = Array.from(mergedIndexes)
+      .sort((a, b) => a - b)
+      .map(i => allChecks[i - 1])
+      .join('\n');
+
+    return {validationChecklist} as DbQueryState;
+  }
+
+  private async runParallelChecklist(
+    state: DbQueryState,
+    allChecks: string[],
+  ): Promise<Set<number>> {
     const indexedChecks = allChecks
       .map((check, i) => `${i + 1}. ${check}`)
       .join('\n');
@@ -108,33 +126,25 @@ If no rules are relevant, return: none
       indexedChecks,
     };
 
-    // Run N parallel calls and union the results
     const results = await Promise.all(
       Array.from({length: parallelism}, () => chain.invoke(invokeArgs)),
     );
 
     const mergedIndexes = new Set<number>();
     for (const output of results) {
-      const response = stripThinkingTokens(output).trim();
-      if (!response) continue;
-      const indexStr = response;
-      if (indexStr === 'none') continue;
-      indexStr
-        .split(',')
-        .map(s => parseInt(s.trim(), 10))
-        .filter(n => !isNaN(n) && n >= 1 && n <= allChecks.length)
-        .forEach(n => mergedIndexes.add(n));
+      this.parseIndexes(output, allChecks.length).forEach(n =>
+        mergedIndexes.add(n),
+      );
     }
+    return mergedIndexes;
+  }
 
-    if (mergedIndexes.size === 0) {
-      return {} as DbQueryState;
-    }
-
-    const validationChecklist = Array.from(mergedIndexes)
-      .sort((a, b) => a - b)
-      .map(i => allChecks[i - 1])
-      .join('\n');
-
-    return {validationChecklist} as DbQueryState;
+  private parseIndexes(output: AIMessage, maxIndex: number): number[] {
+    const response = stripThinkingTokens(output).trim();
+    if (!response || response === 'none') return [];
+    return response
+      .split(',')
+      .map(s => Number.parseInt(s.trim(), 10))
+      .filter(n => !Number.isNaN(n) && n >= 1 && n <= maxIndex);
   }
 }

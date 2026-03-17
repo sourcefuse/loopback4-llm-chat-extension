@@ -1,5 +1,6 @@
 import {expect, sinon} from '@loopback/testlab';
 import {EvaluationResult, SemanticValidatorNode} from '../../../../components';
+import {DbSchemaHelperService} from '../../../../components/db-query/services';
 import {LLMProvider} from '../../../../types';
 
 describe('SemanticValidatorNode Unit', function () {
@@ -9,8 +10,11 @@ describe('SemanticValidatorNode Unit', function () {
   beforeEach(() => {
     llmStub = sinon.stub();
     const llm = llmStub as unknown as LLMProvider;
+    const schemaHelper = {
+      asString: sinon.stub().returns(''),
+    } as unknown as DbSchemaHelperService;
 
-    node = new SemanticValidatorNode(llm, llm, {models: []});
+    node = new SemanticValidatorNode(llm, llm, {models: []}, schemaHelper);
   });
 
   afterEach(() => {
@@ -84,11 +88,12 @@ describe('SemanticValidatorNode Unit', function () {
     sinon.assert.calledOnce(llmStub);
 
     const prompt = llmStub.firstCall.args[0];
-    // Verify the prompt contains the checklist and SQL but not schema or user prompt
+    // Verify the prompt contains the user question, checklist, SQL, and schema
     expect(prompt.value).to.containEql(state.sql);
+    expect(prompt.value).to.containEql(state.prompt);
     expect(prompt.value).to.containEql('1. Query selects from users table');
-    expect(prompt.value).to.not.containEql('<database-schema>');
-    expect(prompt.value).to.not.containEql('<user-question>');
+    expect(prompt.value).to.containEql('<database-schema>');
+    expect(prompt.value).to.containEql('<user-question>');
   });
 
   it('should include feedbacks in the prompt', async () => {
