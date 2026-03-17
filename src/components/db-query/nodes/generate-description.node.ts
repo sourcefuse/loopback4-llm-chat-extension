@@ -91,8 +91,8 @@ Return a short bulleted list where each bullet is one condition, filter, or piec
     }
 
     // Strip thinking tokens from the accumulated string
-    let description = output.replace(/<think(ing)?>.*?<\/think(ing)?>/gs, '');
-    description = description.replace(/.*?<\/think(ing)?>/gs, '').trim();
+    let description = output.replaceAll(/<think(ing)?>.*?<\/think(ing)?>/gs, '');
+    description = description.replaceAll(/.*?<\/think(ing)?>/gs, '').trim();
 
     config.writer?.({
       type: LLMStreamEventType.Log,
