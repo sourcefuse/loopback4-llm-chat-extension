@@ -113,18 +113,7 @@ If no rules are relevant, return: none
       Array.from({length: parallelism}, () => chain.invoke(invokeArgs)),
     );
 
-    const mergedIndexes = new Set<number>();
-    for (const output of results) {
-      const response = stripThinkingTokens(output).trim();
-      if (!response) continue;
-      const indexStr = response;
-      if (indexStr === 'none') continue;
-      indexStr
-        .split(',')
-        .map(s => parseInt(s.trim(), 10))
-        .filter(n => !isNaN(n) && n >= 1 && n <= allChecks.length)
-        .forEach(n => mergedIndexes.add(n));
-    }
+    const mergedIndexes = this.parseCheckIndexes(results, allChecks.length);
 
     if (mergedIndexes.size === 0) {
       return {} as DbQueryState;
@@ -136,5 +125,24 @@ If no rules are relevant, return: none
       .join('\n');
 
     return {validationChecklist} as DbQueryState;
+
+  private parseCheckIndexes(
+    results: string[],
+    totalChecks: number,
+  ): Set<number> {
+    const mergedIndexes = new Set<number>();
+    for (const output of results) {
+      const response = stripThinkingTokens(output).trim();
+      if (!response) continue;
+      const indexStr = response;
+      if (indexStr === 'none') continue;
+      indexStr
+        .split(',')
+        .map(s => Number.parseInt(s.trim(), 10))
+        .filter(n => !Number.isNaN(n) && n >= 1 && n <= totalChecks)
+        .forEach(n => mergedIndexes.add(n));
+    }
+    return mergedIndexes;
+  }
   }
 }
