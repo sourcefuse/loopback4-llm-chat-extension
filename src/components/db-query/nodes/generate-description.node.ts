@@ -27,13 +27,18 @@ export class GenerateDescriptionNode implements IGraphNode<DbQueryState> {
 
   prompt = PromptTemplate.fromTemplate(`
 <instructions>
-You are an AI assistant that summarizes what data a query would fetch to answer the user's question.
-Write a concise, bulleted summary in plain english. No SQL, no technical jargon, no table/column names.
+You are an AI assistant that describes what a SQL query does in plain english.
+Analyze the actual query below and write a concise, bulleted summary of the data it retrieves and any filters/conditions it applies.
+Write in plain english. No SQL, no technical jargon, no table/column names.
 </instructions>
 
 <user-question>
 {prompt}
 </user-question>
+
+<sql-query>
+{sql}
+</sql-query>
 
 <database-schema>
 {schema}
@@ -56,7 +61,7 @@ Return a short bulleted list where each bullet is one condition, filter, or piec
     const generateDesc =
       this.config.nodes?.sqlGenerationNode?.generateDescription !== false;
 
-    if (!generateDesc || state.description) {
+    if (!generateDesc || !state.sql) {
       return {} as DbQueryState;
     }
 
@@ -68,6 +73,7 @@ Return a short bulleted list where each bullet is one condition, filter, or piec
     const chain = RunnableSequence.from([this.prompt, this.llm]);
     const stream = await chain.stream({
       prompt: state.prompt,
+      sql: state.sql,
       schema: this.schemaHelper.asString(state.schema),
       checks: [
         '<must-follow-rules>',

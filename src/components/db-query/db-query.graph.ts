@@ -129,10 +129,8 @@ export class DbQueryGraph extends BaseGraph<DbQueryState> {
       // GetColumns → GenerateChecklist (fast pass) → parallel fan-out
       .addEdge(DbQueryNodes.GetColumns, DbQueryNodes.GenerateChecklist)
       .addEdge(DbQueryNodes.GenerateChecklist, DbQueryNodes.SqlGeneration)
-      .addEdge(DbQueryNodes.GenerateChecklist, DbQueryNodes.GenerateDescription)
       .addEdge(DbQueryNodes.GenerateChecklist, DbQueryNodes.VerifyChecklist)
-      // All three fan-in to PreValidation
-      .addEdge(DbQueryNodes.GenerateDescription, DbQueryNodes.PreValidation)
+      // Both fan-in to PreValidation
       .addEdge(DbQueryNodes.VerifyChecklist, DbQueryNodes.PreValidation)
       // SqlGeneration routes to validation or failure
       .addConditionalEdges(
@@ -146,12 +144,14 @@ export class DbQueryGraph extends BaseGraph<DbQueryState> {
           Failed: DbQueryNodes.Failed,
         },
       )
-      // Parallel fan-out: both validators run concurrently
+      // Parallel fan-out: validators and description generation run concurrently
       .addEdge(DbQueryNodes.PreValidation, DbQueryNodes.SyntacticValidator)
       .addEdge(DbQueryNodes.PreValidation, DbQueryNodes.SemanticValidator)
+      .addEdge(DbQueryNodes.PreValidation, DbQueryNodes.GenerateDescription)
       // Fan-in at PostValidation
       .addEdge(DbQueryNodes.SyntacticValidator, DbQueryNodes.PostValidation)
       .addEdge(DbQueryNodes.SemanticValidator, DbQueryNodes.PostValidation)
+      .addEdge(DbQueryNodes.GenerateDescription, DbQueryNodes.PostValidation)
       .addConditionalEdges(
         DbQueryNodes.PostValidation,
         (state: DbQueryState) => {
@@ -164,9 +164,7 @@ export class DbQueryGraph extends BaseGraph<DbQueryState> {
           return 'Failed';
         },
         {
-          // SaveDataset fans-in from both PostValidation and GenerateDescription
           Accepted: DbQueryNodes.SaveDataset,
-          // FixSQL goes through GenerateChecklist (no-op) to re-trigger both SqlGeneration and GenerateDescription
           FixSQL: DbQueryNodes.GenerateChecklist,
           ReselectTables: DbQueryNodes.GetTables,
           Failed: DbQueryNodes.Failed,
