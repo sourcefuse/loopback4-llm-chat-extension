@@ -11,7 +11,12 @@ import {DbQueryAIExtensionBindings} from '../keys';
 import {DbQueryNodes} from '../nodes.enum';
 import {DbSchemaHelperService} from '../services';
 import {DbQueryState} from '../state';
-import {ChangeType, DbQueryConfig, EvaluationResult, GenerationError} from '../types';
+import {
+  ChangeType,
+  DbQueryConfig,
+  EvaluationResult,
+  GenerationError,
+} from '../types';
 
 @graphNode(DbQueryNodes.SqlGeneration)
 export class SqlGenerationNode implements IGraphNode<DbQueryState> {
@@ -97,9 +102,16 @@ In the last attempt, you generated this SQL query -
       );
 
     // Use changeType from ClassifyChangeNode to pick the right LLM
-    if (state.changeType === ChangeType.Minor || isSingleTable || isValidationFixRetry) {
+    if (
+      state.changeType === ChangeType.Minor ||
+      isSingleTable ||
+      isValidationFixRetry
+    ) {
       llm = this.cheapllm;
-    } else if (state.changeType === ChangeType.Rewrite || state.changeType === ChangeType.Major) {
+    } else if (
+      state.changeType === ChangeType.Rewrite ||
+      state.changeType === ChangeType.Major
+    ) {
       llm = this.sqlLLM;
     }
 

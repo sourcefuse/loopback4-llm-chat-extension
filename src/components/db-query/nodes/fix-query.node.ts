@@ -11,7 +11,12 @@ import {DbQueryAIExtensionBindings} from '../keys';
 import {DbQueryNodes} from '../nodes.enum';
 import {DbSchemaHelperService} from '../services';
 import {DbQueryState} from '../state';
-import {DatabaseSchema, DbQueryConfig, EvaluationResult, GenerationError} from '../types';
+import {
+  DatabaseSchema,
+  DbQueryConfig,
+  EvaluationResult,
+  GenerationError,
+} from '../types';
 
 @graphNode(DbQueryNodes.FixQuery)
 export class FixQueryNode implements IGraphNode<DbQueryState> {
@@ -156,7 +161,8 @@ It should have no other character or symbol or character that is not part of SQL
     }
 
     const trimmedRelations = fullSchema.relations.filter(
-      rel => errorTableSet.has(rel.table) || errorTableSet.has(rel.referencedTable),
+      rel =>
+        errorTableSet.has(rel.table) || errorTableSet.has(rel.referencedTable),
     );
 
     return {

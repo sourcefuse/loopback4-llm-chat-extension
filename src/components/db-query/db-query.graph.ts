@@ -23,6 +23,10 @@ export class DbQueryGraph extends BaseGraph<DbQueryState> {
         await this._getNodeFn(DbQueryNodes.CheckCache),
       )
       .addNode(
+        DbQueryNodes.CheckTemplates,
+        await this._getNodeFn(DbQueryNodes.CheckTemplates),
+      )
+      .addNode(
         DbQueryNodes.GenerateChecklist,
         await this._getNodeFn(DbQueryNodes.GenerateChecklist),
       )
@@ -89,7 +93,9 @@ export class DbQueryGraph extends BaseGraph<DbQueryState> {
             ],
             syntacticStatus: undefined,
             syntacticFeedback: undefined,
-            syntacticErrorTables: hasErrorTables ? mergedErrorTables : undefined,
+            syntacticErrorTables: hasErrorTables
+              ? mergedErrorTables
+              : undefined,
             semanticStatus: undefined,
             semanticFeedback: undefined,
             semanticErrorTables: hasErrorTables ? mergedErrorTables : undefined,
@@ -108,7 +114,9 @@ export class DbQueryGraph extends BaseGraph<DbQueryState> {
             ],
             syntacticStatus: undefined,
             syntacticFeedback: undefined,
-            syntacticErrorTables: hasErrorTables ? mergedErrorTables : undefined,
+            syntacticErrorTables: hasErrorTables
+              ? mergedErrorTables
+              : undefined,
             semanticStatus: undefined,
             semanticFeedback: undefined,
             semanticErrorTables: hasErrorTables ? mergedErrorTables : undefined,
@@ -133,16 +141,20 @@ export class DbQueryGraph extends BaseGraph<DbQueryState> {
       .addEdge(START, DbQueryNodes.IsImprovement)
       .addEdge(DbQueryNodes.IsImprovement, DbQueryNodes.CheckCache)
       .addEdge(DbQueryNodes.IsImprovement, DbQueryNodes.GetTables)
+      .addEdge(DbQueryNodes.IsImprovement, DbQueryNodes.CheckTemplates)
       .addEdge(DbQueryNodes.CheckCache, DbQueryNodes.PostCacheAndTables)
       .addEdge(DbQueryNodes.GetTables, DbQueryNodes.PostCacheAndTables)
+      .addEdge(DbQueryNodes.CheckTemplates, DbQueryNodes.PostCacheAndTables)
       .addConditionalEdges(
         DbQueryNodes.PostCacheAndTables,
         (state: DbQueryState) => {
+          if (state.fromTemplate) return 'FromTemplate';
           if (state.fromCache) return 'AsIs';
           if (state.status === GenerationError.Failed) return 'Failed';
           return 'Continue';
         },
         {
+          FromTemplate: DbQueryNodes.SaveDataset,
           AsIs: END,
           Failed: DbQueryNodes.Failed,
           Continue: DbQueryNodes.GetColumns,

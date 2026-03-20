@@ -26,6 +26,8 @@ export const DbQueryGraphStateAnnotation = Annotation.Root({
   syntacticErrorTables: Annotation<string[] | undefined>,
   semanticErrorTables: Annotation<string[] | undefined>,
   changeType: Annotation<ChangeType | undefined>,
+  fromTemplate: Annotation<boolean | undefined>,
+  templateId: Annotation<string | undefined>,
 });
 
 export type DbQueryState = typeof DbQueryGraphStateAnnotation.State;

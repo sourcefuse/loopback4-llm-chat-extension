@@ -193,6 +193,7 @@ export enum DbQueryStoredTypes {
   SchemaHash = 'schema_hash',
   Context = 'context',
   KnowledgeGraph = 'knowledge_graph',
+  Template = 'template',
 }
 
 export type CachedKnowledgeGraph = {
@@ -207,6 +208,55 @@ export type QueryCacheMetadata = {
   description: string;
   votes: number;
 };
+
+export type PlaceholderType =
+  | 'string'
+  | 'number'
+  | 'boolean'
+  | 'sql_expression'
+  | 'template_ref';
+
+export type TemplatePlaceholder = {
+  name: string;
+  type: PlaceholderType;
+  description: string;
+  templateId?: string;
+  default?: string;
+  table?: string;
+  column?: string;
+  optional?: boolean;
+};
+
+export type QueryTemplate = {
+  id: string;
+  tenantId: string;
+  template: string;
+  description: string;
+  placeholders: TemplatePlaceholder[];
+  tables: string[];
+  schemaHash: string;
+  votes: number;
+  prompt: string;
+};
+
+export type QueryTemplateMetadata = {
+  templateId: string;
+  template: string;
+  type: DbQueryStoredTypes.Template;
+  description: string;
+  votes: number;
+  placeholders: string; // JSON-serialized TemplatePlaceholder[]
+  tables: string; // JSON-serialized string[]
+  schemaHash: string;
+};
+
+export interface IQueryTemplateStore {
+  findById(id: string): Promise<QueryTemplate>;
+  find(filter?: {where?: Partial<QueryTemplate>}): Promise<QueryTemplate[]>;
+  create(data: QueryTemplate): Promise<QueryTemplate>;
+  updateById(id: string, data: Partial<QueryTemplate>): Promise<void>;
+  deleteById(id: string): Promise<void>;
+}
 
 export type QueryParam = string | number;
 

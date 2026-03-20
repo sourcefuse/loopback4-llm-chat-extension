@@ -18,17 +18,14 @@ import {
 } from '../../../graphs';
 import {generateMarkdownTable, getModelNameFromEnv} from './utils';
 import {writeFileSync} from 'fs';
-import {AnyObject, juggler} from '@loopback/repository';
+import {AnyObject} from '@loopback/repository';
 import {ILogger, LOGGER} from '@sourceloop/core';
-import { IDbConnector } from '../types';
-import { AuthenticationBindings } from 'loopback4-authentication';
+import {IDbConnector} from '../types';
+import {AuthenticationBindings} from 'loopback4-authentication';
 
 function parsePrompt(prompt: string, data: Record<string, string>) {
   for (const key of Object.keys(data)) {
-    const value = data[key].split(' ')
-      .join('%')
-      .split('_')
-      .join('%');
+    const value = data[key].split(' ').join('%').split('_').join('%');
     prompt = prompt.replace(new RegExp(`\\<${key}\\>`, 'g'), value);
   }
   return prompt;
@@ -36,10 +33,7 @@ function parsePrompt(prompt: string, data: Record<string, string>) {
 
 function parseQuery(prompt: string, data: Record<string, string>) {
   for (const key of Object.keys(data)) {
-        const value = data[key].split(' ')
-      .join('%')
-      .split('_')
-      .join('%');
+    const value = data[key].split(' ').join('%').split('_').join('%');
     prompt = prompt.replace(new RegExp(`\\<${key}\\>`, 'g'), value);
   }
   return prompt;
@@ -56,12 +50,12 @@ function tokenBuilder(tenantid: string, permissions: string[]) {
 }
 
 function userBuilder(tenantId: string, permissions: string[]) {
-    return {
-      id: randomUUID(),
-      userTenantId: randomUUID(),
-      permissions: permissions,
-      tenantId,
-    };
+  return {
+    id: randomUUID(),
+    userTenantId: randomUUID(),
+    permissions: permissions,
+    tenantId,
+  };
 }
 
 export async function generationAcceptanceBuilder(
@@ -83,11 +77,14 @@ export async function generationAcceptanceBuilder(
   const tenantId = process.env.TEST_TENANT_ID ?? 'test-tenant';
   const token = tokenBuilder(tenantId, permissions);
   const datasetStore = await app.get(DbQueryAIExtensionBindings.DatasetStore);
-  const ds = await app.get<juggler.DataSource>('datasources.db');
   const logger = await app.get<ILogger>(LOGGER.LOGGER_INJECT);
   const appWithUser = new Context(app, 'appWithUser');
-  app.bind<AnyObject>(AuthenticationBindings.CURRENT_USER).to(userBuilder(tenantId, permissions))
-  const connector = await appWithUser.get<IDbConnector>(DbQueryAIExtensionBindings.Connector);
+  app
+    .bind<AnyObject>(AuthenticationBindings.CURRENT_USER)
+    .to(userBuilder(tenantId, permissions));
+  const connector = await appWithUser.get<IDbConnector>(
+    DbQueryAIExtensionBindings.Connector,
+  );
 
   const results: GenerationAcceptanceTestResult[] = [];
   const anyOnly = cases.some(q => q.only);
@@ -109,6 +106,7 @@ export async function generationAcceptanceBuilder(
         emptyOutput: false,
         generationCount: 0,
         usedCache: false,
+        usedTemplate: false,
         query: '',
         case: query.case,
         description: '',
@@ -173,6 +171,11 @@ export async function generationAcceptanceBuilder(
               v.data.status ===
                 'Found similar query in cache, using it as example'),
         );
+        result.usedTemplate = body.some(
+          (v: LLMStreamEvent) =>
+            v.type === LLMStreamEventType.ToolStatus &&
+            v.data.status === 'Matched query template',
+        );
         if (lastStatus.data.status === ToolStatus.Completed) {
           const dataset = await datasetStore.findById(
             lastStatus.data.data?.['datasetId'],
@@ -182,7 +185,9 @@ export async function generationAcceptanceBuilder(
             .get(`/datasets/${dataset.id}/execute`)
             .set('Authorization', `Bearer ${token}`)
             .expect(200);
-          const expectedData = await connector.execute<AnyObject>(parseQuery(query.resultQuery, params));
+          const expectedData = await connector.execute<AnyObject>(
+            parseQuery(query.resultQuery, params),
+          );
           result.actualResult = actualData;
           result.expectedResult = expectedData;
           // compare actualData and expectedData
@@ -268,6 +273,7 @@ function writeResultSoFar(results: GenerationAcceptanceTestResult[]) {
       'Output Tokens Used': result.outputTokens,
       'Generation Count': result.generationCount,
       Cache: result.usedCache ? ':white_check_mark:' : '',
+      Template: result.usedTemplate ? ':white_check_mark:' : '',
     })),
   );
   report += `\n## Failed Queries and Results\n`;

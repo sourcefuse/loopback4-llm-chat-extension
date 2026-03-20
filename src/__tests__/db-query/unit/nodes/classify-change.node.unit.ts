@@ -1,5 +1,7 @@
 import {expect, sinon} from '@loopback/testlab';
+import {LangGraphRunnableConfig} from '@langchain/langgraph';
 import {ChangeType, ClassifyChangeNode} from '../../../../components';
+import {DbQueryState} from '../../../../components/db-query/state';
 import {LLMProvider} from '../../../../types';
 
 describe('ClassifyChangeNode Unit', function () {
@@ -22,9 +24,9 @@ describe('ClassifyChangeNode Unit', function () {
       schema: {tables: {}, relations: []},
       sampleSql: undefined,
       sampleSqlPrompt: undefined,
-    };
+    } as unknown as DbQueryState;
 
-    const result = await node.execute(state as any, {});
+    const result = await node.execute(state, {} as LangGraphRunnableConfig);
 
     expect(result).to.deepEqual({});
     sinon.assert.notCalled(llmStub);
@@ -40,9 +42,9 @@ describe('ClassifyChangeNode Unit', function () {
       schema: {tables: {}, relations: []},
       sampleSql: 'SELECT * FROM users WHERE age > 20',
       sampleSqlPrompt: 'Get users with age > 20',
-    };
+    } as unknown as DbQueryState;
 
-    const result = await node.execute(state as any, {});
+    const result = await node.execute(state, {} as LangGraphRunnableConfig);
 
     expect(result.changeType).to.equal(ChangeType.Minor);
     sinon.assert.calledOnce(llmStub);
@@ -58,9 +60,9 @@ describe('ClassifyChangeNode Unit', function () {
       schema: {tables: {}, relations: []},
       sampleSql: 'SELECT * FROM users',
       sampleSqlPrompt: 'Get all users',
-    };
+    } as unknown as DbQueryState;
 
-    const result = await node.execute(state as any, {});
+    const result = await node.execute(state, {} as LangGraphRunnableConfig);
 
     expect(result.changeType).to.equal(ChangeType.Major);
     sinon.assert.calledOnce(llmStub);
@@ -76,9 +78,9 @@ describe('ClassifyChangeNode Unit', function () {
       schema: {tables: {}, relations: []},
       sampleSql: 'SELECT * FROM users',
       sampleSqlPrompt: 'Get all users',
-    };
+    } as unknown as DbQueryState;
 
-    const result = await node.execute(state as any, {});
+    const result = await node.execute(state, {} as LangGraphRunnableConfig);
 
     expect(result.changeType).to.equal(ChangeType.Rewrite);
     sinon.assert.calledOnce(llmStub);
@@ -94,9 +96,9 @@ describe('ClassifyChangeNode Unit', function () {
       schema: {tables: {}, relations: []},
       sampleSql: 'SELECT * FROM users',
       sampleSqlPrompt: 'Get all users',
-    };
+    } as unknown as DbQueryState;
 
-    const result = await node.execute(state as any, {});
+    const result = await node.execute(state, {} as LangGraphRunnableConfig);
 
     expect(result.changeType).to.equal(ChangeType.Major);
   });
@@ -111,9 +113,9 @@ describe('ClassifyChangeNode Unit', function () {
       schema: {tables: {}, relations: []},
       sampleSql: 'SELECT * FROM users WHERE age > 20',
       sampleSqlPrompt: 'Get users with age > 20',
-    };
+    } as unknown as DbQueryState;
 
-    await node.execute(state as any, {});
+    await node.execute(state, {} as LangGraphRunnableConfig);
 
     const prompt = llmStub.firstCall.args[0];
     expect(prompt.value).to.containEql('Get users with age > 20');
@@ -130,9 +132,9 @@ describe('ClassifyChangeNode Unit', function () {
       schema: {tables: {}, relations: []},
       sampleSql: 'SELECT * FROM users',
       sampleSqlPrompt: undefined,
-    };
+    } as unknown as DbQueryState;
 
-    const result = await node.execute(state as any, {});
+    const result = await node.execute(state, {} as LangGraphRunnableConfig);
 
     expect(result.changeType).to.equal(ChangeType.Major);
     sinon.assert.calledOnce(llmStub);
@@ -148,9 +150,9 @@ describe('ClassifyChangeNode Unit', function () {
       schema: {tables: {}, relations: []},
       sampleSql: 'SELECT * FROM users WHERE age > 20',
       sampleSqlPrompt: 'Get users with age > 20',
-    };
+    } as unknown as DbQueryState;
 
-    const result = await node.execute(state as any, {});
+    const result = await node.execute(state, {} as LangGraphRunnableConfig);
 
     expect(result.changeType).to.equal(ChangeType.Minor);
   });

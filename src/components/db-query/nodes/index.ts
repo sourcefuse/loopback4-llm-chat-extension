@@ -1,6 +1,7 @@
 export * from './check-cache.node';
 export * from './classify-change.node';
 export * from './check-permissions.node';
+export * from './check-templates.node';
 export * from './failed.node';
 export * from './fix-query.node';
 export * from './generate-checklist.node';

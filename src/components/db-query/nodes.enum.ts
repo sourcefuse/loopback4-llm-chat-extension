@@ -17,4 +17,5 @@ export enum DbQueryNodes {
   PostValidation = 'post_validation',
   ClassifyChange = 'classify_change',
   FixQuery = 'fix_query',
+  CheckTemplates = 'check_templates',
 }

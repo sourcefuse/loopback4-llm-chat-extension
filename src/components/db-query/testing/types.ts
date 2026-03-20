@@ -29,6 +29,7 @@ export type GenerationAcceptanceTestResult = {
   outputTokens: number;
   generationCount: number;
   usedCache: boolean;
+  usedTemplate: boolean;
   query: string;
   case: string;
   description: string;

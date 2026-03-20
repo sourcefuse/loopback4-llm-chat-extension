@@ -8,7 +8,7 @@ import {DbQueryStoredTypes} from '../types';
 import {AuthenticationBindings} from 'loopback4-authentication';
 import {IAuthUserWithPermissions} from '@sourceloop/core';
 
-export class DatasetRetriever implements Provider<BaseRetriever> {
+export class TemplateRetriever implements Provider<BaseRetriever> {
   constructor(
     @inject(AiIntegrationBindings.VectorStore)
     private readonly vectorStore: VectorStore,
@@ -20,7 +20,7 @@ export class DatasetRetriever implements Provider<BaseRetriever> {
       return this.vectorStore.asRetriever({
         k: 5,
         filter: doc =>
-          doc.metadata.type === DbQueryStoredTypes.DataSet &&
+          doc.metadata.type === DbQueryStoredTypes.Template &&
           doc.metadata.tenantId === this.user.tenantId,
         searchType: 'similarity',
       });
@@ -28,7 +28,7 @@ export class DatasetRetriever implements Provider<BaseRetriever> {
     return this.vectorStore.asRetriever({
       k: 5,
       filter: {
-        type: DbQueryStoredTypes.DataSet,
+        type: DbQueryStoredTypes.Template,
         tenantId: this.user.tenantId,
       },
       searchType: 'similarity',

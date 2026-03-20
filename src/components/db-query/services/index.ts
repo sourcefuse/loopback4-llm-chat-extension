@@ -4,3 +4,4 @@ export * from './knowledge-graph';
 export * from './permission-helper.service';
 export * from './schema.store';
 export * from './search';
+export * from './template-helper.service';

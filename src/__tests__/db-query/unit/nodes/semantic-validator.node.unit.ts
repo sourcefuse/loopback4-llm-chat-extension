@@ -1,5 +1,9 @@
 import {expect, sinon} from '@loopback/testlab';
-import {EvaluationResult, SemanticValidatorNode} from '../../../../components';
+import {
+  DatabaseSchema,
+  EvaluationResult,
+  SemanticValidatorNode,
+} from '../../../../components';
 import {DbSchemaHelperService} from '../../../../components/db-query/services';
 import {LLMProvider} from '../../../../types';
 
@@ -44,6 +48,8 @@ describe('SemanticValidatorNode Unit', function () {
       semanticFeedback: undefined,
       syntacticErrorTables: undefined,
       semanticErrorTables: undefined,
+      fromTemplate: undefined,
+      templateId: undefined,
       validationChecklist: '1. Query selects all users',
       changeType: undefined,
     };
@@ -61,7 +67,10 @@ describe('SemanticValidatorNode Unit', function () {
     const state = {
       prompt: 'Get all users',
       sql: 'SELECT * FROM invalid_table',
-      schema: {tables: {users: {}, orders: {}}, relations: []} as any,
+      schema: {
+        tables: {users: {}, orders: {}},
+        relations: [],
+      } as unknown as DatabaseSchema,
       status: EvaluationResult.Pass,
       id: 'test-id',
       feedbacks: [],
@@ -80,6 +89,8 @@ describe('SemanticValidatorNode Unit', function () {
       semanticFeedback: undefined,
       syntacticErrorTables: undefined,
       semanticErrorTables: undefined,
+      fromTemplate: undefined,
+      templateId: undefined,
       validationChecklist: '1. Query selects from users table',
       changeType: undefined,
     };
@@ -128,6 +139,8 @@ describe('SemanticValidatorNode Unit', function () {
       semanticFeedback: undefined,
       syntacticErrorTables: undefined,
       semanticErrorTables: undefined,
+      fromTemplate: undefined,
+      templateId: undefined,
       validationChecklist: '1. Query selects all users',
       changeType: undefined,
     };

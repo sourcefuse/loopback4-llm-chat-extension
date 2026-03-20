@@ -97,6 +97,8 @@ describe('SqlGenerationNode Unit', function () {
       syntacticErrorTables: undefined,
       semanticErrorTables: undefined,
       changeType: undefined,
+      fromTemplate: undefined,
+      templateId: undefined,
     };
 
     const result = await node.execute(state, {});
@@ -189,6 +191,8 @@ It should have no other character or symbol or character that is not part of SQL
       syntacticErrorTables: undefined,
       semanticErrorTables: undefined,
       changeType: undefined,
+      fromTemplate: undefined,
+      templateId: undefined,
     };
 
     const result = await node.execute(state, {});
@@ -299,6 +303,8 @@ It should have no other character or symbol or character that is not part of SQL
       syntacticErrorTables: undefined,
       semanticErrorTables: undefined,
       changeType: undefined,
+      fromTemplate: undefined,
+      templateId: undefined,
     };
 
     const result = await node.execute(state, {});
@@ -409,6 +415,8 @@ It should have no other character or symbol or character that is not part of SQL
       syntacticErrorTables: undefined,
       semanticErrorTables: undefined,
       changeType: undefined,
+      fromTemplate: undefined,
+      templateId: undefined,
     };
 
     const result = await node.execute(state, {});
@@ -469,6 +477,8 @@ It should have no other character or symbol or character that is not part of SQL
       syntacticErrorTables: undefined,
       semanticErrorTables: undefined,
       changeType: undefined,
+      fromTemplate: undefined,
+      templateId: undefined,
     };
 
     const result = await node.execute(state, {});
@@ -575,6 +585,8 @@ It should have no other character or symbol or character that is not part of SQL
         syntacticErrorTables: undefined,
         semanticErrorTables: undefined,
         changeType: ChangeType.Minor,
+        fromTemplate: undefined,
+        templateId: undefined,
       };
 
       const result = await nodeWithTwoLLMs.execute(state, {});
@@ -638,6 +650,8 @@ It should have no other character or symbol or character that is not part of SQL
         syntacticErrorTables: undefined,
         semanticErrorTables: undefined,
         changeType: undefined,
+        fromTemplate: undefined,
+        templateId: undefined,
       };
 
       const result = await nodeWithTwoLLMs.execute(state, {});
@@ -691,6 +705,8 @@ It should have no other character or symbol or character that is not part of SQL
         syntacticErrorTables: undefined,
         semanticErrorTables: undefined,
         changeType: undefined,
+        fromTemplate: undefined,
+        templateId: undefined,
       };
 
       const result = await nodeWithTwoLLMs.execute(state, {});
@@ -756,6 +772,8 @@ It should have no other character or symbol or character that is not part of SQL
         syntacticErrorTables: undefined,
         semanticErrorTables: undefined,
         changeType: undefined,
+        fromTemplate: undefined,
+        templateId: undefined,
       };
 
       const result = await nodeWithTwoLLMs.execute(state, {});
@@ -799,7 +817,9 @@ It should have no other character or symbol or character that is not part of SQL
           },
           relations: [],
         },
-        feedbacks: ['Query Validation Failed by DB: query_error with error syntax error'],
+        feedbacks: [
+          'Query Validation Failed by DB: query_error with error syntax error',
+        ],
         sampleSql: 'SELECT name FROM employees WHERE id = 5',
         sampleSqlPrompt: 'Get employee name',
         done: false,
@@ -820,6 +840,8 @@ It should have no other character or symbol or character that is not part of SQL
         syntacticErrorTables: undefined,
         semanticErrorTables: undefined,
         changeType: undefined,
+        fromTemplate: undefined,
+        templateId: undefined,
       };
 
       const result = await nodeWithTwoLLMs.execute(state, {});
@@ -883,6 +905,8 @@ It should have no other character or symbol or character that is not part of SQL
         syntacticErrorTables: undefined,
         semanticErrorTables: undefined,
         changeType: undefined,
+        fromTemplate: undefined,
+        templateId: undefined,
       };
 
       const result = await nodeWithTwoLLMs.execute(state, {});
