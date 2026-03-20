@@ -28,6 +28,12 @@ export enum DatasetFeedback {
   OtherIssue = 'other_issue',
 }
 
+export enum ChangeType {
+  Minor = 'minor',
+  Major = 'major',
+  Rewrite = 'rewrite',
+}
+
 export enum CacheResults {
   AsIs = 'as-is',
   Similar = 'similar',

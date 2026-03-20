@@ -61,35 +61,39 @@ describe('SyntacticValidatorNode Unit', function () {
     const state = {
       sql: 'SELECT * FROM users_wrong',
       schema: {
-        tables: {},
+        tables: {users: {}, orders: {}},
       },
     } as unknown as DbQueryState;
 
-    llmStub.resolves({content: EvaluationResult.TableError});
+    llmStub.resolves({
+      content: `<category>${EvaluationResult.TableError}</category>\n<tables>users</tables>`,
+    });
 
     const result = await node.execute(state, {});
     expect(result.syntacticStatus).to.equal(EvaluationResult.TableError);
-    expect(result).to.deepEqual({
-      syntacticStatus: EvaluationResult.TableError,
-      syntacticFeedback: `Query Validation Failed by DB: ${EvaluationResult.TableError} with error SQLITE_ERROR: no such table: users_wrong`,
-    });
+    expect(result.syntacticFeedback).to.equal(
+      `Query Validation Failed by DB: ${EvaluationResult.TableError} with error SQLITE_ERROR: no such table: users_wrong`,
+    );
+    expect(result.syntacticErrorTables).to.deepEqual(['users']);
   });
 
   it('should return a feedback with query error if query has non table related error', async () => {
     const state = {
       sql: 'SELECT * users',
       schema: {
-        tables: {},
+        tables: {users: {}},
       },
     } as unknown as DbQueryState;
 
-    llmStub.resolves({content: EvaluationResult.QueryError});
+    llmStub.resolves({
+      content: `<category>${EvaluationResult.QueryError}</category>\n<tables>users</tables>`,
+    });
 
     const result = await node.execute(state, {});
     expect(result.syntacticStatus).to.equal(EvaluationResult.QueryError);
-    expect(result).to.deepEqual({
-      syntacticStatus: EvaluationResult.QueryError,
-      syntacticFeedback: `Query Validation Failed by DB: ${EvaluationResult.QueryError} with error SQLITE_ERROR: near \"users\": syntax error`,
-    });
+    expect(result.syntacticFeedback).to.equal(
+      `Query Validation Failed by DB: ${EvaluationResult.QueryError} with error SQLITE_ERROR: near \"users\": syntax error`,
+    );
+    expect(result.syntacticErrorTables).to.deepEqual(['users']);
   });
 });

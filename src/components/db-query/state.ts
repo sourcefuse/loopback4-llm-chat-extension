@@ -1,5 +1,5 @@
 import {Annotation} from '@langchain/langgraph';
-import {DatabaseSchema, Status} from './types';
+import {ChangeType, DatabaseSchema, Status} from './types';
 import {AnyObject} from '@loopback/repository';
 
 export const DbQueryGraphStateAnnotation = Annotation.Root({
@@ -23,6 +23,9 @@ export const DbQueryGraphStateAnnotation = Annotation.Root({
   syntacticFeedback: Annotation<string | undefined>,
   semanticStatus: Annotation<Status | undefined>,
   semanticFeedback: Annotation<string | undefined>,
+  syntacticErrorTables: Annotation<string[] | undefined>,
+  semanticErrorTables: Annotation<string[] | undefined>,
+  changeType: Annotation<ChangeType | undefined>,
 });
 
 export type DbQueryState = typeof DbQueryGraphStateAnnotation.State;

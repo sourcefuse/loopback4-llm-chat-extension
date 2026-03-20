@@ -1,6 +1,7 @@
 import {juggler} from '@loopback/repository';
 import {expect, sinon} from '@loopback/testlab';
 import {
+  ChangeType,
   DbSchemaHelperService,
   SqlGenerationNode,
   SqliteConnector,
@@ -93,6 +94,9 @@ describe('SqlGenerationNode Unit', function () {
       syntacticFeedback: undefined,
       semanticStatus: undefined,
       semanticFeedback: undefined,
+      syntacticErrorTables: undefined,
+      semanticErrorTables: undefined,
+      changeType: undefined,
     };
 
     const result = await node.execute(state, {});
@@ -182,6 +186,9 @@ It should have no other character or symbol or character that is not part of SQL
       syntacticFeedback: undefined,
       semanticStatus: undefined,
       semanticFeedback: undefined,
+      syntacticErrorTables: undefined,
+      semanticErrorTables: undefined,
+      changeType: undefined,
     };
 
     const result = await node.execute(state, {});
@@ -289,6 +296,9 @@ It should have no other character or symbol or character that is not part of SQL
       syntacticFeedback: undefined,
       semanticStatus: undefined,
       semanticFeedback: undefined,
+      syntacticErrorTables: undefined,
+      semanticErrorTables: undefined,
+      changeType: undefined,
     };
 
     const result = await node.execute(state, {});
@@ -396,6 +406,9 @@ It should have no other character or symbol or character that is not part of SQL
       syntacticFeedback: undefined,
       semanticStatus: undefined,
       semanticFeedback: undefined,
+      syntacticErrorTables: undefined,
+      semanticErrorTables: undefined,
+      changeType: undefined,
     };
 
     const result = await node.execute(state, {});
@@ -453,6 +466,9 @@ It should have no other character or symbol or character that is not part of SQL
       syntacticFeedback: undefined,
       semanticStatus: undefined,
       semanticFeedback: undefined,
+      syntacticErrorTables: undefined,
+      semanticErrorTables: undefined,
+      changeType: undefined,
     };
 
     const result = await node.execute(state, {});
@@ -506,8 +522,7 @@ It should have no other character or symbol or character that is not part of SQL
       }
     });
 
-    it('should use cheap LLM when OPTIMIZE_CACHED_QUERIES is true and sampleSql exists', async () => {
-      process.env.OPTIMIZE_CACHED_QUERIES = 'true';
+    it('should use cheap LLM when changeType is Minor', async () => {
       cheapLLMStub.resolves({
         content: 'SELECT * FROM employees WHERE id = 1;',
       });
@@ -557,6 +572,9 @@ It should have no other character or symbol or character that is not part of SQL
         syntacticFeedback: undefined,
         semanticStatus: undefined,
         semanticFeedback: undefined,
+        syntacticErrorTables: undefined,
+        semanticErrorTables: undefined,
+        changeType: ChangeType.Minor,
       };
 
       const result = await nodeWithTwoLLMs.execute(state, {});
@@ -617,6 +635,9 @@ It should have no other character or symbol or character that is not part of SQL
         syntacticFeedback: undefined,
         semanticStatus: undefined,
         semanticFeedback: undefined,
+        syntacticErrorTables: undefined,
+        semanticErrorTables: undefined,
+        changeType: undefined,
       };
 
       const result = await nodeWithTwoLLMs.execute(state, {});
@@ -667,6 +688,9 @@ It should have no other character or symbol or character that is not part of SQL
         syntacticFeedback: undefined,
         semanticStatus: undefined,
         semanticFeedback: undefined,
+        syntacticErrorTables: undefined,
+        semanticErrorTables: undefined,
+        changeType: undefined,
       };
 
       const result = await nodeWithTwoLLMs.execute(state, {});
@@ -729,6 +753,9 @@ It should have no other character or symbol or character that is not part of SQL
         syntacticFeedback: undefined,
         semanticStatus: undefined,
         semanticFeedback: undefined,
+        syntacticErrorTables: undefined,
+        semanticErrorTables: undefined,
+        changeType: undefined,
       };
 
       const result = await nodeWithTwoLLMs.execute(state, {});
@@ -740,8 +767,7 @@ It should have no other character or symbol or character that is not part of SQL
       sinon.assert.notCalled(cheapLLMStub);
     });
 
-    it('should default to true for OPTIMIZE_CACHED_QUERIES when env var is not set', async () => {
-      delete process.env.OPTIMIZE_CACHED_QUERIES;
+    it('should use cheap LLM for validation fix retries', async () => {
       cheapLLMStub.resolves({
         content: 'SELECT * FROM employees WHERE id = 1;',
       });
@@ -773,11 +799,11 @@ It should have no other character or symbol or character that is not part of SQL
           },
           relations: [],
         },
-        feedbacks: [],
+        feedbacks: ['Query Validation Failed by DB: query_error with error syntax error'],
         sampleSql: 'SELECT name FROM employees WHERE id = 5',
         sampleSqlPrompt: 'Get employee name',
         done: false,
-        sql: undefined,
+        sql: 'SELECT * FROM employees WHERE',
         status: undefined,
         id: '123',
         replyToUser: undefined,
@@ -791,6 +817,9 @@ It should have no other character or symbol or character that is not part of SQL
         syntacticFeedback: undefined,
         semanticStatus: undefined,
         semanticFeedback: undefined,
+        syntacticErrorTables: undefined,
+        semanticErrorTables: undefined,
+        changeType: undefined,
       };
 
       const result = await nodeWithTwoLLMs.execute(state, {});
@@ -851,6 +880,9 @@ It should have no other character or symbol or character that is not part of SQL
         syntacticFeedback: undefined,
         semanticStatus: undefined,
         semanticFeedback: undefined,
+        syntacticErrorTables: undefined,
+        semanticErrorTables: undefined,
+        changeType: undefined,
       };
 
       const result = await nodeWithTwoLLMs.execute(state, {});

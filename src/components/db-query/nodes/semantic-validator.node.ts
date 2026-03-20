@@ -46,6 +46,10 @@ DO NOT make up issues that do not exist in the query.
 {schema}
 </database-schema>
 
+<available-tables>
+{tableNames}
+</available-tables>
+
 <validation-checklist>
 {checklist}
 </validation-checklist>
@@ -58,12 +62,16 @@ If the query satisfies ALL checklist items, return ONLY a valid tag with no othe
 <valid/>
 </example-valid>
 
-If any checklist item is NOT satisfied, return an invalid tag containing each failed item with a detailed explanation of what is wrong and how it should be fixed:
+If any checklist item is NOT satisfied, return your response in two sections:
+1. An invalid tag containing each failed item with a detailed explanation of what is wrong and how it should be fixed.
+2. A tables tag listing ALL table names from the available tables that are related to the errors. Be generous - include tables directly involved in the error, tables that need to be joined to fix the issue, and any tables that could be relevant. It is better to include extra tables than to miss any.
+
 <example-invalid>
 <invalid>
 - Salary values are not converted to USD. The query should join the exchange_rates table using currency_id and multiply salary by the rate.
 - Lost and hold deals are not excluded. Add a WHERE condition to filter out deals with status 0 and 2.
 </invalid>
+<tables>exchange_rates, deals, employees</tables>
 </example-invalid>
 </output-instructions>
 `);
@@ -95,17 +103,20 @@ Keep these feedbacks in mind while validating the new query.
     const useSmartLLM =
       this.config.nodes?.semanticValidatorNode?.useSmartLLM ?? false;
     const llm = useSmartLLM ? this.smartllm : this.cheapllm;
+    const tableNames = Object.keys(state.schema?.tables ?? {});
     const chain = RunnableSequence.from([this.prompt, llm]);
     const output = await chain.invoke({
       userPrompt: state.prompt,
       query: state.sql,
       schema: this.schemaHelper.asString(state.schema),
+      tableNames: tableNames.join(', '),
       checklist: state.validationChecklist ?? 'No checklist provided.',
       feedbacks: await this.getFeedbacks(state),
     });
     const response = stripThinkingTokens(output);
 
     const invalidMatch = /<invalid>(.*?)<\/invalid>/s.exec(response);
+    const tablesMatch = /<tables>(.*?)<\/tables>/s.exec(response);
     const isValid =
       response.includes('<valid/>') || response.includes('<valid />');
 
@@ -115,6 +126,12 @@ Keep these feedbacks in mind while validating the new query.
       } as DbQueryState;
     } else {
       const reason = invalidMatch ? invalidMatch[1].trim() : response.trim();
+      const errorTables = tablesMatch
+        ? tablesMatch[1]
+            .split(',')
+            .map(t => t.trim())
+            .filter(t => t.length > 0)
+        : [];
       config.writer?.({
         type: LLMStreamEventType.Log,
         data: `Query Validation Failed by LLM: ${reason}`,
@@ -122,6 +139,7 @@ Keep these feedbacks in mind while validating the new query.
       return {
         semanticStatus: EvaluationResult.QueryError,
         semanticFeedback: `Query Validation Failed by LLM: ${reason}`,
+        semanticErrorTables: errorTables,
       } as DbQueryState;
     }
   }

@@ -42,7 +42,10 @@ describe('SemanticValidatorNode Unit', function () {
       syntacticFeedback: undefined,
       semanticStatus: undefined,
       semanticFeedback: undefined,
+      syntacticErrorTables: undefined,
+      semanticErrorTables: undefined,
       validationChecklist: '1. Query selects all users',
+      changeType: undefined,
     };
     llmStub.resolves({
       content: '<valid/>',
@@ -58,7 +61,7 @@ describe('SemanticValidatorNode Unit', function () {
     const state = {
       prompt: 'Get all users',
       sql: 'SELECT * FROM invalid_table',
-      schema: {tables: {}, relations: []},
+      schema: {tables: {users: {}, orders: {}}, relations: []} as any,
       status: EvaluationResult.Pass,
       id: 'test-id',
       feedbacks: [],
@@ -75,25 +78,31 @@ describe('SemanticValidatorNode Unit', function () {
       syntacticFeedback: undefined,
       semanticStatus: undefined,
       semanticFeedback: undefined,
+      syntacticErrorTables: undefined,
+      semanticErrorTables: undefined,
       validationChecklist: '1. Query selects from users table',
+      changeType: undefined,
     };
     llmStub.resolves({
       content:
-        '<invalid>\n- Query selects from wrong table. Should select from users table instead.\n</invalid>',
+        '<invalid>\n- Query selects from wrong table. Should select from users table instead.\n</invalid>\n<tables>users</tables>',
     });
 
     const result = await node.execute(state, {});
 
     expect(result.semanticStatus).to.equal(EvaluationResult.QueryError);
+    expect(result.semanticErrorTables).to.deepEqual(['users']);
     sinon.assert.calledOnce(llmStub);
 
     const prompt = llmStub.firstCall.args[0];
-    // Verify the prompt contains the user question, checklist, SQL, and schema
+    // Verify the prompt contains the user question, checklist, SQL, schema, and table names
     expect(prompt.value).to.containEql(state.sql);
     expect(prompt.value).to.containEql(state.prompt);
     expect(prompt.value).to.containEql('1. Query selects from users table');
     expect(prompt.value).to.containEql('<database-schema>');
     expect(prompt.value).to.containEql('<user-question>');
+    expect(prompt.value).to.containEql('<available-tables>');
+    expect(prompt.value).to.containEql('users, orders');
   });
 
   it('should include feedbacks in the prompt', async () => {
@@ -117,7 +126,10 @@ describe('SemanticValidatorNode Unit', function () {
       syntacticFeedback: undefined,
       semanticStatus: undefined,
       semanticFeedback: undefined,
+      syntacticErrorTables: undefined,
+      semanticErrorTables: undefined,
       validationChecklist: '1. Query selects all users',
+      changeType: undefined,
     };
     llmStub.resolves({
       content: '<valid/>',

@@ -55,11 +55,26 @@ export class DbQueryGraph extends BaseGraph<DbQueryState> {
         DbQueryNodes.SaveDataset,
         await this._getNodeFn(DbQueryNodes.SaveDataset),
       )
+      .addNode(
+        DbQueryNodes.ClassifyChange,
+        await this._getNodeFn(DbQueryNodes.ClassifyChange),
+      )
+      .addNode(
+        DbQueryNodes.FixQuery,
+        await this._getNodeFn(DbQueryNodes.FixQuery),
+      )
       // Pass-through routing nodes
       .addNode(DbQueryNodes.PostCacheAndTables, async () => ({}))
       .addNode(DbQueryNodes.PreValidation, async () => ({}))
       // PostValidation: merges syntactic + semantic results into status/feedbacks
       .addNode(DbQueryNodes.PostValidation, async (state: DbQueryState) => {
+        const mergedErrorTables = [
+          ...new Set([
+            ...(state.syntacticErrorTables ?? []),
+            ...(state.semanticErrorTables ?? []),
+          ]),
+        ];
+        const hasErrorTables = mergedErrorTables.length > 0;
         // Syntactic failures take priority
         if (
           state.syntacticStatus &&
@@ -70,11 +85,14 @@ export class DbQueryGraph extends BaseGraph<DbQueryState> {
             feedbacks: [
               ...(state.feedbacks ?? []),
               ...(state.syntacticFeedback ? [state.syntacticFeedback] : []),
+              ...(state.semanticFeedback ? [state.semanticFeedback] : []),
             ],
             syntacticStatus: undefined,
             syntacticFeedback: undefined,
+            syntacticErrorTables: hasErrorTables ? mergedErrorTables : undefined,
             semanticStatus: undefined,
             semanticFeedback: undefined,
+            semanticErrorTables: hasErrorTables ? mergedErrorTables : undefined,
           };
         }
         // Semantic failure
@@ -90,8 +108,10 @@ export class DbQueryGraph extends BaseGraph<DbQueryState> {
             ],
             syntacticStatus: undefined,
             syntacticFeedback: undefined,
+            syntacticErrorTables: hasErrorTables ? mergedErrorTables : undefined,
             semanticStatus: undefined,
             semanticFeedback: undefined,
+            semanticErrorTables: hasErrorTables ? mergedErrorTables : undefined,
           };
         }
         // Both passed — clear internal validator feedbacks
@@ -102,8 +122,10 @@ export class DbQueryGraph extends BaseGraph<DbQueryState> {
           ),
           syntacticStatus: undefined,
           syntacticFeedback: undefined,
+          syntacticErrorTables: undefined,
           semanticStatus: undefined,
           semanticFeedback: undefined,
+          semanticErrorTables: undefined,
         };
       })
       // === EDGES ===
@@ -126,9 +148,12 @@ export class DbQueryGraph extends BaseGraph<DbQueryState> {
           Continue: DbQueryNodes.GetColumns,
         },
       )
-      // GetColumns → GenerateChecklist (fast pass) → parallel fan-out
+      // GetColumns → GenerateChecklist + ClassifyChange in parallel
       .addEdge(DbQueryNodes.GetColumns, DbQueryNodes.GenerateChecklist)
+      .addEdge(DbQueryNodes.GetColumns, DbQueryNodes.ClassifyChange)
+      // Both GenerateChecklist and ClassifyChange fan-in to SqlGeneration
       .addEdge(DbQueryNodes.GenerateChecklist, DbQueryNodes.SqlGeneration)
+      .addEdge(DbQueryNodes.ClassifyChange, DbQueryNodes.SqlGeneration)
       .addEdge(DbQueryNodes.GenerateChecklist, DbQueryNodes.VerifyChecklist)
       // Both fan-in to PreValidation
       .addEdge(DbQueryNodes.VerifyChecklist, DbQueryNodes.PreValidation)
@@ -165,8 +190,20 @@ export class DbQueryGraph extends BaseGraph<DbQueryState> {
         },
         {
           Accepted: DbQueryNodes.SaveDataset,
-          FixSQL: DbQueryNodes.GenerateChecklist,
+          FixSQL: DbQueryNodes.FixQuery,
           ReselectTables: DbQueryNodes.GetTables,
+          Failed: DbQueryNodes.Failed,
+        },
+      )
+      // FixQuery routes back to validation or failure
+      .addConditionalEdges(
+        DbQueryNodes.FixQuery,
+        (state: DbQueryState) => {
+          if (state.status === GenerationError.Failed) return 'Failed';
+          return 'Validate';
+        },
+        {
+          Validate: DbQueryNodes.PreValidation,
           Failed: DbQueryNodes.Failed,
         },
       )

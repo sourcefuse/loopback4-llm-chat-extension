@@ -31,6 +31,9 @@ export function getTableNodeTests(cases: GetTableNodeTestCase[]) {
           syntacticFeedback: undefined,
           semanticStatus: undefined,
           semanticFeedback: undefined,
+          syntacticErrorTables: undefined,
+          semanticErrorTables: undefined,
+          changeType: undefined,
         },
         {
           writer: (event: AnyObject[string]) => {},

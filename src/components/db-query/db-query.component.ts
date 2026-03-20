@@ -17,6 +17,8 @@ import {DbQueryAIExtensionBindings} from './keys';
 import {
   CheckCacheNode,
   CheckPermissionsNode,
+  ClassifyChangeNode,
+  FixQueryNode,
   GenerateChecklistNode,
   GenerateDescriptionNode,
   FailedNode,
@@ -84,6 +86,8 @@ export class DbQueryComponent implements Component {
       FailedNode,
       SaveDataSetNode,
       CheckCacheNode,
+      ClassifyChangeNode,
+      FixQueryNode,
       GenerateChecklistNode,
       GenerateDescriptionNode,
       VerifyChecklistNode,

@@ -50,7 +50,7 @@ export class InitSessionNode implements IGraphNode<ChatState> {
       messages: [
         new SystemMessage({
           content: [
-            `You are a helpful AI assistant. You will answer the user's query by either using the available tools or by denying the request if you don't have a tool available for. You should not answer any questions that can not be answered with any of the available tools.`,
+            `You are a helpful AI assistant. You MUST always use one of the available tools to handle the user's request. Never respond with just text on the first message — always call the closest matching tool, even if you are unsure. The tool will reject the request if it is not suitable.`,
             `If you are not sure about the result, you can ask the user to review the result and provide feedback.`,
             `Only use a single tool in a single message, but you can use multiple tools over subsequent messages if it could help with the user's requirements.`,
             `If the user provides feedback, you can use that feedback to improve the result.`,

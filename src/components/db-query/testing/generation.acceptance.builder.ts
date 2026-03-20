@@ -4,7 +4,7 @@ import {
   GenerationAcceptanceTestCase,
   GenerationAcceptanceTestResult,
 } from './types';
-import {Application} from '@loopback/core';
+import {Application, Context} from '@loopback/core';
 import {PermissionKey} from '../../../permissions';
 import {DbQueryAIExtensionBindings} from '../keys';
 import {sign} from 'jsonwebtoken';
@@ -18,43 +18,36 @@ import {
 } from '../../../graphs';
 import {generateMarkdownTable, getModelNameFromEnv} from './utils';
 import {writeFileSync} from 'fs';
-import {juggler} from '@loopback/repository';
+import {AnyObject, juggler} from '@loopback/repository';
 import {ILogger, LOGGER} from '@sourceloop/core';
+import { IDbConnector } from '../types';
+import { AuthenticationBindings } from 'loopback4-authentication';
 
-function parsePrompt(prompt: string) {
-  const keys: Record<string, string> = {
-    testDeal: process.env.SAMPLE_DEAL_NAME ?? 'test-deal',
-  };
-  for (const key of Object.keys(keys)) {
-    prompt = prompt.replace(new RegExp(`\\<${key}\\>`, 'g'), keys[key]);
+function parsePrompt(prompt: string, data: Record<string, string>) {
+  for (const key of Object.keys(data)) {
+    const value = data[key].split(' ')
+      .join('%')
+      .split('_')
+      .join('%');
+    prompt = prompt.replace(new RegExp(`\\<${key}\\>`, 'g'), value);
   }
   return prompt;
 }
 
-function parseQuery(prompt: string) {
-  const keys: Record<string, string> = {
-    testDeal: (process.env.SAMPLE_DEAL_NAME ?? 'test-deal')
-      .split(' ')
+function parseQuery(prompt: string, data: Record<string, string>) {
+  for (const key of Object.keys(data)) {
+        const value = data[key].split(' ')
       .join('%')
       .split('_')
-      .join('%'),
-    tenantId: process.env.TEST_TENANT_ID ?? 'test-tenant',
-    date: new Date().toISOString().split('T')[0],
-  };
-  for (const key of Object.keys(keys)) {
-    prompt = prompt.replace(new RegExp(`\\<${key}\\>`, 'g'), keys[key]);
+      .join('%');
+    prompt = prompt.replace(new RegExp(`\\<${key}\\>`, 'g'), value);
   }
   return prompt;
 }
 
 function tokenBuilder(tenantid: string, permissions: string[]) {
   return sign(
-    {
-      id: randomUUID(),
-      userTenantId: randomUUID(),
-      permissions: permissions,
-      tenantId: tenantid,
-    },
+    userBuilder(tenantid, permissions),
     process.env.JWT_SECRET ?? '',
     {
       issuer: process.env.JWT_ISSUER ?? '',
@@ -62,24 +55,39 @@ function tokenBuilder(tenantid: string, permissions: string[]) {
   );
 }
 
+function userBuilder(tenantId: string, permissions: string[]) {
+    return {
+      id: randomUUID(),
+      userTenantId: randomUUID(),
+      permissions: permissions,
+      tenantId,
+    };
+}
+
 export async function generationAcceptanceBuilder(
   cases: GenerationAcceptanceTestCase[],
   client: Client,
   app: Application,
+  params: Record<string, string>,
   countPerPrompt = 1,
   writeReport = false,
 ): Promise<GenerationAcceptanceSuiteResult> {
   // setup app
   const config = app.getSync(DbQueryAIExtensionBindings.Config);
-  const token = tokenBuilder(process.env.TEST_TENANT_ID ?? 'test-tenant', [
+  const permissions = [
     ...config.models.map(v => v.readPermissionKey),
     PermissionKey.AskAI,
     PermissionKey.ViewDataset,
     PermissionKey.ExecuteDataset,
-  ]);
+  ];
+  const tenantId = process.env.TEST_TENANT_ID ?? 'test-tenant';
+  const token = tokenBuilder(tenantId, permissions);
   const datasetStore = await app.get(DbQueryAIExtensionBindings.DatasetStore);
   const ds = await app.get<juggler.DataSource>('datasources.db');
   const logger = await app.get<ILogger>(LOGGER.LOGGER_INJECT);
+  const appWithUser = new Context(app, 'appWithUser');
+  app.bind<AnyObject>(AuthenticationBindings.CURRENT_USER).to(userBuilder(tenantId, permissions))
+  const connector = await appWithUser.get<IDbConnector>(DbQueryAIExtensionBindings.Connector);
 
   const results: GenerationAcceptanceTestResult[] = [];
   const anyOnly = cases.some(q => q.only);
@@ -114,7 +122,7 @@ export async function generationAcceptanceBuilder(
           .set('Authorization', `Bearer ${token}`)
           .field(
             'prompt',
-            `${parsePrompt(query.prompt)}. ${query.outputInstructions}`,
+            `${parsePrompt(query.prompt, params)}. ${query.outputInstructions}`,
           )
           .expect(200);
         // time in seconds
@@ -122,17 +130,31 @@ export async function generationAcceptanceBuilder(
         const status = body.filter(
           (v: LLMStreamEvent) => v.type === LLMStreamEventType.ToolStatus,
         );
-        const lastStatus: LLMStreamToolStatusEvent = status[status.length - 1];
+        const lastStatus: LLMStreamToolStatusEvent | undefined =
+          status[status.length - 1];
         const [tokenCount]: LLMStreamTokenCountEvent[] = body.filter(
           (v: LLMStreamEvent) => v.type === LLMStreamEventType.TokenCount,
         );
         result.inputTokens = tokenCount.data.inputTokens;
         result.outputTokens = tokenCount.data.outputTokens;
 
+        if (!lastStatus) {
+          result.actualResult =
+            'LLM did not call the query tool. No tool status events were received.';
+          logger.error(
+            `Query tool was not called by the LLM for case: ${query.case}`,
+          );
+          results.push(result);
+          if (writeReport) {
+            writeResultSoFar(results);
+          }
+          continue;
+        }
+
         const finalDescription = body.filter(
           (v: LLMStreamEvent) =>
             v.type === LLMStreamEventType.ToolStatus &&
-            v.data.status.startsWith('DESCRIPTION:'),
+            v.data.status?.startsWith('DESCRIPTION:'),
         );
         if (finalDescription.length > 0) {
           result.description = finalDescription
@@ -155,12 +177,12 @@ export async function generationAcceptanceBuilder(
           const dataset = await datasetStore.findById(
             lastStatus.data.data?.['datasetId'],
           );
-          result.query = parseQuery(dataset.query);
+          result.query = parseQuery(dataset.query, params);
           const {body: actualData} = await client
             .get(`/datasets/${dataset.id}/execute`)
             .set('Authorization', `Bearer ${token}`)
             .expect(200);
-          const expectedData = await ds.execute(parseQuery(query.resultQuery));
+          const expectedData = await connector.execute<AnyObject>(parseQuery(query.resultQuery, params));
           result.actualResult = actualData;
           result.expectedResult = expectedData;
           // compare actualData and expectedData

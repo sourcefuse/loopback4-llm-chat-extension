@@ -15,4 +15,6 @@ export enum DbQueryNodes {
   VerifyChecklist = 'verify_checklist',
   PreValidation = 'pre_validation',
   PostValidation = 'post_validation',
+  ClassifyChange = 'classify_change',
+  FixQuery = 'fix_query',
 }

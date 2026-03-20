@@ -30,6 +30,9 @@ describe(`DbQueryGraph Unit`, function () {
     // Parallel branches must return partial state to avoid LastValue conflicts
     stubMap[DbQueryNodes.GetTables].callsFake(async () => ({}));
     stubMap[DbQueryNodes.CheckCache].callsFake(async () => ({}));
+    stubMap[DbQueryNodes.GetColumns].callsFake(async () => ({}));
+    stubMap[DbQueryNodes.ClassifyChange].callsFake(async () => ({}));
+    stubMap[DbQueryNodes.FixQuery].callsFake(async () => ({}));
     // Checklist + Description run in parallel — must return partial state
     stubMap[DbQueryNodes.GenerateChecklist].callsFake(async () => ({
       validationChecklist: '1. Test check',
@@ -74,7 +77,7 @@ describe(`DbQueryGraph Unit`, function () {
     expect(stubMap[DbQueryNodes.Failed].called).to.be.false();
   });
 
-  it('should retry generation if syntactic validation fails with query error', async () => {
+  it('should fix query via FixQuery if syntactic validation fails with query error', async () => {
     const compiledGraph = await graph.build();
     let syntacticRetryCount = 0;
     stubMap[DbQueryNodes.SyntacticValidator].callsFake(async () => {
@@ -102,7 +105,9 @@ describe(`DbQueryGraph Unit`, function () {
     expect(stubMap[DbQueryNodes.IsImprovement].calledOnce).to.be.true();
     expect(stubMap[DbQueryNodes.CheckCache].calledOnce).to.be.true();
     expect(stubMap[DbQueryNodes.GetTables].calledOnce).to.be.true();
-    expect(stubMap[DbQueryNodes.SqlGeneration].calledTwice).to.be.true();
+    // SqlGeneration called once; FixQuery handles the retry
+    expect(stubMap[DbQueryNodes.SqlGeneration].calledOnce).to.be.true();
+    expect(stubMap[DbQueryNodes.FixQuery].calledOnce).to.be.true();
     expect(stubMap[DbQueryNodes.SyntacticValidator].calledTwice).to.be.true();
     // Semantic runs in parallel with syntactic on both attempts
     expect(stubMap[DbQueryNodes.SemanticValidator].calledTwice).to.be.true();
@@ -137,7 +142,9 @@ describe(`DbQueryGraph Unit`, function () {
 
     expect(stubMap[DbQueryNodes.IsImprovement].calledOnce).to.be.true();
     expect(stubMap[DbQueryNodes.CheckCache].calledOnce).to.be.true();
+    // GetTables called twice: initial + retry after table error
     expect(stubMap[DbQueryNodes.GetTables].calledTwice).to.be.true();
+    // SqlGeneration called twice: once per full pipeline pass
     expect(stubMap[DbQueryNodes.SqlGeneration].calledTwice).to.be.true();
     expect(stubMap[DbQueryNodes.SyntacticValidator].calledTwice).to.be.true();
     expect(stubMap[DbQueryNodes.SaveDataset].calledOnce).to.be.true();
@@ -165,17 +172,20 @@ describe(`DbQueryGraph Unit`, function () {
     expect(stubMap[DbQueryNodes.IsImprovement].calledOnce).to.be.true();
     expect(stubMap[DbQueryNodes.CheckCache].calledOnce).to.be.true();
     expect(stubMap[DbQueryNodes.GetTables].calledOnce).to.be.true();
-    expect(stubMap[DbQueryNodes.SqlGeneration].getCalls().length).to.be.eql(
-      MAX_ATTEMPTS,
-    );
+    // SqlGeneration runs once; FixQuery handles subsequent retries
+    expect(stubMap[DbQueryNodes.SqlGeneration].calledOnce).to.be.true();
     expect(
       stubMap[DbQueryNodes.SyntacticValidator].getCalls().length,
     ).to.be.eql(MAX_ATTEMPTS);
+    // FixQuery called MAX_ATTEMPTS - 1 times (first attempt via SqlGeneration)
+    expect(stubMap[DbQueryNodes.FixQuery].getCalls().length).to.be.eql(
+      MAX_ATTEMPTS - 1,
+    );
     expect(stubMap[DbQueryNodes.Failed].calledOnce).to.be.true();
-    expect(stubMap[DbQueryNodes.SaveDataset].calledOnce).to.be.false();
+    expect(stubMap[DbQueryNodes.SaveDataset].called).to.be.false();
   });
 
-  it('should retry generation if semantic validation fails with query error', async () => {
+  it('should fix query via FixQuery if semantic validation fails with query error', async () => {
     const compiledGraph = await graph.build();
     let semanticRetryCount = 0;
     stubMap[DbQueryNodes.SemanticValidator].callsFake(async () => {
@@ -203,7 +213,9 @@ describe(`DbQueryGraph Unit`, function () {
     expect(stubMap[DbQueryNodes.IsImprovement].calledOnce).to.be.true();
     expect(stubMap[DbQueryNodes.CheckCache].calledOnce).to.be.true();
     expect(stubMap[DbQueryNodes.GetTables].calledOnce).to.be.true();
-    expect(stubMap[DbQueryNodes.SqlGeneration].calledTwice).to.be.true();
+    // SqlGeneration called once; FixQuery handles the retry
+    expect(stubMap[DbQueryNodes.SqlGeneration].calledOnce).to.be.true();
+    expect(stubMap[DbQueryNodes.FixQuery].calledOnce).to.be.true();
     expect(stubMap[DbQueryNodes.SyntacticValidator].calledTwice).to.be.true();
     expect(stubMap[DbQueryNodes.SemanticValidator].calledTwice).to.be.true();
     expect(stubMap[DbQueryNodes.SaveDataset].calledOnce).to.be.true();
@@ -235,10 +247,11 @@ describe(`DbQueryGraph Unit`, function () {
     expect(stubMap[DbQueryNodes.IsImprovement].calledOnce).to.be.true();
     expect(stubMap[DbQueryNodes.CheckCache].calledOnce).to.be.true();
     expect(stubMap[DbQueryNodes.GetTables].calledOnce).to.be.true();
-    expect(stubMap[DbQueryNodes.SqlGeneration].getCalls().length).to.be.eql(
-      MAX_ATTEMPTS,
-    );
+    // SqlGeneration runs once; FixQuery handles retries
+    expect(stubMap[DbQueryNodes.SqlGeneration].calledOnce).to.be.true();
+    // With both validators failing, feedbacks grow by 2 per iteration
+    // so it reaches MAX_ATTEMPTS faster
     expect(stubMap[DbQueryNodes.Failed].calledOnce).to.be.true();
-    expect(stubMap[DbQueryNodes.SaveDataset].calledOnce).to.be.false();
+    expect(stubMap[DbQueryNodes.SaveDataset].called).to.be.false();
   });
 });
