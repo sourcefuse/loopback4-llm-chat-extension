@@ -108,10 +108,7 @@ In the last attempt, you generated this SQL query -
       isValidationFixRetry
     ) {
       llm = this.cheapllm;
-    } else if (
-      state.changeType === ChangeType.Rewrite ||
-      state.changeType === ChangeType.Major
-    ) {
+    } else  {
       llm = this.sqlLLM;
     }
 

@@ -116,18 +116,26 @@ Do not return any other text or explanation, just the XML tags.
       if (metaStr) parts.push(metaStr);
     }
     // Include table-level context entries relevant to this column
-    if (tableSchema.context?.length) {
-      for (const ctx of tableSchema.context) {
-        if (typeof ctx === 'string') {
-          if (ctx.toLowerCase().includes(placeholder.column.toLowerCase())) {
-            parts.push(ctx);
-          }
-        } else if (ctx[placeholder.column]) {
-          parts.push(ctx[placeholder.column]);
-        }
+    parts.push(...this._getRelevantContextEntries(tableSchema.context, placeholder.column));
+    return parts.join('. ');
+  }
+
+  private _getRelevantContextEntries(
+    context: unknown[] | undefined,
+    column: string,
+  ): string[] {
+    if (!context?.length) {
+      return [];
+    }
+    const results: string[] = [];
+    for (const ctx of context) {
+      if (typeof ctx === 'string' && ctx.toLowerCase().includes(column.toLowerCase())) {
+        results.push(ctx);
+      } else if (typeof ctx === 'object' && ctx !== null && (ctx as Record<string, string>)[column]) {
+        results.push((ctx as Record<string, string>)[column]);
       }
     }
-    return parts.join('. ');
+    return results;
   }
 
   private _parseXmlValues(
@@ -136,9 +144,7 @@ Do not return any other text or explanation, just the XML tags.
   ): Record<string, string | null> {
     const result: Record<string, string | null> = {};
     for (const p of placeholders) {
-      const match = xml.match(
-        new RegExp(`<${p.name}>([\\s\\S]*?)</${p.name}>`),
-      );
+      const match = new RegExp(String.raw`<${p.name}>([\s\S]*?)</${p.name}>`).exec(xml);
       const value = match?.[1]?.trim();
       result[p.name] = value?.length ? value : null;
     }
@@ -159,9 +165,50 @@ Do not return any other text or explanation, just the XML tags.
       );
     }
 
-    let sql = template.template;
-
     // 1. Resolve template_ref placeholders first (before the LLM call)
+    let sql = await this._resolveTemplateRefs(
+      template,
+      prompt,
+      config,
+      schema,
+      templateFetcher,
+      depth,
+    );
+
+    // 2. Extract values only for non-template_ref placeholders via LLM
+    const extractablePlaceholders = template.placeholders.filter(
+      p => p.type !== 'template_ref',
+    );
+
+    let values: Record<string, string | null> = {};
+    if (extractablePlaceholders.length > 0) {
+      values = await this.extractPlaceholderValues(
+        extractablePlaceholders,
+        prompt,
+        sql,
+        config,
+        schema,
+      );
+    }
+
+    // 3. Substitute extracted values directly into SQL
+    sql = this._substitutePlaceholders(sql, extractablePlaceholders, values);
+
+    return {
+      sql,
+      description: template.description,
+    };
+  }
+
+  private async _resolveTemplateRefs(
+    template: QueryTemplate,
+    prompt: string,
+    config: RunnableConfig,
+    schema: DatabaseSchema | undefined,
+    templateFetcher: ((id: string) => Promise<QueryTemplate | undefined>) | undefined,
+    depth: number,
+  ): Promise<string> {
+    let sql = template.template;
     const templateRefPlaceholders = template.placeholders.filter(
       p => p.type === 'template_ref',
     );
@@ -191,25 +238,15 @@ Do not return any other text or explanation, just the XML tags.
       );
       sql = sql.replace(marker, `(${resolved.sql})`);
     }
+    return sql;
+  }
 
-    // 2. Extract values only for non-template_ref placeholders via LLM
-    const extractablePlaceholders = template.placeholders.filter(
-      p => p.type !== 'template_ref',
-    );
-
-    let values: Record<string, string | null> = {};
-    if (extractablePlaceholders.length > 0) {
-      values = await this.extractPlaceholderValues(
-        extractablePlaceholders,
-        prompt,
-        sql,
-        config,
-        schema,
-      );
-    }
-
-    // 3. Substitute extracted values directly into SQL
-    for (const placeholder of extractablePlaceholders) {
+  private _substitutePlaceholders(
+    sql: string,
+    placeholders: TemplatePlaceholder[],
+    values: Record<string, string | null>,
+  ): string {
+    for (const placeholder of placeholders) {
       const value = values[placeholder.name] ?? placeholder.default ?? null;
       const marker = `{{${placeholder.name}}}`;
 
@@ -217,7 +254,6 @@ Do not return any other text or explanation, just the XML tags.
         continue;
       }
 
-      // Optional placeholder with no value — remove marker (and surrounding whitespace)
       if (placeholder.optional && !value) {
         sql = sql.replace(
           new RegExp(`\\s*${this._escapeRegex(marker)}\\s*`),
@@ -226,39 +262,35 @@ Do not return any other text or explanation, just the XML tags.
         continue;
       }
 
-      switch (placeholder.type) {
-        case 'string': {
-          const escaped = (value ?? '').replace(/'/g, "''");
-          sql = sql.replace(marker, `'${escaped}'`);
-          break;
-        }
-        case 'number': {
-          sql = sql.replace(marker, `${Number(value) || 0}`);
-          break;
-        }
-        case 'boolean': {
-          const boolVal =
-            value?.toLowerCase() === 'true' ||
-            value?.toLowerCase() === 'yes' ||
-            value === '1';
-          sql = sql.replace(marker, boolVal ? 'TRUE' : 'FALSE');
-          break;
-        }
-        case 'sql_expression': {
-          sql = sql.replace(marker, value ?? '1=1');
-          break;
-        }
-      }
+      sql = sql.replace(marker, this._formatValue(placeholder.type, value));
     }
+    return sql;
+  }
 
-    return {
-      sql,
-      description: template.description,
-    };
+  private _formatValue(type: string, value: string | null): string {
+    switch (type) {
+      case 'string': {
+        const escaped = (value ?? '').replace(/'/g, "''");
+        return `'${escaped}'`;
+      }
+      case 'number':
+        return `${Number(value) || 0}`;
+      case 'boolean': {
+        const boolVal =
+          value?.toLowerCase() === 'true' ||
+          value?.toLowerCase() === 'yes' ||
+          value === '1';
+        return boolVal ? 'TRUE' : 'FALSE';
+      }
+      case 'sql_expression':
+        return value ?? '1=1';
+      default:
+        return value ?? '';
+    }
   }
 
   private _escapeRegex(str: string): string {
-    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return str.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
   }
 
   parseTemplateMetadata(metadata: QueryTemplateMetadata): QueryTemplate {

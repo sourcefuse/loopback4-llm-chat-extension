@@ -124,7 +124,7 @@ ${placeholderText}
       return {};
     }
 
-    const matchIndex = parseInt(matchResult[1], 10) - 1;
+    const matchIndex = Number.parseInt(matchResult[1], 10) - 1;
     if (matchIndex < 0 || matchIndex >= relevantDocs.length) {
       config.writer?.({
         type: LLMStreamEventType.Log,

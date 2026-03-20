@@ -1,4 +1,4 @@
-import {inject} from '@loopback/core';
+import {inject, service} from '@loopback/core';
 import {
   get,
   getModelSchemaRef,
@@ -14,23 +14,20 @@ import {
   OPERATION_SECURITY_SPEC,
   STATUS_CODE,
 } from '@sourceloop/core';
-import {createHash} from 'crypto';
-import {authenticate, STRATEGY} from 'loopback4-authentication';
-import {AuthenticationBindings} from 'loopback4-authentication';
+import {createHash} from 'node:crypto';
+import {authenticate, STRATEGY, AuthenticationBindings} from 'loopback4-authentication';
 import {authorize} from 'loopback4-authorization';
 import {VectorStore} from '@langchain/core/vectorstores';
 import {AiIntegrationBindings} from '../../../keys';
 import {PermissionKey} from '../../../permissions';
-import {QueryTemplateDTO} from '../models';
+import {QueryTemplateDTO, TemplatePlaceholderDTO} from '../models';
 import {
   DbQueryStoredTypes,
   IQueryTemplateStore,
   QueryTemplateMetadata,
 } from '../types';
-import {TemplatePlaceholderDTO} from '../models';
 import {DbQueryAIExtensionBindings} from '../keys';
 import {SchemaStore} from '../services/schema.store';
-import {service} from '@loopback/core';
 
 export class TemplateController {
   constructor(
@@ -194,6 +191,17 @@ export class TemplateController {
     const placeholderNames = new Set(placeholders.map(p => p.name));
 
     // Every marker in the template must have a corresponding placeholder
+    this._validatePlaceholderMarker(markersInTemplate, placeholderNames);
+
+    // Every placeholder must appear in the template
+    this._validatePlaceholderPresenceInTemplate(markersInTemplate, placeholderNames);
+
+    // template_ref placeholders must have a templateId
+    this._validateTemplateRefId(placeholders);
+    
+  }
+
+  private _validatePlaceholderMarker(markersInTemplate: Set<string>, placeholderNames: Set<string>) {
     for (const marker of markersInTemplate) {
       if (!placeholderNames.has(marker)) {
         throw new HttpErrors.BadRequest(
@@ -201,8 +209,9 @@ export class TemplateController {
         );
       }
     }
+  }
 
-    // Every placeholder must appear in the template
+  private _validatePlaceholderPresenceInTemplate(markersInTemplate: Set<string>, placeholderNames: Set<string>) {
     for (const name of placeholderNames) {
       if (!markersInTemplate.has(name)) {
         throw new HttpErrors.BadRequest(
@@ -210,9 +219,10 @@ export class TemplateController {
         );
       }
     }
+  }
 
-    // template_ref placeholders must have a templateId
-    for (const p of placeholders) {
+  private _validateTemplateRefId(placeholders: TemplatePlaceholderDTO[]) {
+for (const p of placeholders) {
       if (p.type === 'template_ref' && !p.templateId) {
         throw new HttpErrors.BadRequest(
           `Placeholder "${p.name}" is of type template_ref but has no templateId`,
@@ -226,12 +236,12 @@ export class TemplateController {
     tables: string[],
   ): string {
     const hash = createHash('sha256');
-    const sortedTables = [...tables].sort();
+    const sortedTables = [...tables].sort((a, b) => a.localeCompare(b));
     for (const table of sortedTables) {
       hash.update(table);
       const columns = schema.tables[table]?.columns ?? {};
       Object.keys(columns)
-        .sort()
+        .sort((a, b) => a.localeCompare(b))
         .forEach(column => {
           hash.update(`${column}:${columns[column].type}`);
         });

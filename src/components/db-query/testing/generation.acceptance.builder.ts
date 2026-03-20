@@ -26,7 +26,7 @@ import {AuthenticationBindings} from 'loopback4-authentication';
 function parsePrompt(prompt: string, data: Record<string, string>) {
   for (const key of Object.keys(data)) {
     const value = data[key].split(' ').join('%').split('_').join('%');
-    prompt = prompt.replace(new RegExp(`\\<${key}\\>`, 'g'), value);
+    prompt = prompt.replace(new RegExp(String.raw`\<${key}\>`, 'g'), value);
   }
   return prompt;
 }
@@ -34,7 +34,7 @@ function parsePrompt(prompt: string, data: Record<string, string>) {
 function parseQuery(prompt: string, data: Record<string, string>) {
   for (const key of Object.keys(data)) {
     const value = data[key].split(' ').join('%').split('_').join('%');
-    prompt = prompt.replace(new RegExp(`\\<${key}\\>`, 'g'), value);
+    prompt = prompt.replace(new RegExp(String.raw`\<${key}\>`, 'g'), value);
   }
   return prompt;
 }
@@ -98,113 +98,15 @@ export async function generationAcceptanceBuilder(
       logger.info(
         `Running query: ${query.case} ${i > 0 ? `Iteration: ${i + 1}` : ''}`,
       );
-      const result: GenerationAcceptanceTestResult = {
-        success: false,
-        time: 0,
-        inputTokens: 0,
-        outputTokens: 0,
-        emptyOutput: false,
-        generationCount: 0,
-        usedCache: false,
-        usedTemplate: false,
-        query: '',
-        case: query.case,
-        description: '',
-        actualResult: null,
-        expectedResult: null,
-      };
-      try {
-        const startTime = Date.now();
-        const {body} = await client
-          .post('/reply')
-          .set('Authorization', `Bearer ${token}`)
-          .field(
-            'prompt',
-            `${parsePrompt(query.prompt, params)}. ${query.outputInstructions}`,
-          )
-          .expect(200);
-        // time in seconds
-        result.time = (Date.now() - startTime) / 1000;
-        const status = body.filter(
-          (v: LLMStreamEvent) => v.type === LLMStreamEventType.ToolStatus,
-        );
-        const lastStatus: LLMStreamToolStatusEvent | undefined =
-          status[status.length - 1];
-        const [tokenCount]: LLMStreamTokenCountEvent[] = body.filter(
-          (v: LLMStreamEvent) => v.type === LLMStreamEventType.TokenCount,
-        );
-        result.inputTokens = tokenCount.data.inputTokens;
-        result.outputTokens = tokenCount.data.outputTokens;
-
-        if (!lastStatus) {
-          result.actualResult =
-            'LLM did not call the query tool. No tool status events were received.';
-          logger.error(
-            `Query tool was not called by the LLM for case: ${query.case}`,
-          );
-          results.push(result);
-          if (writeReport) {
-            writeResultSoFar(results);
-          }
-          continue;
-        }
-
-        const finalDescription = body.filter(
-          (v: LLMStreamEvent) =>
-            v.type === LLMStreamEventType.ToolStatus &&
-            v.data.status?.startsWith('DESCRIPTION:'),
-        );
-        if (finalDescription.length > 0) {
-          result.description = finalDescription
-            .pop()
-            .data.status.replace('DESCRIPTION:', '');
-        }
-        result.generationCount = body.filter(
-          (v: LLMStreamEvent) =>
-            v.type === LLMStreamEventType.ToolStatus &&
-            v.data.status === 'Generating SQL query from the prompt',
-        ).length;
-        result.usedCache = body.some(
-          (v: LLMStreamEvent) =>
-            v.type === LLMStreamEventType.ToolStatus &&
-            (v.data.status === 'Found relevant query in cache' ||
-              v.data.status ===
-                'Found similar query in cache, using it as example'),
-        );
-        result.usedTemplate = body.some(
-          (v: LLMStreamEvent) =>
-            v.type === LLMStreamEventType.ToolStatus &&
-            v.data.status === 'Matched query template',
-        );
-        if (lastStatus.data.status === ToolStatus.Completed) {
-          const dataset = await datasetStore.findById(
-            lastStatus.data.data?.['datasetId'],
-          );
-          result.query = parseQuery(dataset.query, params);
-          const {body: actualData} = await client
-            .get(`/datasets/${dataset.id}/execute`)
-            .set('Authorization', `Bearer ${token}`)
-            .expect(200);
-          const expectedData = await connector.execute<AnyObject>(
-            parseQuery(query.resultQuery, params),
-          );
-          result.actualResult = actualData;
-          result.expectedResult = expectedData;
-          // compare actualData and expectedData
-          if (JSON.stringify(actualData) === JSON.stringify(expectedData)) {
-            result.success = true;
-          }
-          if (expectedData.length === 0) {
-            result.emptyOutput = true;
-          }
-        } else {
-          result.actualResult = JSON.stringify(lastStatus);
-          logger.error('Tool did not complete successfully');
-        }
-      } catch (error) {
-        result.actualResult = error.message ?? error.toString();
-        logger.error('Error: ', error);
-      }
+      const result = await runSingleTestCase(
+        query,
+        client,
+        token,
+        params,
+        datasetStore,
+        connector,
+        logger,
+      );
       results.push(result);
       if (writeReport) {
         writeResultSoFar(results);
@@ -213,6 +115,140 @@ export async function generationAcceptanceBuilder(
   }
 
   return buildFinalResult(results);
+}
+
+async function runSingleTestCase(
+  query: GenerationAcceptanceTestCase,
+  client: Client,
+  token: string,
+  params: Record<string, string>,
+  datasetStore: {findById: (id: string) => Promise<AnyObject>},
+  connector: IDbConnector,
+  logger: ILogger,
+): Promise<GenerationAcceptanceTestResult> {
+  const result: GenerationAcceptanceTestResult = {
+    success: false,
+    time: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    emptyOutput: false,
+    generationCount: 0,
+    usedCache: false,
+    usedTemplate: false,
+    query: '',
+    case: query.case,
+    description: '',
+    actualResult: null,
+    expectedResult: null,
+  };
+  try {
+    const startTime = Date.now();
+    const {body} = await client
+      .post('/reply')
+      .set('Authorization', `Bearer ${token}`)
+      .field(
+        'prompt',
+        `${parsePrompt(query.prompt, params)}. ${query.outputInstructions}`,
+      )
+      .expect(200);
+    // time in seconds
+    result.time = (Date.now() - startTime) / 1000;
+    const status = body.filter(
+      (v: LLMStreamEvent) => v.type === LLMStreamEventType.ToolStatus,
+    );
+    const lastStatus: LLMStreamToolStatusEvent | undefined =
+      status[status.length - 1];
+    const [tokenCount]: LLMStreamTokenCountEvent[] = body.filter(
+      (v: LLMStreamEvent) => v.type === LLMStreamEventType.TokenCount,
+    );
+    result.inputTokens = tokenCount.data.inputTokens;
+    result.outputTokens = tokenCount.data.outputTokens;
+
+    if (!lastStatus) {
+      result.actualResult =
+        'LLM did not call the query tool. No tool status events were received.';
+      logger.error(
+        `Query tool was not called by the LLM for case: ${query.case}`,
+      );
+      return result;
+    }
+
+    populateStreamMetrics(result, body);
+    if (lastStatus.data.status === ToolStatus.Completed) {
+      await populateCompletedResult(result, lastStatus, query, client, token, params, datasetStore, connector);
+    } else {
+      result.actualResult = JSON.stringify(lastStatus);
+      logger.error('Tool did not complete successfully');
+    }
+  } catch (error) {
+    result.actualResult = error.message ?? error.toString();
+    logger.error('Error: ', error);
+  }
+  return result;
+}
+
+function populateStreamMetrics(
+  result: GenerationAcceptanceTestResult,
+  body: LLMStreamEvent[],
+) {
+  const finalDescription = body.filter(
+    (v: LLMStreamEvent) =>
+      v.type === LLMStreamEventType.ToolStatus &&
+      v.data.status?.startsWith('DESCRIPTION:'),
+  );
+  if (finalDescription.length > 0) {
+    result.description = finalDescription
+      .pop()
+      .data.status.replace('DESCRIPTION:', '');
+  }
+  result.generationCount = body.filter(
+    (v: LLMStreamEvent) =>
+      v.type === LLMStreamEventType.ToolStatus &&
+      v.data.status === 'Generating SQL query from the prompt',
+  ).length;
+  result.usedCache = body.some(
+    (v: LLMStreamEvent) =>
+      v.type === LLMStreamEventType.ToolStatus &&
+      (v.data.status === 'Found relevant query in cache' ||
+        v.data.status ===
+          'Found similar query in cache, using it as example'),
+  );
+  result.usedTemplate = body.some(
+    (v: LLMStreamEvent) =>
+      v.type === LLMStreamEventType.ToolStatus &&
+      v.data.status === 'Matched query template',
+  );
+}
+
+async function populateCompletedResult(
+  result: GenerationAcceptanceTestResult,
+  lastStatus: LLMStreamToolStatusEvent,
+  query: GenerationAcceptanceTestCase,
+  client: Client,
+  token: string,
+  params: Record<string, string>,
+  datasetStore: {findById: (id: string) => Promise<AnyObject>},
+  connector: IDbConnector,
+) {
+  const dataset = await datasetStore.findById(
+    lastStatus.data.data?.['datasetId'],
+  );
+  result.query = parseQuery(dataset.query, params);
+  const {body: actualData} = await client
+    .get(`/datasets/${dataset.id}/execute`)
+    .set('Authorization', `Bearer ${token}`)
+    .expect(200);
+  const expectedData = await connector.execute<AnyObject>(
+    parseQuery(query.resultQuery, params),
+  );
+  result.actualResult = actualData;
+  result.expectedResult = expectedData;
+  if (JSON.stringify(actualData) === JSON.stringify(expectedData)) {
+    result.success = true;
+  }
+  if (expectedData.length === 0) {
+    result.emptyOutput = true;
+  }
 }
 
 function buildFinalResult(results: GenerationAcceptanceTestResult[]) {

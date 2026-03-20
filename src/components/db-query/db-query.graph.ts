@@ -8,7 +8,13 @@ import {EvaluationResult, GenerationError} from './types';
 export class DbQueryGraph extends BaseGraph<DbQueryState> {
   async build() {
     const graph = new StateGraph(DbQueryGraphStateAnnotation);
+    await this._addNodes(graph);
+    this._addEdges(graph);
+    return graph.compile();
+  }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private async _addNodes(graph: any) {
     graph
       .addNode(
         DbQueryNodes.GetTables,
@@ -71,72 +77,15 @@ export class DbQueryGraph extends BaseGraph<DbQueryState> {
       .addNode(DbQueryNodes.PostCacheAndTables, async () => ({}))
       .addNode(DbQueryNodes.PreValidation, async () => ({}))
       // PostValidation: merges syntactic + semantic results into status/feedbacks
-      .addNode(DbQueryNodes.PostValidation, async (state: DbQueryState) => {
-        const mergedErrorTables = [
-          ...new Set([
-            ...(state.syntacticErrorTables ?? []),
-            ...(state.semanticErrorTables ?? []),
-          ]),
-        ];
-        const hasErrorTables = mergedErrorTables.length > 0;
-        // Syntactic failures take priority
-        if (
-          state.syntacticStatus &&
-          state.syntacticStatus !== EvaluationResult.Pass
-        ) {
-          return {
-            status: state.syntacticStatus,
-            feedbacks: [
-              ...(state.feedbacks ?? []),
-              ...(state.syntacticFeedback ? [state.syntacticFeedback] : []),
-              ...(state.semanticFeedback ? [state.semanticFeedback] : []),
-            ],
-            syntacticStatus: undefined,
-            syntacticFeedback: undefined,
-            syntacticErrorTables: hasErrorTables
-              ? mergedErrorTables
-              : undefined,
-            semanticStatus: undefined,
-            semanticFeedback: undefined,
-            semanticErrorTables: hasErrorTables ? mergedErrorTables : undefined,
-          };
-        }
-        // Semantic failure
-        if (
-          state.semanticStatus &&
-          state.semanticStatus !== EvaluationResult.Pass
-        ) {
-          return {
-            status: state.semanticStatus,
-            feedbacks: [
-              ...(state.feedbacks ?? []),
-              ...(state.semanticFeedback ? [state.semanticFeedback] : []),
-            ],
-            syntacticStatus: undefined,
-            syntacticFeedback: undefined,
-            syntacticErrorTables: hasErrorTables
-              ? mergedErrorTables
-              : undefined,
-            semanticStatus: undefined,
-            semanticFeedback: undefined,
-            semanticErrorTables: hasErrorTables ? mergedErrorTables : undefined,
-          };
-        }
-        // Both passed — clear internal validator feedbacks
-        return {
-          status: EvaluationResult.Pass,
-          feedbacks: (state.feedbacks ?? []).filter(
-            f => !f.startsWith('Query Validation Failed'),
-          ),
-          syntacticStatus: undefined,
-          syntacticFeedback: undefined,
-          syntacticErrorTables: undefined,
-          semanticStatus: undefined,
-          semanticFeedback: undefined,
-          semanticErrorTables: undefined,
-        };
-      })
-      // === EDGES ===
+      .addNode(
+        DbQueryNodes.PostValidation,
+        async (state: DbQueryState) => this._mergeValidationResults(state),
+      );
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private _addEdges(graph: any) {
+    graph
       // Parallel fan-out: cache check and table selection
       .addEdge(START, DbQueryNodes.IsImprovement)
       .addEdge(DbQueryNodes.IsImprovement, DbQueryNodes.CheckCache)
@@ -220,7 +169,65 @@ export class DbQueryGraph extends BaseGraph<DbQueryState> {
         },
       )
       .addEdge(DbQueryNodes.SaveDataset, END);
+  }
 
-    return graph.compile();
+  private _mergeValidationResults(state: DbQueryState) {
+    const mergedErrorTables = [
+      ...new Set([
+        ...(state.syntacticErrorTables ?? []),
+        ...(state.semanticErrorTables ?? []),
+      ]),
+    ];
+    const hasErrorTables = mergedErrorTables.length > 0;
+    const clearedState = {
+      syntacticStatus: undefined,
+      syntacticFeedback: undefined,
+      syntacticErrorTables: hasErrorTables ? mergedErrorTables : undefined,
+      semanticStatus: undefined,
+      semanticFeedback: undefined,
+      semanticErrorTables: hasErrorTables ? mergedErrorTables : undefined,
+    };
+    // Syntactic failures take priority
+    if (
+      state.syntacticStatus &&
+      state.syntacticStatus !== EvaluationResult.Pass
+    ) {
+      return {
+        status: state.syntacticStatus,
+        feedbacks: [
+          ...(state.feedbacks ?? []),
+          ...(state.syntacticFeedback ? [state.syntacticFeedback] : []),
+          ...(state.semanticFeedback ? [state.semanticFeedback] : []),
+        ],
+        ...clearedState,
+      };
+    }
+    // Semantic failure
+    if (
+      state.semanticStatus &&
+      state.semanticStatus !== EvaluationResult.Pass
+    ) {
+      return {
+        status: state.semanticStatus,
+        feedbacks: [
+          ...(state.feedbacks ?? []),
+          ...(state.semanticFeedback ? [state.semanticFeedback] : []),
+        ],
+        ...clearedState,
+      };
+    }
+    // Both passed — clear internal validator feedbacks
+    return {
+      status: EvaluationResult.Pass,
+      feedbacks: (state.feedbacks ?? []).filter(
+        f => !f.startsWith('Query Validation Failed'),
+      ),
+      syntacticStatus: undefined,
+      syntacticFeedback: undefined,
+      syntacticErrorTables: undefined,
+      semanticStatus: undefined,
+      semanticFeedback: undefined,
+      semanticErrorTables: undefined,
+    };
   }
 }
