@@ -77,23 +77,24 @@ export class DbQueryGraph extends BaseGraph<DbQueryState> {
       .addNode(DbQueryNodes.PostCacheAndTables, async () => ({}))
       .addNode(DbQueryNodes.PreValidation, async () => ({}))
       // PostValidation: merges syntactic + semantic results into status/feedbacks
-      .addNode(
-        DbQueryNodes.PostValidation,
-        async (state: DbQueryState) => this._mergeValidationResults(state),
+      .addNode(DbQueryNodes.PostValidation, async (state: DbQueryState) =>
+        this._mergeValidationResults(state),
       );
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private _addEdges(graph: any) {
     graph
-      // Parallel fan-out: cache check and table selection
+      // Parallel fan-out: cache check, table selection, template check, and classify change
       .addEdge(START, DbQueryNodes.IsImprovement)
       .addEdge(DbQueryNodes.IsImprovement, DbQueryNodes.CheckCache)
       .addEdge(DbQueryNodes.IsImprovement, DbQueryNodes.GetTables)
       .addEdge(DbQueryNodes.IsImprovement, DbQueryNodes.CheckTemplates)
+      .addEdge(DbQueryNodes.IsImprovement, DbQueryNodes.ClassifyChange)
       .addEdge(DbQueryNodes.CheckCache, DbQueryNodes.PostCacheAndTables)
       .addEdge(DbQueryNodes.GetTables, DbQueryNodes.PostCacheAndTables)
       .addEdge(DbQueryNodes.CheckTemplates, DbQueryNodes.PostCacheAndTables)
+      .addEdge(DbQueryNodes.ClassifyChange, DbQueryNodes.PostCacheAndTables)
       .addConditionalEdges(
         DbQueryNodes.PostCacheAndTables,
         (state: DbQueryState) => {
@@ -109,12 +110,9 @@ export class DbQueryGraph extends BaseGraph<DbQueryState> {
           Continue: DbQueryNodes.GetColumns,
         },
       )
-      // GetColumns → GenerateChecklist + ClassifyChange in parallel
+      // GetColumns → GenerateChecklist (no-op when disabled via config)
       .addEdge(DbQueryNodes.GetColumns, DbQueryNodes.GenerateChecklist)
-      .addEdge(DbQueryNodes.GetColumns, DbQueryNodes.ClassifyChange)
-      // Both GenerateChecklist and ClassifyChange fan-in to SqlGeneration
       .addEdge(DbQueryNodes.GenerateChecklist, DbQueryNodes.SqlGeneration)
-      .addEdge(DbQueryNodes.ClassifyChange, DbQueryNodes.SqlGeneration)
       .addEdge(DbQueryNodes.GenerateChecklist, DbQueryNodes.VerifyChecklist)
       // Both fan-in to PreValidation
       .addEdge(DbQueryNodes.VerifyChecklist, DbQueryNodes.PreValidation)

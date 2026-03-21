@@ -96,6 +96,10 @@ If no rules are relevant:
   ): Promise<DbQueryState> {
     const empty = {} as DbQueryState;
 
+    if (this.config.nodes?.generateChecklistNode?.enabled === false) {
+      return empty;
+    }
+
     if (state.feedbacks?.length) {
       return empty;
     }

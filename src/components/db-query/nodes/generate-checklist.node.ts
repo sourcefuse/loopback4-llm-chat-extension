@@ -70,6 +70,9 @@ If no rules are relevant, return: none
     config: LangGraphRunnableConfig,
   ): Promise<DbQueryState> {
     const empty = {} as DbQueryState;
+    if (this.config.nodes?.generateChecklistNode?.enabled === false) {
+      return empty;
+    }
     if (state.validationChecklist) {
       return empty;
     }

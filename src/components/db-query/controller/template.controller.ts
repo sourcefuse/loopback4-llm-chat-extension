@@ -15,7 +15,11 @@ import {
   STATUS_CODE,
 } from '@sourceloop/core';
 import {createHash} from 'node:crypto';
-import {authenticate, STRATEGY, AuthenticationBindings} from 'loopback4-authentication';
+import {
+  authenticate,
+  STRATEGY,
+  AuthenticationBindings,
+} from 'loopback4-authentication';
 import {authorize} from 'loopback4-authorization';
 import {VectorStore} from '@langchain/core/vectorstores';
 import {AiIntegrationBindings} from '../../../keys';
@@ -194,14 +198,19 @@ export class TemplateController {
     this._validatePlaceholderMarker(markersInTemplate, placeholderNames);
 
     // Every placeholder must appear in the template
-    this._validatePlaceholderPresenceInTemplate(markersInTemplate, placeholderNames);
+    this._validatePlaceholderPresenceInTemplate(
+      markersInTemplate,
+      placeholderNames,
+    );
 
     // template_ref placeholders must have a templateId
     this._validateTemplateRefId(placeholders);
-    
   }
 
-  private _validatePlaceholderMarker(markersInTemplate: Set<string>, placeholderNames: Set<string>) {
+  private _validatePlaceholderMarker(
+    markersInTemplate: Set<string>,
+    placeholderNames: Set<string>,
+  ) {
     for (const marker of markersInTemplate) {
       if (!placeholderNames.has(marker)) {
         throw new HttpErrors.BadRequest(
@@ -211,7 +220,10 @@ export class TemplateController {
     }
   }
 
-  private _validatePlaceholderPresenceInTemplate(markersInTemplate: Set<string>, placeholderNames: Set<string>) {
+  private _validatePlaceholderPresenceInTemplate(
+    markersInTemplate: Set<string>,
+    placeholderNames: Set<string>,
+  ) {
     for (const name of placeholderNames) {
       if (!markersInTemplate.has(name)) {
         throw new HttpErrors.BadRequest(
@@ -222,7 +234,7 @@ export class TemplateController {
   }
 
   private _validateTemplateRefId(placeholders: TemplatePlaceholderDTO[]) {
-for (const p of placeholders) {
+    for (const p of placeholders) {
       if (p.type === 'template_ref' && !p.templateId) {
         throw new HttpErrors.BadRequest(
           `Placeholder "${p.name}" is of type template_ref but has no templateId`,

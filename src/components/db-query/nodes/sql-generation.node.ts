@@ -89,7 +89,7 @@ In the last attempt, you generated this SQL query -
     state: DbQueryState,
     config: LangGraphRunnableConfig,
   ): Promise<DbQueryState> {
-    let llm = this.sqlLLM;
+    let llm;
 
     const isSingleTable =
       state.schema.tables && Object.keys(state.schema.tables).length === 1;
@@ -108,7 +108,7 @@ In the last attempt, you generated this SQL query -
       isValidationFixRetry
     ) {
       llm = this.cheapllm;
-    } else  {
+    } else {
       llm = this.sqlLLM;
     }
 

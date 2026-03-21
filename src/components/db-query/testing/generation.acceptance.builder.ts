@@ -175,7 +175,13 @@ async function runSingleTestCase(
 
     populateStreamMetrics(result, body);
     if (lastStatus.data.status === ToolStatus.Completed) {
-      await populateCompletedResult(result, lastStatus, query, client, token, params, datasetStore, connector);
+      await populateCompletedResult(result, lastStatus, query, {
+        client,
+        token,
+        params,
+        datasetStore,
+        connector,
+      });
     } else {
       result.actualResult = JSON.stringify(lastStatus);
       logger.error('Tool did not complete successfully');
@@ -196,10 +202,14 @@ function populateStreamMetrics(
       v.type === LLMStreamEventType.ToolStatus &&
       v.data.status?.startsWith('DESCRIPTION:'),
   );
-  if (finalDescription.length > 0) {
-    result.description = finalDescription
-      .pop()
-      .data.status.replace('DESCRIPTION:', '');
+  const lastDescription = finalDescription[finalDescription.length - 1] as
+    | LLMStreamToolStatusEvent
+    | undefined;
+  if (lastDescription) {
+    result.description = lastDescription.data.status.replace(
+      'DESCRIPTION:',
+      '',
+    );
   }
   result.generationCount = body.filter(
     (v: LLMStreamEvent) =>
@@ -210,8 +220,7 @@ function populateStreamMetrics(
     (v: LLMStreamEvent) =>
       v.type === LLMStreamEventType.ToolStatus &&
       (v.data.status === 'Found relevant query in cache' ||
-        v.data.status ===
-          'Found similar query in cache, using it as example'),
+        v.data.status === 'Found similar query in cache, using it as example'),
   );
   result.usedTemplate = body.some(
     (v: LLMStreamEvent) =>
@@ -224,12 +233,15 @@ async function populateCompletedResult(
   result: GenerationAcceptanceTestResult,
   lastStatus: LLMStreamToolStatusEvent,
   query: GenerationAcceptanceTestCase,
-  client: Client,
-  token: string,
-  params: Record<string, string>,
-  datasetStore: {findById: (id: string) => Promise<AnyObject>},
-  connector: IDbConnector,
+  ctx: {
+    client: Client;
+    token: string;
+    params: Record<string, string>;
+    datasetStore: {findById: (id: string) => Promise<AnyObject>};
+    connector: IDbConnector;
+  },
 ) {
+  const {client, token, params, datasetStore, connector} = ctx;
   const dataset = await datasetStore.findById(
     lastStatus.data.data?.['datasetId'],
   );

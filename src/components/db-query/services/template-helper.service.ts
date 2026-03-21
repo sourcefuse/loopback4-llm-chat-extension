@@ -116,7 +116,12 @@ Do not return any other text or explanation, just the XML tags.
       if (metaStr) parts.push(metaStr);
     }
     // Include table-level context entries relevant to this column
-    parts.push(...this._getRelevantContextEntries(tableSchema.context, placeholder.column));
+    parts.push(
+      ...this._getRelevantContextEntries(
+        tableSchema.context,
+        placeholder.column,
+      ),
+    );
     return parts.join('. ');
   }
 
@@ -129,10 +134,19 @@ Do not return any other text or explanation, just the XML tags.
     }
     const results: string[] = [];
     for (const ctx of context) {
-      if (typeof ctx === 'string' && ctx.toLowerCase().includes(column.toLowerCase())) {
+      if (
+        typeof ctx === 'string' &&
+        ctx.toLowerCase().includes(column.toLowerCase())
+      ) {
         results.push(ctx);
-      } else if (typeof ctx === 'object' && ctx !== null && (ctx as Record<string, string>)[column]) {
+      } else if (
+        typeof ctx === 'object' &&
+        ctx !== null &&
+        (ctx as Record<string, string>)[column]
+      ) {
         results.push((ctx as Record<string, string>)[column]);
+      } else {
+        // do nothing
       }
     }
     return results;
@@ -144,7 +158,9 @@ Do not return any other text or explanation, just the XML tags.
   ): Record<string, string | null> {
     const result: Record<string, string | null> = {};
     for (const p of placeholders) {
-      const match = new RegExp(String.raw`<${p.name}>([\s\S]*?)</${p.name}>`).exec(xml);
+      const match = new RegExp(
+        String.raw`<${p.name}>([\s\S]*?)</${p.name}>`,
+      ).exec(xml);
       const value = match?.[1]?.trim();
       result[p.name] = value?.length ? value : null;
     }
@@ -205,7 +221,9 @@ Do not return any other text or explanation, just the XML tags.
     prompt: string,
     config: RunnableConfig,
     schema: DatabaseSchema | undefined,
-    templateFetcher: ((id: string) => Promise<QueryTemplate | undefined>) | undefined,
+    templateFetcher:
+      | ((id: string) => Promise<QueryTemplate | undefined>)
+      | undefined,
     depth: number,
   ): Promise<string> {
     let sql = template.template;
@@ -256,7 +274,7 @@ Do not return any other text or explanation, just the XML tags.
 
       if (placeholder.optional && !value) {
         sql = sql.replace(
-          new RegExp(`\\s*${this._escapeRegex(marker)}\\s*`),
+          new RegExp(String.raw`\s*${this._escapeRegex(marker)}\s*`),
           ' ',
         );
         continue;

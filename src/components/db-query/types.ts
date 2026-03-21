@@ -130,6 +130,7 @@ export type DbQueryConfig = {
       useSmartLLM?: boolean;
     };
     generateChecklistNode?: {
+      enabled?: boolean;
       parallelism?: number;
     };
     verifyChecklistNode?: {
