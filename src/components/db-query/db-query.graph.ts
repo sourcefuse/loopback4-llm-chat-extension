@@ -170,51 +170,39 @@ export class DbQueryGraph extends BaseGraph<DbQueryState> {
   }
 
   private _mergeValidationResults(state: DbQueryState) {
-    const mergedErrorTables = [
-      ...new Set([
-        ...(state.syntacticErrorTables ?? []),
-        ...(state.semanticErrorTables ?? []),
-      ]),
-    ];
-    const hasErrorTables = mergedErrorTables.length > 0;
-    const clearedState = {
-      syntacticStatus: undefined,
-      syntacticFeedback: undefined,
-      syntacticErrorTables: hasErrorTables ? mergedErrorTables : undefined,
-      semanticStatus: undefined,
-      semanticFeedback: undefined,
-      semanticErrorTables: hasErrorTables ? mergedErrorTables : undefined,
-    };
-    // Syntactic failures take priority
-    if (
-      state.syntacticStatus &&
-      state.syntacticStatus !== EvaluationResult.Pass
-    ) {
+    const hasSyntacticFailure =
+      state.syntacticStatus && state.syntacticStatus !== EvaluationResult.Pass;
+    const hasSemanticFailure =
+      state.semanticStatus && state.semanticStatus !== EvaluationResult.Pass;
+
+    if (!hasSyntacticFailure && !hasSemanticFailure) {
+      return this._buildPassedResult(state);
+    }
+
+    const clearedState = this._buildClearedState(state);
+    const baseFeedbacks = state.feedbacks ?? [];
+    const semanticFb = this._toArray(state.semanticFeedback);
+
+    if (hasSyntacticFailure) {
       return {
         status: state.syntacticStatus,
         feedbacks: [
-          ...(state.feedbacks ?? []),
-          ...(state.syntacticFeedback ? [state.syntacticFeedback] : []),
-          ...(state.semanticFeedback ? [state.semanticFeedback] : []),
+          ...baseFeedbacks,
+          ...this._toArray(state.syntacticFeedback),
+          ...semanticFb,
         ],
         ...clearedState,
       };
     }
-    // Semantic failure
-    if (
-      state.semanticStatus &&
-      state.semanticStatus !== EvaluationResult.Pass
-    ) {
-      return {
-        status: state.semanticStatus,
-        feedbacks: [
-          ...(state.feedbacks ?? []),
-          ...(state.semanticFeedback ? [state.semanticFeedback] : []),
-        ],
-        ...clearedState,
-      };
-    }
-    // Both passed — clear internal validator feedbacks
+
+    return {
+      status: state.semanticStatus,
+      feedbacks: [...baseFeedbacks, ...semanticFb],
+      ...clearedState,
+    };
+  }
+
+  private _buildPassedResult(state: DbQueryState) {
     return {
       status: EvaluationResult.Pass,
       feedbacks: (state.feedbacks ?? []).filter(
@@ -227,5 +215,28 @@ export class DbQueryGraph extends BaseGraph<DbQueryState> {
       semanticFeedback: undefined,
       semanticErrorTables: undefined,
     };
+  }
+
+  private _buildClearedState(state: DbQueryState) {
+    const mergedErrorTables = [
+      ...new Set([
+        ...(state.syntacticErrorTables ?? []),
+        ...(state.semanticErrorTables ?? []),
+      ]),
+    ];
+    const errorTables =
+      mergedErrorTables.length > 0 ? mergedErrorTables : undefined;
+    return {
+      syntacticStatus: undefined,
+      syntacticFeedback: undefined,
+      syntacticErrorTables: errorTables,
+      semanticStatus: undefined,
+      semanticFeedback: undefined,
+      semanticErrorTables: errorTables,
+    };
+  }
+
+  private _toArray(value: string | undefined): string[] {
+    return value ? [value] : [];
   }
 }

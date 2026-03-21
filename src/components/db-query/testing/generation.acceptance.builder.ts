@@ -23,15 +23,7 @@ import {ILogger, LOGGER} from '@sourceloop/core';
 import {IDbConnector} from '../types';
 import {AuthenticationBindings} from 'loopback4-authentication';
 
-function parsePrompt(prompt: string, data: Record<string, string>) {
-  for (const key of Object.keys(data)) {
-    const value = data[key].split(' ').join('%').split('_').join('%');
-    prompt = prompt.replace(new RegExp(String.raw`\<${key}\>`, 'g'), value);
-  }
-  return prompt;
-}
-
-function parseQuery(prompt: string, data: Record<string, string>) {
+function parseData(prompt: string, data: Record<string, string>) {
   for (const key of Object.keys(data)) {
     const value = data[key].split(' ').join('%').split('_').join('%');
     prompt = prompt.replace(new RegExp(String.raw`\<${key}\>`, 'g'), value);
@@ -148,7 +140,7 @@ async function runSingleTestCase(
       .set('Authorization', `Bearer ${token}`)
       .field(
         'prompt',
-        `${parsePrompt(query.prompt, params)}. ${query.outputInstructions}`,
+        `${parseData(query.prompt, params)}. ${query.outputInstructions}`,
       )
       .expect(200);
     // time in seconds
@@ -202,7 +194,7 @@ function populateStreamMetrics(
       v.type === LLMStreamEventType.ToolStatus &&
       v.data.status?.startsWith('DESCRIPTION:'),
   );
-  const lastDescription = finalDescription[finalDescription.length - 1] as
+  const lastDescription = finalDescription.at(-1) as
     | LLMStreamToolStatusEvent
     | undefined;
   if (lastDescription) {
@@ -245,13 +237,13 @@ async function populateCompletedResult(
   const dataset = await datasetStore.findById(
     lastStatus.data.data?.['datasetId'],
   );
-  result.query = parseQuery(dataset.query, params);
+  result.query = parseData(dataset.query, params);
   const {body: actualData} = await client
     .get(`/datasets/${dataset.id}/execute`)
     .set('Authorization', `Bearer ${token}`)
     .expect(200);
   const expectedData = await connector.execute<AnyObject>(
-    parseQuery(query.resultQuery, params),
+    parseData(query.resultQuery, params),
   );
   result.actualResult = actualData;
   result.expectedResult = expectedData;

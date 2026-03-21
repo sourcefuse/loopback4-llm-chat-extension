@@ -286,25 +286,19 @@ Do not return any other text or explanation, just the XML tags.
   }
 
   private _formatValue(type: string, value: string | null): string {
-    switch (type) {
-      case 'string': {
-        const escaped = (value ?? '').replace(/'/g, "''");
-        return `'${escaped}'`;
-      }
-      case 'number':
-        return `${Number(value) || 0}`;
-      case 'boolean': {
-        const boolVal =
-          value?.toLowerCase() === 'true' ||
-          value?.toLowerCase() === 'yes' ||
-          value === '1';
-        return boolVal ? 'TRUE' : 'FALSE';
-      }
-      case 'sql_expression':
-        return value ?? '1=1';
-      default:
-        return value ?? '';
-    }
+    const formatters: Record<string, (v: string | null) => string> = {
+      string: v => `'${(v ?? '').replace(/'/g, "''")}'`,
+      number: v => `${Number(v) || 0}`,
+      boolean: v => (this._isTruthy(v) ? 'TRUE' : 'FALSE'),
+      // eslint-disable-next-line @typescript-eslint/naming-convention
+      sql_expression: v => v ?? '1=1',
+    };
+    return (formatters[type] ?? (v => v ?? ''))(value);
+  }
+
+  private _isTruthy(value: string | null): boolean {
+    const lower = value?.toLowerCase();
+    return lower === 'true' || lower === 'yes' || value === '1';
   }
 
   private _escapeRegex(str: string): string {
