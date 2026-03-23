@@ -1,6 +1,7 @@
 import {juggler} from '@loopback/repository';
 import {expect, sinon} from '@loopback/testlab';
 import {
+  ChangeType,
   DbSchemaHelperService,
   SqlGenerationNode,
   SqliteConnector,
@@ -55,8 +56,7 @@ describe('SqlGenerationNode Unit', function () {
 
   it('should generate SQL query based on the provided prompt', async () => {
     llmStub.resolves({
-      content:
-        '<think>thinking about it</think><sql>SELECT * FROM employees;</sql><description>Get all employees</description>',
+      content: '<think>thinking about it</think>SELECT * FROM employees;',
     });
 
     const state = {
@@ -89,6 +89,16 @@ describe('SqlGenerationNode Unit', function () {
       resultArray: undefined,
       directCall: false,
       description: undefined,
+      validationChecklist: undefined,
+      syntacticStatus: undefined,
+      syntacticFeedback: undefined,
+      semanticStatus: undefined,
+      semanticFeedback: undefined,
+      syntacticErrorTables: undefined,
+      semanticErrorTables: undefined,
+      changeType: undefined,
+      fromTemplate: undefined,
+      templateId: undefined,
     };
 
     const result = await node.execute(state, {});
@@ -131,26 +141,16 @@ You must keep these additional details in mind while writing the query -
 
 </context>
 <output-instructions>
-Return the output in the following format with exactly 2 parts within opening and closing tags - 
-<sql>
-Contains the required valid SQL satisfying all the constraints
+
+Output should only be a valid SQL query with no other special character or formatting.
+Contains the required valid SQL satisfying all the constraints.
 It should have no other character or symbol or character that is not part of SQLs.
-Every single line of SQL should have a comment above it explaining the purpose of that line.
-</sql>
-<description>
-A very detailed but non-technical description of the SQL describing every single condition and concept used in the SQL statement. DO NOT OMMIT ANY DETAIL.
-It should just be a plain english text with no other special formatting or special character. 
-It should NOT use any technical jargon or database specific terminology like tables or columns.
-Try to keep it short and to the point while not omitting any detail.
-Do not use any DB concepts like enum numbers, joins, CTEs, subqueries etc. in the description.
-</description>
 </output-instructions>`);
   });
 
   it('should generate SQL query based on the provided prompt with a single feedback from some validation stage', async () => {
     llmStub.resolves({
-      content:
-        '<think>thinking about it</think><sql>SELECT * FROM employees;</sql><description>Get all employees</description>',
+      content: '<think>thinking about it</think>SELECT * FROM employees;',
     });
 
     const state = {
@@ -183,6 +183,16 @@ Do not use any DB concepts like enum numbers, joins, CTEs, subqueries etc. in th
       resultArray: undefined,
       directCall: false,
       description: undefined,
+      validationChecklist: undefined,
+      syntacticStatus: undefined,
+      syntacticFeedback: undefined,
+      semanticStatus: undefined,
+      semanticFeedback: undefined,
+      syntacticErrorTables: undefined,
+      semanticErrorTables: undefined,
+      changeType: undefined,
+      fromTemplate: undefined,
+      templateId: undefined,
     };
 
     const result = await node.execute(state, {});
@@ -239,26 +249,16 @@ This was the error in the latest query you generated - \n${state.feedbacks[0]}
 </feedback-instructions>
 </context>
 <output-instructions>
-Return the output in the following format with exactly 2 parts within opening and closing tags - 
-<sql>
-Contains the required valid SQL satisfying all the constraints
+
+Output should only be a valid SQL query with no other special character or formatting.
+Contains the required valid SQL satisfying all the constraints.
 It should have no other character or symbol or character that is not part of SQLs.
-Every single line of SQL should have a comment above it explaining the purpose of that line.
-</sql>
-<description>
-A very detailed but non-technical description of the SQL describing every single condition and concept used in the SQL statement. DO NOT OMMIT ANY DETAIL.
-It should just be a plain english text with no other special formatting or special character. 
-It should NOT use any technical jargon or database specific terminology like tables or columns.
-Try to keep it short and to the point while not omitting any detail.
-Do not use any DB concepts like enum numbers, joins, CTEs, subqueries etc. in the description.
-</description>
 </output-instructions>`);
   });
 
   it('should generate SQL query based on the provided prompt with a multiple feedbacks from from previous loops', async () => {
     llmStub.resolves({
-      content:
-        '<think>thinking about it</think><sql>SELECT * FROM employees;</sql><description>Get all employees</description>',
+      content: '<think>thinking about it</think>SELECT * FROM employees;',
     });
 
     const state = {
@@ -295,6 +295,16 @@ Do not use any DB concepts like enum numbers, joins, CTEs, subqueries etc. in th
       resultArray: undefined,
       directCall: false,
       description: undefined,
+      validationChecklist: undefined,
+      syntacticStatus: undefined,
+      syntacticFeedback: undefined,
+      semanticStatus: undefined,
+      semanticFeedback: undefined,
+      syntacticErrorTables: undefined,
+      semanticErrorTables: undefined,
+      changeType: undefined,
+      fromTemplate: undefined,
+      templateId: undefined,
     };
 
     const result = await node.execute(state, {});
@@ -355,26 +365,16 @@ ${state.feedbacks[1]}
 </feedback-instructions>
 </context>
 <output-instructions>
-Return the output in the following format with exactly 2 parts within opening and closing tags - 
-<sql>
-Contains the required valid SQL satisfying all the constraints
+
+Output should only be a valid SQL query with no other special character or formatting.
+Contains the required valid SQL satisfying all the constraints.
 It should have no other character or symbol or character that is not part of SQLs.
-Every single line of SQL should have a comment above it explaining the purpose of that line.
-</sql>
-<description>
-A very detailed but non-technical description of the SQL describing every single condition and concept used in the SQL statement. DO NOT OMMIT ANY DETAIL.
-It should just be a plain english text with no other special formatting or special character. 
-It should NOT use any technical jargon or database specific terminology like tables or columns.
-Try to keep it short and to the point while not omitting any detail.
-Do not use any DB concepts like enum numbers, joins, CTEs, subqueries etc. in the description.
-</description>
 </output-instructions>`);
   });
 
   it('should generate SQL query with sample queries when no feedbacks but has sample SQL', async () => {
     llmStub.resolves({
-      content:
-        '<think>thinking about it</think><sql>SELECT * FROM employees;</sql><description>Get all employees</description>',
+      content: '<think>thinking about it</think>SELECT * FROM employees;',
     });
 
     const state = {
@@ -407,6 +407,16 @@ Do not use any DB concepts like enum numbers, joins, CTEs, subqueries etc. in th
       resultArray: undefined,
       directCall: false,
       description: undefined,
+      validationChecklist: undefined,
+      syntacticStatus: undefined,
+      syntacticFeedback: undefined,
+      semanticStatus: undefined,
+      semanticFeedback: undefined,
+      syntacticErrorTables: undefined,
+      semanticErrorTables: undefined,
+      changeType: undefined,
+      fromTemplate: undefined,
+      templateId: undefined,
     };
 
     const result = await node.execute(state, {});
@@ -426,8 +436,7 @@ Do not use any DB concepts like enum numbers, joins, CTEs, subqueries etc. in th
 
   it('should generate SQL query with baseline sample queries when no feedbacks and not from cache', async () => {
     llmStub.resolves({
-      content:
-        '<think>thinking about it</think><sql>SELECT * FROM employees;</sql><description>Get all employees</description>',
+      content: '<think>thinking about it</think>SELECT * FROM employees;',
     });
 
     const state = {
@@ -460,6 +469,16 @@ Do not use any DB concepts like enum numbers, joins, CTEs, subqueries etc. in th
       resultArray: undefined,
       directCall: false,
       description: undefined,
+      validationChecklist: undefined,
+      syntacticStatus: undefined,
+      syntacticFeedback: undefined,
+      semanticStatus: undefined,
+      semanticFeedback: undefined,
+      syntacticErrorTables: undefined,
+      semanticErrorTables: undefined,
+      changeType: undefined,
+      fromTemplate: undefined,
+      templateId: undefined,
     };
 
     const result = await node.execute(state, {});
@@ -513,11 +532,9 @@ Do not use any DB concepts like enum numbers, joins, CTEs, subqueries etc. in th
       }
     });
 
-    it('should use cheap LLM when OPTIMIZE_CACHED_QUERIES is true and sampleSql exists', async () => {
-      process.env.OPTIMIZE_CACHED_QUERIES = 'true';
+    it('should use cheap LLM when changeType is Minor', async () => {
       cheapLLMStub.resolves({
-        content:
-          '<sql>SELECT * FROM employees WHERE id = 1;</sql><description>Get employee by id</description>',
+        content: 'SELECT * FROM employees WHERE id = 1;',
       });
 
       const state = {
@@ -560,6 +577,16 @@ Do not use any DB concepts like enum numbers, joins, CTEs, subqueries etc. in th
         resultArray: undefined,
         directCall: false,
         description: undefined,
+        validationChecklist: undefined,
+        syntacticStatus: undefined,
+        syntacticFeedback: undefined,
+        semanticStatus: undefined,
+        semanticFeedback: undefined,
+        syntacticErrorTables: undefined,
+        semanticErrorTables: undefined,
+        changeType: ChangeType.Minor,
+        fromTemplate: undefined,
+        templateId: undefined,
       };
 
       const result = await nodeWithTwoLLMs.execute(state, {});
@@ -572,8 +599,7 @@ Do not use any DB concepts like enum numbers, joins, CTEs, subqueries etc. in th
     it('should use smart LLM when OPTIMIZE_CACHED_QUERIES is false and sampleSql exists', async () => {
       process.env.OPTIMIZE_CACHED_QUERIES = 'false';
       smartLLMStub.resolves({
-        content:
-          '<sql>SELECT * FROM employees WHERE id = 1;</sql><description>Get employee by id</description>',
+        content: 'SELECT * FROM employees WHERE id = 1;',
       });
 
       const state = {
@@ -616,6 +642,16 @@ Do not use any DB concepts like enum numbers, joins, CTEs, subqueries etc. in th
         resultArray: undefined,
         directCall: false,
         description: undefined,
+        validationChecklist: undefined,
+        syntacticStatus: undefined,
+        syntacticFeedback: undefined,
+        semanticStatus: undefined,
+        semanticFeedback: undefined,
+        syntacticErrorTables: undefined,
+        semanticErrorTables: undefined,
+        changeType: undefined,
+        fromTemplate: undefined,
+        templateId: undefined,
       };
 
       const result = await nodeWithTwoLLMs.execute(state, {});
@@ -628,8 +664,7 @@ Do not use any DB concepts like enum numbers, joins, CTEs, subqueries etc. in th
     it('should use cheap LLM for single table schemas regardless of cache', async () => {
       process.env.OPTIMIZE_CACHED_QUERIES = 'false';
       cheapLLMStub.resolves({
-        content:
-          '<sql>SELECT * FROM employees;</sql><description>Get all employees</description>',
+        content: 'SELECT * FROM employees;',
       });
 
       const state = {
@@ -662,6 +697,16 @@ Do not use any DB concepts like enum numbers, joins, CTEs, subqueries etc. in th
         resultArray: undefined,
         directCall: false,
         description: undefined,
+        validationChecklist: undefined,
+        syntacticStatus: undefined,
+        syntacticFeedback: undefined,
+        semanticStatus: undefined,
+        semanticFeedback: undefined,
+        syntacticErrorTables: undefined,
+        semanticErrorTables: undefined,
+        changeType: undefined,
+        fromTemplate: undefined,
+        templateId: undefined,
       };
 
       const result = await nodeWithTwoLLMs.execute(state, {});
@@ -675,7 +720,7 @@ Do not use any DB concepts like enum numbers, joins, CTEs, subqueries etc. in th
       process.env.OPTIMIZE_CACHED_QUERIES = 'true';
       smartLLMStub.resolves({
         content:
-          '<sql>SELECT e.name, d.name FROM employees e JOIN departments d ON e.dept_id = d.id;</sql><description>Get employee and department names</description>',
+          'SELECT e.name, d.name FROM employees e JOIN departments d ON e.dept_id = d.id;',
       });
 
       const state = {
@@ -719,6 +764,16 @@ Do not use any DB concepts like enum numbers, joins, CTEs, subqueries etc. in th
         resultArray: undefined,
         directCall: false,
         description: undefined,
+        validationChecklist: undefined,
+        syntacticStatus: undefined,
+        syntacticFeedback: undefined,
+        semanticStatus: undefined,
+        semanticFeedback: undefined,
+        syntacticErrorTables: undefined,
+        semanticErrorTables: undefined,
+        changeType: undefined,
+        fromTemplate: undefined,
+        templateId: undefined,
       };
 
       const result = await nodeWithTwoLLMs.execute(state, {});
@@ -730,11 +785,9 @@ Do not use any DB concepts like enum numbers, joins, CTEs, subqueries etc. in th
       sinon.assert.notCalled(cheapLLMStub);
     });
 
-    it('should default to true for OPTIMIZE_CACHED_QUERIES when env var is not set', async () => {
-      delete process.env.OPTIMIZE_CACHED_QUERIES;
+    it('should use cheap LLM for validation fix retries', async () => {
       cheapLLMStub.resolves({
-        content:
-          '<sql>SELECT * FROM employees WHERE id = 1;</sql><description>Get employee by id</description>',
+        content: 'SELECT * FROM employees WHERE id = 1;',
       });
 
       const state = {
@@ -764,11 +817,13 @@ Do not use any DB concepts like enum numbers, joins, CTEs, subqueries etc. in th
           },
           relations: [],
         },
-        feedbacks: [],
+        feedbacks: [
+          'Query Validation Failed by DB: query_error with error syntax error',
+        ],
         sampleSql: 'SELECT name FROM employees WHERE id = 5',
         sampleSqlPrompt: 'Get employee name',
         done: false,
-        sql: undefined,
+        sql: 'SELECT * FROM employees WHERE',
         status: undefined,
         id: '123',
         replyToUser: undefined,
@@ -777,6 +832,16 @@ Do not use any DB concepts like enum numbers, joins, CTEs, subqueries etc. in th
         resultArray: undefined,
         directCall: false,
         description: undefined,
+        validationChecklist: undefined,
+        syntacticStatus: undefined,
+        syntacticFeedback: undefined,
+        semanticStatus: undefined,
+        semanticFeedback: undefined,
+        syntacticErrorTables: undefined,
+        semanticErrorTables: undefined,
+        changeType: undefined,
+        fromTemplate: undefined,
+        templateId: undefined,
       };
 
       const result = await nodeWithTwoLLMs.execute(state, {});
@@ -789,8 +854,7 @@ Do not use any DB concepts like enum numbers, joins, CTEs, subqueries etc. in th
     it('should use smart LLM when sampleSql is null despite optimization being enabled', async () => {
       process.env.OPTIMIZE_CACHED_QUERIES = 'true';
       smartLLMStub.resolves({
-        content:
-          '<sql>SELECT * FROM employees, departments;</sql><description>Get all data</description>',
+        content: 'SELECT * FROM employees, departments;',
       });
 
       const state = {
@@ -833,6 +897,16 @@ Do not use any DB concepts like enum numbers, joins, CTEs, subqueries etc. in th
         resultArray: undefined,
         directCall: false,
         description: undefined,
+        validationChecklist: undefined,
+        syntacticStatus: undefined,
+        syntacticFeedback: undefined,
+        semanticStatus: undefined,
+        semanticFeedback: undefined,
+        syntacticErrorTables: undefined,
+        semanticErrorTables: undefined,
+        changeType: undefined,
+        fromTemplate: undefined,
+        templateId: undefined,
       };
 
       const result = await nodeWithTwoLLMs.execute(state, {});

@@ -4,6 +4,7 @@ import {
   DbQueryConfig,
   IDataSetStore,
   IDbConnector,
+  IQueryTemplateStore,
 } from './types';
 import {AnyObject} from '@loopback/repository';
 
@@ -34,6 +35,14 @@ export namespace DbQueryAIExtensionBindings {
 
   export const DefaultConditions = BindingKey.create<AnyObject>(
     'services.ai-integration.db-query.default-conditions',
+  );
+
+  export const TemplateCache = BindingKey.create<string>(
+    'services.ai-integration.db-query.template-cache',
+  );
+
+  export const TemplateStore = BindingKey.create<IQueryTemplateStore>(
+    'services.ai-integration.db-query.template-store',
   );
 }
 

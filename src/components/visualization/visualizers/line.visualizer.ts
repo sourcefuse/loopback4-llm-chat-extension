@@ -57,7 +57,7 @@ You are an expert data visualization assistant. Your task is to create a line ch
   }) as z.AnyZodObject;
 
   constructor(
-    @inject(AiIntegrationBindings.CheapLLM)
+    @inject(AiIntegrationBindings.SmartNonThinkingLLM)
     private readonly llm: LLMProvider,
   ) {}
 

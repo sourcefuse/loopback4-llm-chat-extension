@@ -10,13 +10,18 @@ import {
   ServiceOrProviderClass,
 } from '@loopback/core';
 import {AnyObject} from '@loopback/repository';
-import {DataSetController} from './controller';
+import {DataSetController, TemplateController} from './controller';
 import {DatasetServiceComponent} from './dataset-service.component';
 import {DbQueryGraph} from './db-query.graph';
 import {DbQueryAIExtensionBindings} from './keys';
 import {
   CheckCacheNode,
   CheckPermissionsNode,
+  ClassifyChangeNode,
+  FixQueryNode,
+  CheckTemplatesNode,
+  GenerateChecklistNode,
+  GenerateDescriptionNode,
   FailedNode,
   GetColumnsNode,
   GetTablesNode,
@@ -25,17 +30,18 @@ import {
   SemanticValidatorNode,
   SqlGenerationNode,
   SyntacticValidatorNode,
+  VerifyChecklistNode,
 } from './nodes';
 import {TableSeedObserver} from './observers';
-import {DatasetRetriever} from './providers';
-import {DataSetHelper, DbSchemaHelperService} from './services';
+import {DatasetRetriever, TemplateRetriever} from './providers';
+import {DataSetHelper, DbSchemaHelperService, TemplateHelper} from './services';
 import {PermissionHelper} from './services/permission-helper.service';
 import {SchemaStore} from './services/schema.store';
 import {TableSearchService} from './services/search/table-search.service';
 import {
   AskAboutDatasetTool,
-  GenerateQueryTool,
-  ImproveQueryTool,
+  GetDataAsDatasetTool,
+  ImproveDatasetTool,
 } from './tools';
 import {PgWithRlsConnector} from './connectors/pg';
 
@@ -47,9 +53,10 @@ export class DbQueryComponent implements Component {
   bindings: Binding<AnyObject>[] | undefined;
   lifeCycleObservers: Constructor<LifeCycleObserver>[] | undefined;
   constructor() {
-    this.controllers = [DataSetController];
+    this.controllers = [DataSetController, TemplateController];
     this.providers = {
       [DbQueryAIExtensionBindings.QueryCache.key]: DatasetRetriever,
+      [DbQueryAIExtensionBindings.TemplateCache.key]: TemplateRetriever,
     };
     this.bindings = [
       createBindingFromClass(PgWithRlsConnector, {
@@ -65,12 +72,13 @@ export class DbQueryComponent implements Component {
       DataSetHelper,
       SchemaStore,
       TableSearchService,
+      TemplateHelper,
       // graph
       DbQueryGraph,
       // tools
       AskAboutDatasetTool,
-      GenerateQueryTool,
-      ImproveQueryTool,
+      GetDataAsDatasetTool,
+      ImproveDatasetTool,
       // nodes
       IsImprovementNode,
       GetTablesNode,
@@ -81,7 +89,13 @@ export class DbQueryComponent implements Component {
       FailedNode,
       SaveDataSetNode,
       CheckCacheNode,
+      ClassifyChangeNode,
+      FixQueryNode,
+      GenerateChecklistNode,
+      GenerateDescriptionNode,
+      VerifyChecklistNode,
       GetColumnsNode,
+      CheckTemplatesNode,
     ];
     this.components = [DatasetServiceComponent];
   }

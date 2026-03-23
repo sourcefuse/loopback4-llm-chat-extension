@@ -1,8 +1,7 @@
 import {PromptTemplate} from '@langchain/core/prompts';
 import {RunnableSequence} from '@langchain/core/runnables';
 import {LangGraphRunnableConfig} from '@langchain/langgraph';
-import {inject} from '@loopback/context';
-import {service} from '@loopback/core';
+import {inject, service} from '@loopback/core';
 import {graphNode} from '../../../decorators';
 import {IGraphNode, LLMStreamEventType} from '../../../graphs';
 import {AiIntegrationBindings} from '../../../keys';
@@ -25,46 +24,55 @@ export class SemanticValidatorNode implements IGraphNode<DbQueryState> {
     private readonly config: DbQueryConfig,
     @service(DbSchemaHelperService)
     private readonly schemaHelper: DbSchemaHelperService,
-    @inject(DbQueryAIExtensionBindings.GlobalContext, {optional: true})
-    private readonly checks?: string[],
   ) {}
 
   prompt = PromptTemplate.fromTemplate(`
 <instructions>
-You are an AI assistant that judges whether the generated and syntactically verified SQL query will satisfy the user's query and the additional checks provided.
-The query has already been validated for syntax and correctness, so you only need to check if it satisfies the user's query and all the additional checks provided.
-DO NOT check for syntax issues as the query is confirmed to run correctly on the database. only the relevant or correctness of results is to be checked.
-DO NOT make up issues or flaws that do not exist in the query, or reporting missing checks that are not actually missing.
-You must create a checklist and ensure that the query satisfies all the points in the checklist.
+You are an AI assistant that validates whether a SQL query satisfies a given checklist.
+The query has already been validated for syntax and correctness.
+Go through each checklist item and verify it against the SQL query.
+DO NOT make up issues that do not exist in the query.
 </instructions>
 
-<latest-query>
-{query}
-</latest-query>
-
 <user-question>
-{prompt}
+{userPrompt}
 </user-question>
+
+<sql-query>
+{query}
+</sql-query>
 
 <database-schema>
 {schema}
 </database-schema>
 
-{checks}
+<available-tables>
+{tableNames}
+</available-tables>
+
+<validation-checklist>
+{checklist}
+</validation-checklist>
 
 {feedbacks}
 
 <output-instructions>
-The last line of your response must be either 'valid' or 'invalid'.
-In case of 'invalid', you must provide the reasons for invalidity after a colon and space.
-The format in case of invalid query should be -
+If the query satisfies ALL checklist items, return ONLY a valid tag with no other text:
+<example-valid>
+<valid/>
+</example-valid>
 
-invalid: reason for invalidity
+If any checklist item is NOT satisfied, return your response in two sections:
+1. An invalid tag containing each failed item with a detailed explanation of what is wrong and how it should be fixed.
+2. A tables tag listing ALL table names from the available tables that are related to the errors. Be generous - include tables directly involved in the error, tables that need to be joined to fix the issue, and any tables that could be relevant. It is better to include extra tables than to miss any.
 
-The format in case of valid query should just be the string 'valid' with no other explanation or string, the output should just be -
-
-valid
-
+<example-invalid>
+<invalid>
+- Salary values are not converted to USD. The query should join the exchange_rates table using currency_id and multiply salary by the rate.
+- Lost and hold deals are not excluded. Add a WHERE condition to filter out deals with status 0 and 2.
+</invalid>
+<tables>exchange_rates, deals, employees</tables>
+</example-invalid>
 </output-instructions>
 `);
 
@@ -95,47 +103,44 @@ Keep these feedbacks in mind while validating the new query.
     const useSmartLLM =
       this.config.nodes?.semanticValidatorNode?.useSmartLLM ?? false;
     const llm = useSmartLLM ? this.smartllm : this.cheapllm;
+    const tableNames = Object.keys(state.schema?.tables ?? {});
     const chain = RunnableSequence.from([this.prompt, llm]);
     const output = await chain.invoke({
+      userPrompt: state.prompt,
       query: state.sql,
-      prompt: state.prompt,
-      checks: [
-        `<must-follow-rules>`,
-        'It is really important that the query follows all the following context information -',
-        ...(this.checks ?? []),
-        ...this.schemaHelper.getTablesContext(state.schema),
-        `</must-follow-rules>`,
-      ].join('\n'),
       schema: this.schemaHelper.asString(state.schema),
+      tableNames: tableNames.join(', '),
+      checklist: state.validationChecklist ?? 'No checklist provided.',
       feedbacks: await this.getFeedbacks(state),
     });
     const response = stripThinkingTokens(output);
 
-    const lastLine = response.split('\n').pop() ?? '';
-    const isValid = lastLine.startsWith('valid');
-    if (isValid) {
+    const invalidMatch = /<invalid>(.*?)<\/invalid>/s.exec(response);
+    const tablesMatch = /<tables>(.*?)<\/tables>/s.exec(response);
+    const isValid =
+      response.includes('<valid/>') || response.includes('<valid />');
+
+    if (isValid && !invalidMatch) {
       return {
-        ...state,
-        feedbacks: state.feedbacks?.filter(
-          // remove interal feedbacks generated by validators
-          feedback => !feedback.startsWith('Query Validation Failed'),
-        ),
-        status: EvaluationResult.Pass,
-      };
+        semanticStatus: EvaluationResult.Pass,
+      } as DbQueryState;
     } else {
-      const reason = lastLine.replace('invalid: ', '').trim();
+      const reason = invalidMatch ? invalidMatch[1].trim() : response.trim();
+      const errorTables = tablesMatch
+        ? tablesMatch[1]
+            .split(',')
+            .map(t => t.trim())
+            .filter(t => t.length > 0)
+        : [];
       config.writer?.({
         type: LLMStreamEventType.Log,
         data: `Query Validation Failed by LLM: ${reason}`,
       });
       return {
-        ...state,
-        status: EvaluationResult.QueryError,
-        feedbacks: [
-          ...(state.feedbacks ?? []),
-          `Query Validation Failed by LLM: ${reason}`,
-        ],
-      };
+        semanticStatus: EvaluationResult.QueryError,
+        semanticFeedback: `Query Validation Failed by LLM: ${reason}`,
+        semanticErrorTables: errorTables,
+      } as DbQueryState;
     }
   }
 

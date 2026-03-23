@@ -28,19 +28,19 @@ export class DbSchemaHelperService {
     private readonly config: DbQueryConfig,
   ) {}
   getTablesContext(schema: DatabaseSchema) {
-    const tableContexts: string[] = [];
+    const contextSet = new Set<string>();
     Object.keys(schema.tables).forEach(table => {
       if (schema.tables[table].context) {
         for (const item of schema.tables[table].context) {
           if (typeof item === 'string' && item.trim().length > 0) {
-            tableContexts.push(item.trim());
+            contextSet.add(item.trim());
           } else if (typeof item === 'object') {
             const tableSet = new Set(
               Object.keys(schema.tables).map(t => t.split('.').pop() ?? t),
             );
             Object.keys(item).forEach(withTable => {
               if (tableSet.has(`${withTable}`)) {
-                tableContexts.push(item[withTable].trim());
+                contextSet.add(item[withTable].trim());
               }
             });
           } else {
@@ -49,7 +49,7 @@ export class DbSchemaHelperService {
         }
       }
     });
-    return tableContexts;
+    return [...contextSet];
   }
 
   asString(schema: DatabaseSchema): string {

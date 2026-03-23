@@ -11,9 +11,9 @@ import {DbQueryAIExtensionBindings} from '../keys';
 import {DEFAULT_MAX_READ_ROWS_FOR_AI} from '../constant';
 
 @graphTool()
-export class ImproveQueryTool implements IGraphTool {
+export class ImproveDatasetTool implements IGraphTool {
   needsReview = false;
-  key = 'improve-query';
+  key = 'improve-dataset';
   constructor(
     @service(DbQueryGraph)
     private readonly queryPipeline: DbQueryGraph,
@@ -23,16 +23,16 @@ export class ImproveQueryTool implements IGraphTool {
 
   getValue(result: Record<string, string>): string {
     if (result.status === Errors.PermissionError) {
-      return `Can not generate query: ${result.replyToUser ?? 'Unknown reason'}`;
+      return `Can not improve dataset: ${result.replyToUser ?? 'Unknown reason'}`;
     }
     if (result.status === GenerationError.Failed || !result.datasetId) {
-      return `Can not generate query: ${result.replyToUser ?? 'Unknown reason'}`;
+      return `Can not improve dataset: ${result.replyToUser ?? 'Unknown reason'}`;
     }
     let resultSetString = '';
     if (result.resultArray) {
-      resultSetString = ` First ${this.config.maxRowsForAI ?? DEFAULT_MAX_READ_ROWS_FOR_AI} results from the query are: ${JSON.stringify(result.resultArray)}`;
+      resultSetString = ` First ${this.config.maxRowsForAI ?? DEFAULT_MAX_READ_ROWS_FOR_AI} results from the dataset are: ${JSON.stringify(result.resultArray)}`;
     }
-    return `Dataset generated and has been rendered for the user. The dataset ID is ${result.datasetId}. Just tell the user that it is done.${resultSetString}`;
+    return `Dataset improved and has been rendered for the user. The dataset ID is ${result.datasetId}. Just tell the user that it is done.${resultSetString}`;
   }
 
   getMetadata(result: Record<string, string>): AnyObject {
@@ -47,17 +47,17 @@ export class ImproveQueryTool implements IGraphTool {
     const schema = z.object({
       datasetId: z
         .string()
-        .describe(`Database UUID ID of the dataset to improve the query for`),
+        .describe(`UUID ID of the existing dataset to improve`),
       prompt: z
         .string()
         .describe(
-          `A prompt that describes what needs to be improved in the existing query.`,
+          `A description of what changes or improvements the user wants in the existing dataset.`,
         ),
     }) as AnyObject[string];
     return graph.asTool({
       name: this.key,
       description:
-        'Tool for existing dataset based on id, it takes a prompt and returns a new dataset with the improved query. Call this only if you have a valid dataset ID available.',
+        'Tool for improving an existing dataset based on user feedback. It takes a dataset ID and a prompt describing the desired changes, and returns an updated dataset. Call this only if you have a valid dataset ID available.',
       schema,
     });
   }

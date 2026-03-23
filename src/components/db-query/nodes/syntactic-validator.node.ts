@@ -22,19 +22,27 @@ export class SyntacticValidatorNode implements IGraphNode<DbQueryState> {
   ) {}
 
   prompt =
-    PromptTemplate.fromTemplate(`You are an AI assistant that categorizes the SQL query error in one of following two categories -
-  - table_not_found
-  - query_error
+    PromptTemplate.fromTemplate(`You are an AI assistant that categorizes the SQL query error and identifies related tables.
 
-  Here is the SQL query error that you need to categorize -
-  {error}
+Here is the SQL query error that you need to categorize -
+{error}
 
-  and here is the query that resulted in the error -
-  {query}
+Here is the query that resulted in the error -
+{query}
 
-  Any error that indicates a table or column is missing should be categorized as table_not_found, all other errors should be categorized as query_error.
-  Return only one of these two options as a string, without any additional text or comments.
-  `);
+Here are all the available tables in the database -
+{tableNames}
+
+Categorize the error into one of these two categories:
+- table_not_found: Any error that indicates a table or column is missing
+- query_error: All other errors
+
+Also identify ALL tables that are related to the error. Be generous - include tables that are directly involved in the error, tables referenced in the failing part of the query, and tables that might need to be joined or referenced to fix the error. It is better to include extra tables than to miss any.
+
+Return your response in exactly this format with no other text:
+<category>table_not_found or query_error</category>
+<tables>comma, separated, table, names</tables>
+`);
 
   async execute(
     state: DbQueryState,
@@ -58,28 +66,40 @@ export class SyntacticValidatorNode implements IGraphNode<DbQueryState> {
       }
       await this.connector.validate(state.sql);
       return {
-        ...state,
-        status: EvaluationResult.Pass,
-      };
+        syntacticStatus: EvaluationResult.Pass,
+      } as DbQueryState;
     } catch (error) {
+      const tableNames = Object.keys(state.schema?.tables ?? {});
       const chain = RunnableSequence.from([this.prompt, this.llm]);
       const output = await chain.invoke({
         error: error.message,
         query: state.sql,
+        tableNames: tableNames.join(', '),
       });
       const result = stripThinkingTokens(output);
+
+      const categoryMatch = /<category>(.*?)<\/category>/s.exec(result);
+      const tablesMatch = /<tables>(.*?)<\/tables>/s.exec(result);
+
+      const category = categoryMatch
+        ? (categoryMatch[1].trim() as EvaluationResult)
+        : (result.trim() as EvaluationResult);
+      const errorTables = tablesMatch
+        ? tablesMatch[1]
+            .split(',')
+            .map(t => t.trim())
+            .filter(t => t.length > 0)
+        : [];
+
       config.writer?.({
         type: LLMStreamEventType.Log,
-        data: `Query Validation Failed by DB: ${result} with error ${error.message}`,
+        data: `Query Validation Failed by DB: ${category} with error ${error.message}`,
       });
       return {
-        ...state,
-        status: result.trim() as EvaluationResult,
-        feedbacks: [
-          ...(state.feedbacks ?? []),
-          `Query Validation Failed by DB: ${result} with error ${error.message}`,
-        ],
-      };
+        syntacticStatus: category,
+        syntacticFeedback: `Query Validation Failed by DB: ${category} with error ${error.message}`,
+        syntacticErrorTables: errorTables,
+      } as DbQueryState;
     }
   }
 }

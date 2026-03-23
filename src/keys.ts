@@ -27,6 +27,9 @@ export namespace AiIntegrationBindings {
   export const ChatLLM = BindingKey.create<LLMProvider>(
     'services.ai-reporting.chatLLMProvider',
   );
+  export const SmartNonThinkingLLM = BindingKey.create<LLMProvider>(
+    'services.ai-reporting.smartNonThinkingLLMProvider',
+  );
   export const EmbeddingModel = BindingKey.create<EmbeddingProvider>(
     'services.ai-reporting.embeddingModel',
   );

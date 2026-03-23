@@ -26,13 +26,23 @@ export function getTableNodeTests(cases: GetTableNodeTestCase[]) {
           resultArray: undefined,
           directCall: false,
           description: undefined,
+          validationChecklist: undefined,
+          syntacticStatus: undefined,
+          syntacticFeedback: undefined,
+          semanticStatus: undefined,
+          semanticFeedback: undefined,
+          syntacticErrorTables: undefined,
+          semanticErrorTables: undefined,
+          changeType: undefined,
+          fromTemplate: undefined,
+          templateId: undefined,
         },
         {
           writer: (event: AnyObject[string]) => {},
         } as unknown as RunnableConfig,
       );
       testCase.expectedTables.forEach(table => {
-        expect(result.schema.tables).to.have.property(table);
+        expect(result.schema?.tables).to.have.property(table);
       });
     },
   }));

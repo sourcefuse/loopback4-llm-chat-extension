@@ -1,70 +1,39 @@
-import {juggler} from '@loopback/repository';
 import {expect, sinon} from '@loopback/testlab';
 import {
-  DbSchemaHelperService,
+  DatabaseSchema,
   EvaluationResult,
   SemanticValidatorNode,
-  SqliteConnector,
 } from '../../../../components';
+import {DbSchemaHelperService} from '../../../../components/db-query/services';
 import {LLMProvider} from '../../../../types';
-import {IAuthUserWithPermissions} from 'loopback4-authorization';
 
 describe('SemanticValidatorNode Unit', function () {
   let node: SemanticValidatorNode;
   let llmStub: sinon.SinonStub;
-  let schemaHelper: DbSchemaHelperService;
 
   beforeEach(() => {
     llmStub = sinon.stub();
     const llm = llmStub as unknown as LLMProvider;
+    const schemaHelper = {
+      asString: sinon.stub().returns(''),
+    } as unknown as DbSchemaHelperService;
 
-    schemaHelper = new DbSchemaHelperService(
-      new SqliteConnector(
-        new juggler.DataSource({
-          connector: 'sqlite3',
-          file: ':memory:',
-          name: 'db',
-          debug: true,
-        }),
-        {} as unknown as IAuthUserWithPermissions,
-      ),
-      {models: []},
-    );
-
-    // Mock the getTablesContext method
-    sinon
-      .stub(schemaHelper, 'getTablesContext')
-      .returns(['employee salary must be converted to USD']);
-
-    node = new SemanticValidatorNode(llm, llm, {models: []}, schemaHelper, [
-      'test context',
-    ]);
+    node = new SemanticValidatorNode(llm, llm, {models: []}, schemaHelper);
   });
 
   afterEach(() => {
     sinon.restore();
   });
-  it('should return the same query if it is valid', async () => {
+
+  it('should return Pass if the query is valid', async () => {
     const state = {
       prompt: 'Get all users',
       sql: 'SELECT * FROM users',
-      schema: {
-        tables: {
-          employees: {
-            description: 'Employee data',
-            context: ['employee salary must be converted to USD'],
-            columns: {},
-            primaryKey: [],
-            hash: '',
-          },
-        },
-        relations: [],
-      },
+      schema: {tables: {}, relations: []},
       status: EvaluationResult.Pass,
       id: 'test-id',
       feedbacks: [],
       replyToUser: '',
-      dataset: [],
       datasetId: 'test-dataset-id',
       done: false,
       sampleSqlPrompt: '',
@@ -73,38 +42,39 @@ describe('SemanticValidatorNode Unit', function () {
       resultArray: undefined,
       description: undefined,
       directCall: false,
+      syntacticStatus: undefined,
+      syntacticFeedback: undefined,
+      semanticStatus: undefined,
+      semanticFeedback: undefined,
+      syntacticErrorTables: undefined,
+      semanticErrorTables: undefined,
+      fromTemplate: undefined,
+      templateId: undefined,
+      validationChecklist: '1. Query selects all users',
+      changeType: undefined,
     };
     llmStub.resolves({
-      content: 'valid',
+      content: '<valid/>',
     });
 
     const result = await node.execute(state, {});
 
-    expect(result.status).to.equal(EvaluationResult.Pass);
+    expect(result.semanticStatus).to.equal(EvaluationResult.Pass);
     sinon.assert.calledOnce(llmStub);
   });
 
-  it('should throw an error if the query is invalid', async () => {
+  it('should return QueryError if the query is invalid', async () => {
     const state = {
       prompt: 'Get all users',
       sql: 'SELECT * FROM invalid_table',
       schema: {
-        tables: {
-          employees: {
-            description: 'Employee data',
-            context: [],
-            columns: {},
-            primaryKey: [],
-            hash: '',
-          },
-        },
+        tables: {users: {}, orders: {}},
         relations: [],
-      },
+      } as unknown as DatabaseSchema,
       status: EvaluationResult.Pass,
       id: 'test-id',
       feedbacks: [],
       replyToUser: '',
-      dataset: [],
       datasetId: 'test-dataset-id',
       done: false,
       sampleSqlPrompt: '',
@@ -113,82 +83,48 @@ describe('SemanticValidatorNode Unit', function () {
       resultArray: undefined,
       directCall: false,
       description: undefined,
+      syntacticStatus: undefined,
+      syntacticFeedback: undefined,
+      semanticStatus: undefined,
+      semanticFeedback: undefined,
+      syntacticErrorTables: undefined,
+      semanticErrorTables: undefined,
+      fromTemplate: undefined,
+      templateId: undefined,
+      validationChecklist: '1. Query selects from users table',
+      changeType: undefined,
     };
     llmStub.resolves({
-      content: 'invalid: table `invalid_table` does not exist',
+      content:
+        '<invalid>\n- Query selects from wrong table. Should select from users table instead.\n</invalid>\n<tables>users</tables>',
     });
 
     const result = await node.execute(state, {});
 
-    expect(result.status).to.equal(EvaluationResult.QueryError);
+    expect(result.semanticStatus).to.equal(EvaluationResult.QueryError);
+    expect(result.semanticErrorTables).to.deepEqual(['users']);
     sinon.assert.calledOnce(llmStub);
+
     const prompt = llmStub.firstCall.args[0];
-
-    expect(prompt.value).to.eql(`
-<instructions>
-You are an AI assistant that judges whether the generated and syntactically verified SQL query will satisfy the user's query and the additional checks provided.
-The query has already been validated for syntax and correctness, so you only need to check if it satisfies the user's query and all the additional checks provided.
-DO NOT check for syntax issues as the query is confirmed to run correctly on the database. only the relevant or correctness of results is to be checked.
-DO NOT make up issues or flaws that do not exist in the query, or reporting missing checks that are not actually missing.
-You must create a checklist and ensure that the query satisfies all the points in the checklist.
-</instructions>
-
-<latest-query>
-${state.sql}
-</latest-query>
-
-<user-question>
-${state.prompt}
-</user-question>
-
-<database-schema>
-${schemaHelper.asString(state.schema)}
-</database-schema>
-
-<must-follow-rules>
-It is really important that the query follows all the following context information -
-test context
-employee salary must be converted to USD
-</must-follow-rules>
-
-
-
-<output-instructions>
-The last line of your response must be either 'valid' or 'invalid'.
-In case of 'invalid', you must provide the reasons for invalidity after a colon and space.
-The format in case of invalid query should be -
-
-invalid: reason for invalidity
-
-The format in case of valid query should just be the string 'valid' with no other explanation or string, the output should just be -
-
-valid
-
-</output-instructions>
-`);
+    // Verify the prompt contains the user question, checklist, SQL, schema, and table names
+    expect(prompt.value).to.containEql(state.sql);
+    expect(prompt.value).to.containEql(state.prompt);
+    expect(prompt.value).to.containEql('1. Query selects from users table');
+    expect(prompt.value).to.containEql('<database-schema>');
+    expect(prompt.value).to.containEql('<user-question>');
+    expect(prompt.value).to.containEql('<available-tables>');
+    expect(prompt.value).to.containEql('users, orders');
   });
 
-  it('should include feedbacks and context in the prompt', async () => {
+  it('should include feedbacks in the prompt', async () => {
     const state = {
       prompt: 'Get all users',
       sql: 'SELECT * FROM users',
-      schema: {
-        tables: {
-          employees: {
-            description: 'Employee data',
-            context: ['employee salary must be converted to USD'],
-            columns: {},
-            primaryKey: [],
-            hash: '',
-          },
-        },
-        relations: [],
-      },
+      schema: {tables: {}, relations: []},
       status: EvaluationResult.Pass,
       id: 'test-id',
       feedbacks: ['the previous query was wrong'],
       replyToUser: '',
-      dataset: [],
       datasetId: 'test-dataset-id',
       done: false,
       sampleSqlPrompt: '',
@@ -197,64 +133,25 @@ valid
       description: undefined,
       directCall: false,
       resultArray: undefined,
+      syntacticStatus: undefined,
+      syntacticFeedback: undefined,
+      semanticStatus: undefined,
+      semanticFeedback: undefined,
+      syntacticErrorTables: undefined,
+      semanticErrorTables: undefined,
+      fromTemplate: undefined,
+      templateId: undefined,
+      validationChecklist: '1. Query selects all users',
+      changeType: undefined,
     };
     llmStub.resolves({
-      content: 'valid',
+      content: '<valid/>',
     });
 
     await node.execute(state, {});
 
     sinon.assert.calledOnce(llmStub);
     const prompt = llmStub.firstCall.args[0];
-    expect(prompt.value).to.eql(`
-<instructions>
-You are an AI assistant that judges whether the generated and syntactically verified SQL query will satisfy the user's query and the additional checks provided.
-The query has already been validated for syntax and correctness, so you only need to check if it satisfies the user's query and all the additional checks provided.
-DO NOT check for syntax issues as the query is confirmed to run correctly on the database. only the relevant or correctness of results is to be checked.
-DO NOT make up issues or flaws that do not exist in the query, or reporting missing checks that are not actually missing.
-You must create a checklist and ensure that the query satisfies all the points in the checklist.
-</instructions>
-
-<latest-query>
-${state.sql}
-</latest-query>
-
-<user-question>
-${state.prompt}
-</user-question>
-
-<database-schema>
-${schemaHelper.asString(state.schema)}
-</database-schema>
-
-<must-follow-rules>
-It is really important that the query follows all the following context information -
-test context
-employee salary must be converted to USD
-</must-follow-rules>
-
-
-<feedback-instructions>
-We also need to consider the users feedback on the last attempt at query generation.
-
-But was rejected by validator with the following errors -
-${state.feedbacks.join('\n')}
-
-Keep these feedbacks in mind while validating the new query.
-</feedback-instructions>
-
-<output-instructions>
-The last line of your response must be either 'valid' or 'invalid'.
-In case of 'invalid', you must provide the reasons for invalidity after a colon and space.
-The format in case of invalid query should be -
-
-invalid: reason for invalidity
-
-The format in case of valid query should just be the string 'valid' with no other explanation or string, the output should just be -
-
-valid
-
-</output-instructions>
-`);
+    expect(prompt.value).to.containEql('the previous query was wrong');
   });
 });

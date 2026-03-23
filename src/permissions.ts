@@ -4,4 +4,6 @@ export enum PermissionKey {
   ViewDataset = '9003',
   UpdateDataset = '9004',
   ViewChat = '9005',
+  CreateTemplate = '9006',
+  ViewTemplate = '9007',
 }

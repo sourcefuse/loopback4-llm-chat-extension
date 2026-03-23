@@ -11,9 +11,9 @@ import {DbQueryAIExtensionBindings} from '../keys';
 import {DEFAULT_MAX_READ_ROWS_FOR_AI} from '../constant';
 
 @graphTool()
-export class GenerateQueryTool implements IGraphTool {
+export class GetDataAsDatasetTool implements IGraphTool {
   needsReview = false;
-  key = 'generate-query';
+  key = 'get-data-as-dataset';
   constructor(
     @service(DbQueryGraph)
     private readonly queryPipeline: DbQueryGraph,
@@ -23,14 +23,14 @@ export class GenerateQueryTool implements IGraphTool {
 
   getValue(result: Record<string, string>): string {
     if (result.status === Errors.PermissionError) {
-      return `Can not generate query: ${result.replyToUser ?? 'Unknown reason'}`;
+      return `Can not get data: ${result.replyToUser ?? 'Unknown reason'}`;
     }
     if (result.status === GenerationError.Failed || !result.datasetId) {
-      return `Can not generate query: ${result.replyToUser ?? 'Unknown reason'}`;
+      return `Can not get data: ${result.replyToUser ?? 'Unknown reason'}`;
     }
     let resultSetString = '';
     if (result.resultArray) {
-      resultSetString = ` First ${this.config.maxRowsForAI ?? DEFAULT_MAX_READ_ROWS_FOR_AI} results from the query are: ${JSON.stringify(result.resultArray)}`;
+      resultSetString = ` First ${this.config.maxRowsForAI ?? DEFAULT_MAX_READ_ROWS_FOR_AI} results from the dataset are: ${JSON.stringify(result.resultArray)}`;
     }
     return `Dataset generated and has been rendered for the user. The dataset ID is ${result.datasetId}. Just tell the user that it is done.${resultSetString}`;
   }
@@ -48,13 +48,14 @@ export class GenerateQueryTool implements IGraphTool {
       prompt: z
         .string()
         .describe(
-          `Prompt from the user that will be used for generating the query.`,
+          `Prompt from the user that will be used for generating an SQL query and create a dataset from it.`,
         ),
     }) as AnyObject[string];
     return graph.asTool({
       name: this.key,
-      description: `Query tool for generating SQL queries for a users request. Use it to find data from the database based on the user's request.
-                Note that it does not return the query, instead only a dataset ID that is not relevant to the user. 
+      description: `Query tool for generating SQL queries for a users request. Use it only when the user needs raw tabular data from the database.
+                Do not use this tool if the user's request involves trends, growth, decline, comparisons, distributions, patterns, or any form of analytical insight — use the 'generate-visualization' tool instead.
+                Note that it does not return the query, instead only a dataset ID that is not relevant to the user.
                 It internally fires an event that renders a grid for the dataset on the UI for the user to see.`,
       schema,
     });

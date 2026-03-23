@@ -37,10 +37,10 @@ export class TokenCounter {
       outputTokens: 0,
     };
     if (usageMetadata) {
-      this.inputs += usageMetadata.input_tokens;
-      this.outputs += usageMetadata.output_tokens;
-      prev.inputTokens += usageMetadata.input_tokens;
-      prev.outputTokens += usageMetadata.output_tokens;
+      this.inputs += usageMetadata.input_tokens ?? 0;
+      this.outputs += usageMetadata.output_tokens ?? 0;
+      prev.inputTokens += usageMetadata.input_tokens ?? 0;
+      prev.outputTokens += usageMetadata.output_tokens ?? 0;
       this.countMap.set(llmName, prev);
     }
     return {

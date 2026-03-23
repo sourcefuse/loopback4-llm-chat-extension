@@ -9,4 +9,13 @@ export enum DbQueryNodes {
   Failed = 'failed',
   SaveDataset = 'save_dataset',
   CheckCache = 'check_cache',
+  PostCacheAndTables = 'post_cache_and_tables',
+  GenerateChecklist = 'generate_checklist',
+  GenerateDescription = 'generate_description',
+  VerifyChecklist = 'verify_checklist',
+  PreValidation = 'pre_validation',
+  PostValidation = 'post_validation',
+  ClassifyChange = 'classify_change',
+  FixQuery = 'fix_query',
+  CheckTemplates = 'check_templates',
 }
