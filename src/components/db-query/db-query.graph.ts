@@ -170,34 +170,38 @@ export class DbQueryGraph extends BaseGraph<DbQueryState> {
   }
 
   private _mergeValidationResults(state: DbQueryState) {
-    const hasSyntacticFailure =
-      state.syntacticStatus && state.syntacticStatus !== EvaluationResult.Pass;
-    const hasSemanticFailure =
-      state.semanticStatus && state.semanticStatus !== EvaluationResult.Pass;
+    const hasSyntacticFailure = this._isValidationFailure(
+      state.syntacticStatus,
+    );
+    const hasSemanticFailure = this._isValidationFailure(state.semanticStatus);
 
     if (!hasSyntacticFailure && !hasSemanticFailure) {
       return this._buildPassedResult(state);
     }
 
+    return this._buildFailedResult(state, hasSyntacticFailure);
+  }
+
+  private _isValidationFailure(status: DbQueryState['syntacticStatus']) {
+    return !!status && status !== EvaluationResult.Pass;
+  }
+
+  private _buildFailedResult(
+    state: DbQueryState,
+    hasSyntacticFailure: boolean,
+  ) {
     const clearedState = this._buildClearedState(state);
     const baseFeedbacks = state.feedbacks ?? [];
     const semanticFb = this._toArray(state.semanticFeedback);
-
-    if (hasSyntacticFailure) {
-      return {
-        status: state.syntacticStatus,
-        feedbacks: [
-          ...baseFeedbacks,
-          ...this._toArray(state.syntacticFeedback),
-          ...semanticFb,
-        ],
-        ...clearedState,
-      };
-    }
+    const syntacticFb = hasSyntacticFailure
+      ? this._toArray(state.syntacticFeedback)
+      : [];
 
     return {
-      status: state.semanticStatus,
-      feedbacks: [...baseFeedbacks, ...semanticFb],
+      status: hasSyntacticFailure
+        ? state.syntacticStatus
+        : state.semanticStatus,
+      feedbacks: [...baseFeedbacks, ...syntacticFb, ...semanticFb],
       ...clearedState,
     };
   }

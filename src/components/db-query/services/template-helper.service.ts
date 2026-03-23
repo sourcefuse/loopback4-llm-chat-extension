@@ -286,14 +286,18 @@ Do not return any other text or explanation, just the XML tags.
   }
 
   private _formatValue(type: string, value: string | null): string {
-    const formatters: Record<string, (v: string | null) => string> = {
-      string: v => `'${(v ?? '').replace(/'/g, "''")}'`,
-      number: v => `${Number(v) || 0}`,
-      boolean: v => (this._isTruthy(v) ? 'TRUE' : 'FALSE'),
-      // eslint-disable-next-line @typescript-eslint/naming-convention
-      sql_expression: v => v ?? '1=1',
-    };
-    return (formatters[type] ?? (v => v ?? ''))(value);
+    switch (type) {
+      case 'string':
+        return `'${(value ?? '').replace(/'/g, "''")}'`;
+      case 'number':
+        return `${Number(value) || 0}`;
+      case 'boolean':
+        return this._isTruthy(value) ? 'TRUE' : 'FALSE';
+      case 'sql_expression':
+        return value ?? '1=1';
+      default:
+        return value ?? '';
+    }
   }
 
   private _isTruthy(value: string | null): boolean {
