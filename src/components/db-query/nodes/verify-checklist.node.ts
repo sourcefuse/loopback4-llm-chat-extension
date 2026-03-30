@@ -1,3 +1,4 @@
+import {AIMessage} from '@langchain/core/messages';
 import {PromptTemplate} from '@langchain/core/prompts';
 import {RunnableSequence} from '@langchain/core/runnables';
 import {LangGraphRunnableConfig} from '@langchain/langgraph';
@@ -7,7 +8,6 @@ import {IGraphNode, LLMStreamEventType} from '../../../graphs';
 import {AiIntegrationBindings} from '../../../keys';
 import {LLMProvider} from '../../../types';
 import {stripThinkingTokens} from '../../../utils';
-import {AIMessage} from '@langchain/core/messages';
 import {DbQueryAIExtensionBindings} from '../keys';
 import {DbQueryNodes} from '../nodes.enum';
 import {DbSchemaHelperService} from '../services';
@@ -43,7 +43,7 @@ A rule is relevant if:
 - It is a dependency of another relevant rule (e.g. if rule 3 requires a currency conversion, and rule 5 defines how currency conversion works, both must be included).
 - It applies to any of the selected tables or their relationships.
 
-After selecting relevant rules, review your selection and ensure:
+Ensure:
 - Any rule that is referenced by, or is a prerequisite for, another selected rule is also included.
 - Do not include rules that are completely unrelated to the question, schema, or selected tables.
 </instructions>
@@ -82,8 +82,8 @@ If no rules are relevant: <result>none</result>
 </output-instructions>`;
 
   simpleOutputInstructions = `<output-instructions>
-Return only a comma-separated list of the relevant rule indexes inside a result tag.
-Do not include any other text, explanation, or formatting.
+Return ONLY the comma-separated list of relevant rule indexes inside a result tag.
+Do NOT include any reasoning, analysis, or explanation — only the result tag.
 Example: 
 <result>1,3,5</result>
 If no rules are relevant:
@@ -96,7 +96,7 @@ If no rules are relevant:
   ): Promise<DbQueryState> {
     const empty = {} as DbQueryState;
 
-    if (this.config.nodes?.generateChecklistNode?.enabled === false) {
+    if (this.config.nodes?.verifyChecklistNode?.enabled === false) {
       return empty;
     }
 

@@ -31,7 +31,7 @@ export class TableSearchService {
     private readonly dbSchemaHelper: DbSchemaHelperService,
   ) {}
 
-  async getTables(prompt: string, count: number): Promise<string[]> {
+  async getTables(prompt: string, count?: number): Promise<string[]> {
     if (this.config.noKnowledgeGraph) {
       return this._tables;
     }

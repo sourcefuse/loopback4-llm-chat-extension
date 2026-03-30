@@ -9,7 +9,11 @@ import {LLMProvider} from '../../../types';
 import {stripThinkingTokens} from '../../../utils';
 import {DbQueryAIExtensionBindings} from '../keys';
 import {DbQueryNodes} from '../nodes.enum';
-import {DbSchemaHelperService} from '../services';
+import {
+  DbSchemaHelperService,
+  PermissionHelper,
+  TableSearchService,
+} from '../services';
 import {DbQueryState} from '../state';
 import {DbQueryConfig, EvaluationResult} from '../types';
 
@@ -22,8 +26,12 @@ export class SemanticValidatorNode implements IGraphNode<DbQueryState> {
     private readonly cheapllm: LLMProvider,
     @inject(DbQueryAIExtensionBindings.Config)
     private readonly config: DbQueryConfig,
+    @service(TableSearchService)
+    private readonly tableSearchService: TableSearchService,
     @service(DbSchemaHelperService)
     private readonly schemaHelper: DbSchemaHelperService,
+    @service(PermissionHelper)
+    private readonly permissionHelper?: PermissionHelper,
   ) {}
 
   prompt = PromptTemplate.fromTemplate(`
@@ -103,13 +111,15 @@ Keep these feedbacks in mind while validating the new query.
     const useSmartLLM =
       this.config.nodes?.semanticValidatorNode?.useSmartLLM ?? false;
     const llm = useSmartLLM ? this.smartllm : this.cheapllm;
-    const tableNames = Object.keys(state.schema?.tables ?? {});
+    const tableList =
+      (await this.tableSearchService.getTables(state.prompt)) ?? [];
+    const accessibleTables = this._filterByPermissions(tableList);
     const chain = RunnableSequence.from([this.prompt, llm]);
     const output = await chain.invoke({
       userPrompt: state.prompt,
       query: state.sql,
       schema: this.schemaHelper.asString(state.schema),
-      tableNames: tableNames.join(', '),
+      tableNames: accessibleTables.join(', '),
       checklist: state.validationChecklist ?? 'No checklist provided.',
       feedbacks: await this.getFeedbacks(state),
     });
@@ -152,5 +162,16 @@ Keep these feedbacks in mind while validating the new query.
       return feedbacks;
     }
     return '';
+  }
+
+  private _filterByPermissions(tables: string[]): string[] {
+    const permHelper = this.permissionHelper;
+    if (!permHelper) {
+      return tables;
+    }
+    return tables.filter(t => {
+      const name = t.toLowerCase().slice(t.indexOf('.') + 1);
+      return permHelper.findMissingPermissions([name]).length === 0;
+    });
   }
 }
