@@ -46,7 +46,7 @@ export interface Graph {
 export interface KnowledgeGraph<T, S> extends Graph {
   toJSON(): string;
   fromJSON(json: string): void;
-  find(query: string, count: number): Promise<T[]>;
+  find(query: string, count?: number): Promise<T[]>;
   seed(data: S): Promise<void>;
 }
 

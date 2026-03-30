@@ -134,6 +134,7 @@ export type DbQueryConfig = {
       parallelism?: number;
     };
     verifyChecklistNode?: {
+      enabled?: boolean;
       evaluation?: boolean;
     };
   };

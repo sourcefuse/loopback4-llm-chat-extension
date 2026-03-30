@@ -53,7 +53,7 @@ export class DbKnowledgeGraphService implements KnowledgeGraph<
       config.knowledgeGraph?.maxClusterSize ?? MAX_CLUSTER_SIZE; // Default max cluster size
   }
 
-  async find(query: string, topK: number): Promise<string[]> {
+  async find(query: string, topK = 10): Promise<string[]> {
     debug(`Selecting tables for query: "${query}"`);
 
     // Step 1: Generate query embedding

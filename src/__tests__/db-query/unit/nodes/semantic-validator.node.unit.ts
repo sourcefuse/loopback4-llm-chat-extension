@@ -4,12 +4,16 @@ import {
   EvaluationResult,
   SemanticValidatorNode,
 } from '../../../../components';
-import {DbSchemaHelperService} from '../../../../components/db-query/services';
+import {
+  DbSchemaHelperService,
+  TableSearchService,
+} from '../../../../components/db-query/services';
 import {LLMProvider} from '../../../../types';
 
 describe('SemanticValidatorNode Unit', function () {
   let node: SemanticValidatorNode;
   let llmStub: sinon.SinonStub;
+  let tableSearchStub: sinon.SinonStubbedInstance<TableSearchService>;
 
   beforeEach(() => {
     llmStub = sinon.stub();
@@ -17,8 +21,16 @@ describe('SemanticValidatorNode Unit', function () {
     const schemaHelper = {
       asString: sinon.stub().returns(''),
     } as unknown as DbSchemaHelperService;
+    tableSearchStub = sinon.createStubInstance(TableSearchService);
+    tableSearchStub.getTables.resolves([]);
 
-    node = new SemanticValidatorNode(llm, llm, {models: []}, schemaHelper);
+    node = new SemanticValidatorNode(
+      llm,
+      llm,
+      {models: []},
+      tableSearchStub,
+      schemaHelper,
+    );
   });
 
   afterEach(() => {
@@ -64,6 +76,7 @@ describe('SemanticValidatorNode Unit', function () {
   });
 
   it('should return QueryError if the query is invalid', async () => {
+    tableSearchStub.getTables.resolves(['users', 'orders']);
     const state = {
       prompt: 'Get all users',
       sql: 'SELECT * FROM invalid_table',
@@ -153,5 +166,72 @@ describe('SemanticValidatorNode Unit', function () {
     sinon.assert.calledOnce(llmStub);
     const prompt = llmStub.firstCall.args[0];
     expect(prompt.value).to.containEql('the previous query was wrong');
+  });
+
+  it('should pass all accessible tables from tableSearchService into available-tables so LLM can flag missing ones', async () => {
+    const searchedTables = [
+      'public.users',
+      'public.orders',
+      'public.payments',
+      'analytics.reports',
+    ];
+    tableSearchStub = sinon.createStubInstance(TableSearchService);
+    tableSearchStub.getTables.resolves(searchedTables);
+
+    const schemaHelper = {
+      asString: sinon.stub().returns(''),
+    } as unknown as DbSchemaHelperService;
+
+    const nodeWithTables = new SemanticValidatorNode(
+      llmStub as unknown as LLMProvider,
+      llmStub as unknown as LLMProvider,
+      {models: []},
+      tableSearchStub,
+      schemaHelper,
+    );
+
+    const state = {
+      prompt: 'Get revenue per user',
+      sql: 'SELECT u.name, SUM(p.amount) FROM users u JOIN payments p ON u.id = p.user_id GROUP BY u.name',
+      schema: {tables: {}, relations: []},
+      status: EvaluationResult.Pass,
+      id: 'test-id',
+      feedbacks: [],
+      replyToUser: '',
+      datasetId: 'test-dataset-id',
+      done: false,
+      sampleSqlPrompt: '',
+      sampleSql: '',
+      fromCache: false,
+      resultArray: undefined,
+      directCall: false,
+      description: undefined,
+      syntacticStatus: undefined,
+      syntacticFeedback: undefined,
+      semanticStatus: undefined,
+      semanticFeedback: undefined,
+      syntacticErrorTables: undefined,
+      semanticErrorTables: undefined,
+      fromTemplate: undefined,
+      templateId: undefined,
+      validationChecklist: '1. Revenue grouped by user',
+      changeType: undefined,
+    };
+
+    llmStub.resolves({content: '<valid/>'});
+
+    await nodeWithTables.execute(state, {});
+
+    sinon.assert.calledOnce(tableSearchStub.getTables);
+    expect(tableSearchStub.getTables.firstCall.args[0]).to.equal(
+      'Get revenue per user',
+    );
+
+    sinon.assert.calledOnce(llmStub);
+    const prompt = llmStub.firstCall.args[0];
+    expect(prompt.value).to.containEql('<available-tables>');
+    expect(prompt.value).to.containEql(
+      'public.users, public.orders, public.payments, analytics.reports',
+    );
   });
 });
