@@ -1,4 +1,4 @@
-import {HumanMessage} from '@langchain/core/messages';
+import {ContentBlock, HumanMessage} from '@langchain/core/messages';
 import {PromptTemplate} from '@langchain/core/prompts';
 import {RunnableSequence} from '@langchain/core/runnables';
 import {LangGraphRunnableConfig, Messages} from '@langchain/langgraph';
@@ -76,7 +76,7 @@ export class SummariseFileNode implements IGraphNode<ChatState> {
               type: 'text',
               text: state.prompt,
             },
-            fileContent,
+            fileContent as unknown as ContentBlock,
           ],
         },
       ];

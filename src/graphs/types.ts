@@ -5,6 +5,8 @@ import {LangGraphRunnableConfig} from '@langchain/langgraph';
 import {AnyObject, Command} from '@loopback/repository';
 import {LLMStreamEvent} from './event.types';
 
+export type {LangGraphRunnableConfig} from '@langchain/langgraph';
+
 export type RunnableConfig = LangGraphRunnableConfig & {
   writer?: (event: LLMStreamEvent) => void;
 };

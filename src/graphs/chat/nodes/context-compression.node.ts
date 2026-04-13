@@ -1,4 +1,4 @@
-import {trimMessages} from '@langchain/core/messages';
+import {BaseMessage, trimMessages} from '@langchain/core/messages';
 import {inject} from '@loopback/core';
 import {DEFAULT_MAX_TOKEN_COUNT} from '../../../constant';
 import {graphNode} from '../../../decorators';
@@ -36,7 +36,11 @@ export class ContextCompressionNode implements IGraphNode<ChatState> {
       const trimmed = await trimMessages(state.messages, {
         maxTokens: maxTokenCount,
         strategy: 'last',
-        tokenCounter: approxTokenCounter,
+        tokenCounter: (messages: BaseMessage[]) =>
+          messages.reduce(
+            (count, message) => count + approxTokenCounter(message.content),
+            0,
+          ),
         includeSystem: true,
       });
       return {
