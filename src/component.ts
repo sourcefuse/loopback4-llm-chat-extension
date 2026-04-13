@@ -2,7 +2,6 @@ import {
   Binding,
   BindingScope,
   Component,
-  Constructor,
   ControllerClass,
   CoreBindings,
   createBindingFromClass,
@@ -125,7 +124,7 @@ export class AiIntegrationsComponent implements Component {
           };
         },
       });
-      this.application.component(FileUtilComponent as Constructor<Component>);
+      this.application.component(FileUtilComponent);
     }
 
     if (this.config?.writerDS) {
