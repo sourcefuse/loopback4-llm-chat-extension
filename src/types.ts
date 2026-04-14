@@ -12,6 +12,7 @@ import {Provider} from '@loopback/core';
 import {AnyObject} from '@loopback/repository';
 import {IGraphTool} from './graphs/types';
 import {ChatGroq} from '@langchain/groq';
+import {ChatOpenRouter} from '@langchain/openrouter';
 
 export enum SupportedDBs {
   PostgreSQL = 'PostgreSQL',
@@ -43,7 +44,8 @@ export type LLMProviderType =
   | ChatAnthropic
   | ChatBedrockConverse
   | ChatGoogleGenerativeAI
-  | ChatGroq;
+  | ChatGroq
+  | ChatOpenRouter;
 
 export type LLMProvider = LLMProviderType & {
   getFile?: FileMessageBuilder;

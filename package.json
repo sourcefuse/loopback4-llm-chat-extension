@@ -41,6 +41,10 @@
       "type": "./dist/sub-modules/providers/groq/index.d.ts",
       "default": "./dist/sub-modules/providers/groq/index.js"
     },
+    "./openrouter": {
+      "type": "./dist/sub-modules/providers/openrouter/index.d.ts",
+      "default": "./dist/sub-modules/providers/openrouter/index.js"
+    },
     "./pg": {
       "type": "./dist/sub-modules/providers/pg/index.d.ts",
       "default": "./dist/sub-modules/providers/pg/index.js"
@@ -76,6 +80,9 @@
       ],
       "groq": [
         "dist/sub-modules/providers/groq/index.d.ts"
+      ],
+      "openrouter": [
+        "dist/sub-modules/providers/openrouter/index.d.ts"
       ],
       "pg": [
         "dist/sub-modules/providers/pg/index.d.ts"
@@ -153,6 +160,7 @@
     "@langchain/groq": "^1.2.0",
     "@langchain/ollama": "^1.2.6",
     "@langchain/openai": "^1.4.4",
+    "@langchain/openrouter": "^0.2.2",
     "@langfuse/core": "^5.1.0",
     "@langfuse/langchain": "^5.1.0",
     "@loopback/build": "^11.0.9",
