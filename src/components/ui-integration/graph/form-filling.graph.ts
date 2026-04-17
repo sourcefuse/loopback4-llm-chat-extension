@@ -31,7 +31,19 @@ export class FormFillingGraph extends BaseGraph<FormFillingState> {
 
       // Add edges
       .addEdge(START, FormFillingNodes.IdentifyForm)
-      .addEdge(FormFillingNodes.IdentifyForm, FormFillingNodes.ExtractInfo)
+      .addConditionalEdges(
+        FormFillingNodes.IdentifyForm,
+        (state: FormFillingState) => {
+          if (state.status === FormFillStatus.Failed) {
+            return FormFillingNodes.FailedUI;
+          }
+          return FormFillingNodes.ExtractInfo;
+        },
+        {
+          [FormFillingNodes.FailedUI]: FormFillingNodes.FailedUI,
+          [FormFillingNodes.ExtractInfo]: FormFillingNodes.ExtractInfo,
+        },
+      )
       .addEdge(FormFillingNodes.ExtractInfo, FormFillingNodes.ValidateFields)
       .addConditionalEdges(
         FormFillingNodes.ValidateFields,

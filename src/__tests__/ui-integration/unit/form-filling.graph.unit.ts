@@ -262,7 +262,7 @@ describe(`FormFillingGraph Unit`, function () {
     expect(result.status).to.equal(FormFillStatus.Failed);
   });
 
-  xit('should fail when form identification fails', async () => {
+  it('should fail when form identification fails', async () => {
     // Reset all stubs to default behavior first
     for (const key of Object.values(FormFillingNodes)) {
       stubMap[key].resetBehavior();
