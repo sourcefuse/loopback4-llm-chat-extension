@@ -1,18 +1,14 @@
-import {
-  BaseMessage,
-  HumanMessage,
-  SystemMessage,
-} from '@langchain/core/messages';
+import {HumanMessage, SystemMessage} from '@langchain/core/messages';
 import {LangGraphRunnableConfig} from '@langchain/langgraph';
 import {inject, service} from '@loopback/core';
 import {graphNode} from '../../../decorators';
+import {AiIntegrationBindings} from '../../../keys';
 import {Message} from '../../../models';
 import {LLMStreamEventType} from '../../event.types';
 import {ChatState} from '../../state';
-import {IGraphNode} from '../../types';
+import {IGraphNode, SavedMessage} from '../../types';
 import {ChatStore} from '../chat.store';
 import {ChatNodes} from '../nodes.enum';
-import {AiIntegrationBindings} from '../../../keys';
 const debug = require('debug')('ai-integration:chat:init-session.node');
 @graphNode(ChatNodes.InitSession)
 export class InitSessionNode implements IGraphNode<ChatState> {
@@ -67,7 +63,7 @@ export class InitSessionNode implements IGraphNode<ChatState> {
     };
   }
 
-  private async _formatMessage(messages: Message[]): Promise<BaseMessage[]> {
+  private async _formatMessage(messages: Message[]): Promise<SavedMessage[]> {
     if (!messages) {
       return [];
     }
@@ -75,7 +71,7 @@ export class InitSessionNode implements IGraphNode<ChatState> {
       messages.map(message => this.chatStore.toMessage(message)),
     );
     return graphMessages.filter(
-      (message): message is BaseMessage => message !== undefined,
+      (message): message is SavedMessage => message !== undefined,
     );
   }
 }

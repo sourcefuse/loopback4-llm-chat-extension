@@ -1,5 +1,5 @@
 import {inject, Provider, ValueOrPromise} from '@loopback/core';
-import {MemoryVectorStore} from 'langchain/vectorstores/memory';
+import {MemoryVectorStore} from '@langchain/classic/vectorstores/memory';
 import {AiIntegrationBindings} from '../../keys';
 import {EmbeddingProvider} from '../../types';
 import {AnyObject} from '@loopback/repository';

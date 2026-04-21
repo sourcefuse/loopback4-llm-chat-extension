@@ -1,8 +1,9 @@
+import {Document} from '@langchain/core/documents';
 import {BaseRetriever} from '@langchain/core/retrievers';
 import {VectorStore} from '@langchain/core/vectorstores';
 import {inject, Provider, ValueOrPromise} from '@loopback/core';
 import {AnyObject} from '@loopback/repository';
-import {MemoryVectorStore} from 'langchain/vectorstores/memory';
+import {MemoryVectorStore} from '@langchain/classic/vectorstores/memory';
 import {AiIntegrationBindings} from '../../../keys';
 import {DbQueryStoredTypes} from '../types';
 import {AuthenticationBindings} from 'loopback4-authentication';
@@ -19,7 +20,7 @@ export class TemplateRetriever implements Provider<BaseRetriever> {
     if (this.vectorStore instanceof MemoryVectorStore) {
       return this.vectorStore.asRetriever({
         k: 5,
-        filter: doc =>
+        filter: (doc: Document) =>
           doc.metadata.type === DbQueryStoredTypes.Template &&
           doc.metadata.tenantId === this.user.tenantId,
         searchType: 'similarity',
