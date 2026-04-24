@@ -5,7 +5,7 @@ import {inject} from '@loopback/core';
 import {graphNode} from '../../../decorators';
 import {IGraphNode, LLMStreamEventType} from '../../../graphs';
 import {AiIntegrationBindings} from '../../../keys';
-import {LLMProvider} from '../../../types';
+import {RuntimeLLMProvider} from '../../../types';
 import {stripThinkingTokens} from '../../../utils';
 import {DbQueryNodes} from '../nodes.enum';
 import {DbQueryState} from '../state';
@@ -39,7 +39,7 @@ Do not include any other text, explanation, or formatting.
 
   constructor(
     @inject(AiIntegrationBindings.CheapLLM)
-    private readonly llm: LLMProvider,
+    private readonly llm: RuntimeLLMProvider,
   ) {}
 
   async execute(

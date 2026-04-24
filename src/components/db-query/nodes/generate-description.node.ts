@@ -5,7 +5,7 @@ import {inject, service} from '@loopback/core';
 import {graphNode} from '../../../decorators';
 import {IGraphNode, LLMStreamEventType} from '../../../graphs';
 import {AiIntegrationBindings} from '../../../keys';
-import {LLMProvider} from '../../../types';
+import {RuntimeLLMProvider} from '../../../types';
 import {DbQueryAIExtensionBindings} from '../keys';
 import {DbQueryNodes} from '../nodes.enum';
 import {DbSchemaHelperService} from '../services';
@@ -16,7 +16,7 @@ import {DbQueryConfig} from '../types';
 export class GenerateDescriptionNode implements IGraphNode<DbQueryState> {
   constructor(
     @inject(AiIntegrationBindings.CheapLLM)
-    private readonly llm: LLMProvider,
+    private readonly llm: RuntimeLLMProvider,
     @inject(DbQueryAIExtensionBindings.Config)
     private readonly config: DbQueryConfig,
     @service(DbSchemaHelperService)

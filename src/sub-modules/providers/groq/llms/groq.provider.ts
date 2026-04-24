@@ -1,9 +1,9 @@
 import {Provider} from '@loopback/core';
 import {ChatGroq} from '@langchain/groq';
-import {LLMProvider} from '../../../../types';
+import {RuntimeLLMProvider} from '../../../../types';
 
-export class Groq implements Provider<LLMProvider> {
-  value(): LLMProvider {
+export class Groq implements Provider<RuntimeLLMProvider> {
+  value(): RuntimeLLMProvider {
     if (!process.env.GROQ_MODEL || !process.env.GROQ_API_KEY) {
       throw new Error(
         'GROQ_MODEL and GROQ_API_KEY environment variable is not set.',

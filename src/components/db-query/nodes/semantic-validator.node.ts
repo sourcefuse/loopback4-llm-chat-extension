@@ -5,7 +5,7 @@ import {inject, service} from '@loopback/core';
 import {graphNode} from '../../../decorators';
 import {IGraphNode, LLMStreamEventType} from '../../../graphs';
 import {AiIntegrationBindings} from '../../../keys';
-import {LLMProvider} from '../../../types';
+import {RuntimeLLMProvider} from '../../../types';
 import {stripThinkingTokens} from '../../../utils';
 import {DbQueryAIExtensionBindings} from '../keys';
 import {DbQueryNodes} from '../nodes.enum';
@@ -21,9 +21,9 @@ import {DbQueryConfig, EvaluationResult} from '../types';
 export class SemanticValidatorNode implements IGraphNode<DbQueryState> {
   constructor(
     @inject(AiIntegrationBindings.SmartLLM)
-    private readonly smartllm: LLMProvider,
+    private readonly smartllm: RuntimeLLMProvider,
     @inject(AiIntegrationBindings.CheapLLM)
-    private readonly cheapllm: LLMProvider,
+    private readonly cheapllm: RuntimeLLMProvider,
     @inject(DbQueryAIExtensionBindings.Config)
     private readonly config: DbQueryConfig,
     @service(TableSearchService)

@@ -2,7 +2,7 @@ import {CompiledGraph} from '@langchain/langgraph';
 import {Context, inject} from '@loopback/core';
 import {AnyObject} from '@loopback/repository';
 import {GRAPH_NODE_NAME} from '../constant';
-import {IGraphNode} from './types';
+import {IGraphNode, resolveNodeExecution} from './types';
 
 export abstract class BaseGraph<T extends object> {
   @inject.context()
@@ -22,6 +22,6 @@ export abstract class BaseGraph<T extends object> {
     }
     const binding = bindings[0];
     const node = await this.context.get<IGraphNode<T>>(binding.key);
-    return node.execute.bind(node);
+    return resolveNodeExecution(node);
   }
 }

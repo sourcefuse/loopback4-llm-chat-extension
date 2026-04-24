@@ -2,7 +2,7 @@ import {RunnableSequence} from '@langchain/core/runnables';
 import {BindingScope, inject, injectable} from '@loopback/core';
 import {AnyObject} from '@loopback/repository';
 import {AiIntegrationBindings} from '../../../../keys';
-import {EmbeddingProvider, LLMProvider} from '../../../../types';
+import {EmbeddingProvider, RuntimeLLMProvider} from '../../../../types';
 import {stripThinkingTokens} from '../../../../utils';
 import {DbQueryAIExtensionBindings} from '../../keys';
 import {DatabaseSchema, DbQueryConfig, TableSchema} from '../../types';
@@ -35,7 +35,7 @@ export class DbKnowledgeGraphService implements KnowledgeGraph<
 
   constructor(
     @inject(AiIntegrationBindings.CheapLLM)
-    private readonly llm: LLMProvider,
+    private readonly llm: RuntimeLLMProvider,
     @inject(AiIntegrationBindings.EmbeddingModel)
     private readonly embeddingModel: EmbeddingProvider,
     @inject(DbQueryAIExtensionBindings.Config)

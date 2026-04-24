@@ -8,7 +8,7 @@ import {
   DbSchemaHelperService,
   TableSearchService,
 } from '../../../../components/db-query/services';
-import {LLMProvider} from '../../../../types';
+import {RuntimeLLMProvider} from '../../../../types';
 
 describe('SemanticValidatorNode Unit', function () {
   let node: SemanticValidatorNode;
@@ -17,7 +17,7 @@ describe('SemanticValidatorNode Unit', function () {
 
   beforeEach(() => {
     llmStub = sinon.stub();
-    const llm = llmStub as unknown as LLMProvider;
+    const llm = llmStub as unknown as RuntimeLLMProvider;
     const schemaHelper = {
       asString: sinon.stub().returns(''),
     } as unknown as DbSchemaHelperService;
@@ -183,8 +183,8 @@ describe('SemanticValidatorNode Unit', function () {
     } as unknown as DbSchemaHelperService;
 
     const nodeWithTables = new SemanticValidatorNode(
-      llmStub as unknown as LLMProvider,
-      llmStub as unknown as LLMProvider,
+      llmStub as unknown as RuntimeLLMProvider,
+      llmStub as unknown as RuntimeLLMProvider,
       {models: []},
       tableSearchStub,
       schemaHelper,

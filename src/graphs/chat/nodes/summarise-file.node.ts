@@ -8,7 +8,7 @@ import {AnyObject} from '@loopback/repository';
 import {HttpErrors} from '@loopback/rest';
 import {graphNode} from '../../../decorators';
 import {AiIntegrationBindings} from '../../../keys';
-import {LLMProvider} from '../../../types';
+import {RuntimeLLMProvider} from '../../../types';
 import {mergeAttachments, stripThinkingTokens} from '../../../utils';
 import {LLMStreamEventType} from '../../event.types';
 import {ChatState} from '../../state';
@@ -22,7 +22,7 @@ const debug = require('debug')('ai-integration:chat:summarise-file.node');
 export class SummariseFileNode implements IGraphNode<ChatState> {
   constructor(
     @inject(AiIntegrationBindings.FileLLM)
-    private readonly llm: LLMProvider,
+    private readonly llm: RuntimeLLMProvider,
     @service(ChatStore)
     private readonly chatStore: ChatStore,
   ) {}

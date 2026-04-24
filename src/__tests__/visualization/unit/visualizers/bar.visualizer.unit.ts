@@ -1,12 +1,12 @@
 import {expect, sinon} from '@loopback/testlab';
 import {BarVisualizer} from '../../../../components/visualization/visualizers/bar.visualizer';
-import {LLMProvider} from '../../../../types';
+import {RuntimeLLMProvider} from '../../../../types';
 import {fail} from 'assert';
 import {VisualizationGraphState} from '../../../../components';
 
 describe('BarVisualizer Unit', function () {
   let visualizer: BarVisualizer;
-  let llmProvider: sinon.SinonStubbedInstance<LLMProvider>;
+  let llmProvider: sinon.SinonStubbedInstance<RuntimeLLMProvider>;
   let withStructuredOutputStub: sinon.SinonStub;
 
   beforeEach(() => {
@@ -14,7 +14,7 @@ describe('BarVisualizer Unit', function () {
     withStructuredOutputStub = sinon.stub();
     llmProvider = {
       withStructuredOutput: withStructuredOutputStub,
-    } as sinon.SinonStubbedInstance<LLMProvider>;
+    } as sinon.SinonStubbedInstance<RuntimeLLMProvider>;
 
     visualizer = new BarVisualizer(llmProvider);
   });

@@ -1,12 +1,12 @@
 import {expect, sinon} from '@loopback/testlab';
 import {LineVisualizer} from '../../../../components/visualization/visualizers/line.visualizer';
-import {LLMProvider} from '../../../../types';
+import {RuntimeLLMProvider} from '../../../../types';
 import {fail} from 'assert';
 import {VisualizationGraphState} from '../../../../components';
 
 describe('LineVisualizer Unit', function () {
   let visualizer: LineVisualizer;
-  let llmProvider: sinon.SinonStubbedInstance<LLMProvider>;
+  let llmProvider: sinon.SinonStubbedInstance<RuntimeLLMProvider>;
   let withStructuredOutputStub: sinon.SinonStub;
 
   beforeEach(() => {
@@ -14,7 +14,7 @@ describe('LineVisualizer Unit', function () {
     withStructuredOutputStub = sinon.stub();
     llmProvider = {
       withStructuredOutput: withStructuredOutputStub,
-    } as sinon.SinonStubbedInstance<LLMProvider>;
+    } as sinon.SinonStubbedInstance<RuntimeLLMProvider>;
 
     visualizer = new LineVisualizer(llmProvider);
   });

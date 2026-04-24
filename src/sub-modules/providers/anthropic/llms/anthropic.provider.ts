@@ -1,10 +1,10 @@
 import {AnthropicInput, ChatAnthropic} from '@langchain/anthropic';
 import {Provider, ValueOrPromise} from '@loopback/core';
-import {LLMProvider} from '../../../../types';
+import {RuntimeLLMProvider} from '../../../../types';
 import {BaseChatModelParams} from '@langchain/core/language_models/chat_models';
 
-export class Claude implements Provider<LLMProvider> {
-  value(): ValueOrPromise<LLMProvider> {
+export class Claude implements Provider<RuntimeLLMProvider> {
+  value(): ValueOrPromise<RuntimeLLMProvider> {
     if (!process.env.CLAUDE_MODEL || !process.env.CLAUDE_API_KEY) {
       throw new Error(
         'CLAUDE_MODEL and CLAUDE_API_KEY environment variables must be set',

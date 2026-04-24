@@ -7,7 +7,7 @@ import {
   GetColumnsNode,
   SqliteConnector,
 } from '../../../../components';
-import {LLMProvider} from '../../../../types';
+import {RuntimeLLMProvider} from '../../../../types';
 import {Employee, ExchangeRate} from '../../../fixtures/models';
 import {IAuthUserWithPermissions} from 'loopback4-authorization';
 
@@ -18,7 +18,7 @@ describe('GetColumnsNode Unit', function () {
 
   beforeEach(async () => {
     llmStub = sinon.stub();
-    const llm = llmStub as unknown as LLMProvider;
+    const llm = llmStub as unknown as RuntimeLLMProvider;
 
     schemaHelper = new DbSchemaHelperService(
       new SqliteConnector(

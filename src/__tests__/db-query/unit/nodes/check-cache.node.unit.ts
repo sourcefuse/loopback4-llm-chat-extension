@@ -13,7 +13,7 @@ import {
   DbQueryState,
   QueryCacheMetadata,
 } from '../../../../components';
-import {LLMProvider} from '../../../../types';
+import {RuntimeLLMProvider} from '../../../../types';
 
 describe('CheckCacheNode Unit', function () {
   let node: CheckCacheNode;
@@ -28,7 +28,7 @@ describe('CheckCacheNode Unit', function () {
     const cache = {
       invoke: cacheStub,
     } as unknown as BaseRetriever<QueryCacheMetadata>;
-    const llm = llmStub as unknown as LLMProvider;
+    const llm = llmStub as unknown as RuntimeLLMProvider;
 
     node = new CheckCacheNode(cache, llm, datasetHelperStub);
     datasetHelperStub.stubs.checkPermissions.resolves([]);

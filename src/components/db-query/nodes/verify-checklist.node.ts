@@ -6,7 +6,7 @@ import {inject, service} from '@loopback/core';
 import {graphNode} from '../../../decorators';
 import {IGraphNode, LLMStreamEventType} from '../../../graphs';
 import {AiIntegrationBindings} from '../../../keys';
-import {LLMProvider} from '../../../types';
+import {RuntimeLLMProvider} from '../../../types';
 import {stripThinkingTokens} from '../../../utils';
 import {DbQueryAIExtensionBindings} from '../keys';
 import {DbQueryNodes} from '../nodes.enum';
@@ -18,7 +18,7 @@ import {DbQueryConfig} from '../types';
 export class VerifyChecklistNode implements IGraphNode<DbQueryState> {
   constructor(
     @inject(AiIntegrationBindings.SmartLLM)
-    private readonly smartLlm: LLMProvider,
+    private readonly smartLlm: RuntimeLLMProvider,
     @inject(DbQueryAIExtensionBindings.Config)
     private readonly config: DbQueryConfig,
     @service(DbSchemaHelperService)
@@ -26,10 +26,10 @@ export class VerifyChecklistNode implements IGraphNode<DbQueryState> {
     @inject(DbQueryAIExtensionBindings.GlobalContext, {optional: true})
     private readonly checks?: string[],
     @inject(AiIntegrationBindings.SmartNonThinkingLLM, {optional: true})
-    private readonly smartNonThinkingLlm?: LLMProvider,
+    private readonly smartNonThinkingLlm?: RuntimeLLMProvider,
   ) {}
 
-  private get llm(): LLMProvider {
+  private get llm(): RuntimeLLMProvider {
     return this.smartNonThinkingLlm ?? this.smartLlm;
   }
 

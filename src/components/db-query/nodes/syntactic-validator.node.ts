@@ -5,7 +5,7 @@ import {inject} from '@loopback/context';
 import {graphNode} from '../../../decorators';
 import {IGraphNode, LLMStreamEventType} from '../../../graphs';
 import {AiIntegrationBindings} from '../../../keys';
-import {LLMProvider} from '../../../types';
+import {RuntimeLLMProvider} from '../../../types';
 import {stripThinkingTokens} from '../../../utils';
 import {DbQueryAIExtensionBindings} from '../keys';
 import {DbQueryNodes} from '../nodes.enum';
@@ -16,7 +16,7 @@ import {EvaluationResult, IDbConnector} from '../types';
 export class SyntacticValidatorNode implements IGraphNode<DbQueryState> {
   constructor(
     @inject(AiIntegrationBindings.CheapLLM)
-    private readonly llm: LLMProvider,
+    private readonly llm: RuntimeLLMProvider,
     @inject(DbQueryAIExtensionBindings.Connector)
     private readonly connector: IDbConnector,
   ) {}

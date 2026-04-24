@@ -5,7 +5,7 @@ import {inject, service} from '@loopback/core';
 import {graphNode} from '../../../decorators';
 import {IGraphNode, LLMStreamEventType} from '../../../graphs';
 import {AiIntegrationBindings} from '../../../keys';
-import {LLMProvider, SupportedDBs} from '../../../types';
+import {RuntimeLLMProvider, SupportedDBs} from '../../../types';
 import {stripThinkingTokens} from '../../../utils';
 import {DbQueryAIExtensionBindings} from '../keys';
 import {DbQueryNodes} from '../nodes.enum';
@@ -65,7 +65,7 @@ It should have no other character or symbol or character that is not part of SQL
 
   constructor(
     @inject(AiIntegrationBindings.CheapLLM)
-    private readonly llm: LLMProvider,
+    private readonly llm: RuntimeLLMProvider,
     @inject(DbQueryAIExtensionBindings.Config)
     private readonly config: DbQueryConfig,
     @service(DbSchemaHelperService)

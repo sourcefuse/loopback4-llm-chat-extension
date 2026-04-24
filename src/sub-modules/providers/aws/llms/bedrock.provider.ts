@@ -1,13 +1,13 @@
 import {ChatBedrockConverse, ChatBedrockConverseInput} from '@langchain/aws';
 import {Provider, ValueOrPromise} from '@loopback/core';
-import {LLMProvider} from '../../../../types';
+import {RuntimeLLMProvider} from '../../../../types';
 import {sanitizeFilenameForAwsConverse} from '../utils';
 import {BedrockInstanceConfig} from '../types';
 
-export class Bedrock implements Provider<LLMProvider> {
+export class Bedrock implements Provider<RuntimeLLMProvider> {
   static createInstance(config: BedrockInstanceConfig): ChatBedrockConverse {
     const client = new ChatBedrockConverse(config);
-    (client as unknown as LLMProvider).getFile = (
+    (client as unknown as RuntimeLLMProvider).getFile = (
       file: Express.Multer.File,
     ) => {
       return {
@@ -23,7 +23,7 @@ export class Bedrock implements Provider<LLMProvider> {
     };
     return client;
   }
-  value(): ValueOrPromise<LLMProvider> {
+  value(): ValueOrPromise<RuntimeLLMProvider> {
     return this._createdInstance(true);
   }
 

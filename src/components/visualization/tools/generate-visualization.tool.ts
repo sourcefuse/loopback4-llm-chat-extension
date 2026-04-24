@@ -2,9 +2,7 @@ import {Context, inject, service} from '@loopback/core';
 import {AnyObject} from '@loopback/repository';
 import {z} from 'zod';
 import {graphTool} from '../../../decorators';
-import {IGraphTool, ToolStatus} from '../../../graphs';
-import {StructuredToolInterface} from '@langchain/core/tools';
-import {RunnableToolLike} from '@langchain/core/runnables';
+import {IGraphTool, IRuntimeTool, ToolStatus} from '../../../graphs';
 import {VisualizationGraph} from '../visualization.graph';
 import {VISUALIZATION_KEY} from '../keys';
 import {IVisualizer} from '../types';
@@ -40,7 +38,10 @@ export class GenerateVisualizationTool implements IGraphTool {
     };
   }
 
-  async build(): Promise<StructuredToolInterface | RunnableToolLike> {
+  /**
+   * Creates a runtime-agnostic visualization tool.
+   */
+  async createTool(): Promise<IRuntimeTool> {
     const visualizations = await this._getVisualizations();
     const graph = await this.visualizationGraph.build();
     const schema = z.object({
@@ -71,6 +72,13 @@ It does not return anything, instead it fires an event internally that renders t
 It supports the following types of visualizations: ${visualizations.map(v => v.name).join(', ')}.`,
       schema,
     });
+  }
+
+  /**
+   * @deprecated Use createTool().
+   */
+  async build(): Promise<IRuntimeTool> {
+    return this.createTool();
   }
 
   private async _getVisualizations() {

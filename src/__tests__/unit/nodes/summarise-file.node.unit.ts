@@ -8,7 +8,7 @@ import {
 } from '@loopback/testlab';
 import {ChatState, ChatStore, SummariseFileNode} from '../../../graphs';
 import {Message} from '../../../models';
-import {LLMProvider} from '../../../types';
+import {RuntimeLLMProvider} from '../../../types';
 import {buildFileStub} from '../../test-helper';
 
 describe(`SummariseFileNode Unit`, function () {
@@ -29,7 +29,10 @@ describe(`SummariseFileNode Unit`, function () {
     llmStub = sinon.stub();
     writerStub = sinon.stub();
     chatStore = createStubInstance(ChatStore);
-    node = new SummariseFileNode(llmStub as unknown as LLMProvider, chatStore);
+    node = new SummariseFileNode(
+      llmStub as unknown as RuntimeLLMProvider,
+      chatStore,
+    );
   });
 
   it('should throw an error if no chat ID is found in state', async () => {

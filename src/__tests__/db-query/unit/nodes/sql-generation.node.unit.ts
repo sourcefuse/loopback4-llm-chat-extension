@@ -6,7 +6,7 @@ import {
   SqlGenerationNode,
   SqliteConnector,
 } from '../../../../components';
-import {LLMProvider, SupportedDBs} from '../../../../types';
+import {RuntimeLLMProvider, SupportedDBs} from '../../../../types';
 import {IAuthUserWithPermissions} from 'loopback4-authorization';
 
 describe('SqlGenerationNode Unit', function () {
@@ -16,7 +16,7 @@ describe('SqlGenerationNode Unit', function () {
 
   beforeEach(() => {
     llmStub = sinon.stub();
-    const llm = llmStub as unknown as LLMProvider;
+    const llm = llmStub as unknown as RuntimeLLMProvider;
 
     schemaHelper = new DbSchemaHelperService(
       new SqliteConnector(
@@ -507,8 +507,8 @@ It should have no other character or symbol or character that is not part of SQL
       cheapLLMStub = sinon.stub();
       originalEnv = process.env.OPTIMIZE_CACHED_QUERIES;
 
-      const smartLLM = smartLLMStub as unknown as LLMProvider;
-      const cheapLLM = cheapLLMStub as unknown as LLMProvider;
+      const smartLLM = smartLLMStub as unknown as RuntimeLLMProvider;
+      const cheapLLM = cheapLLMStub as unknown as RuntimeLLMProvider;
 
       nodeWithTwoLLMs = new SqlGenerationNode(
         smartLLM,

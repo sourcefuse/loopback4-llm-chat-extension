@@ -1,12 +1,12 @@
 import {expect, sinon} from '@loopback/testlab';
 import {PieVisualizer} from '../../../../components/visualization/visualizers/pie.visualizer';
-import {LLMProvider} from '../../../../types';
+import {RuntimeLLMProvider} from '../../../../types';
 import {fail} from 'assert';
 import {VisualizationGraphState} from '../../../../components';
 
 describe('PieVisualizer Unit', function () {
   let visualizer: PieVisualizer;
-  let llmProvider: sinon.SinonStubbedInstance<LLMProvider>;
+  let llmProvider: sinon.SinonStubbedInstance<RuntimeLLMProvider>;
   let withStructuredOutputStub: sinon.SinonStub;
 
   beforeEach(() => {
@@ -14,7 +14,7 @@ describe('PieVisualizer Unit', function () {
     withStructuredOutputStub = sinon.stub();
     llmProvider = {
       withStructuredOutput: withStructuredOutputStub,
-    } as sinon.SinonStubbedInstance<LLMProvider>;
+    } as sinon.SinonStubbedInstance<RuntimeLLMProvider>;
 
     visualizer = new PieVisualizer(llmProvider);
   });

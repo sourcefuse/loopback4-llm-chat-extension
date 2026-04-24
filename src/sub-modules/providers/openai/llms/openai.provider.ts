@@ -1,16 +1,16 @@
 import {Provider} from '@loopback/core';
-import {LLMProvider} from '../../../../types';
+import {RuntimeLLMProvider} from '../../../../types';
 import {ChatOpenAI} from '@langchain/openai';
 import {OpenAIInstanceConfig} from '../types';
 
-export class OpenAI implements Provider<LLMProvider> {
+export class OpenAI implements Provider<RuntimeLLMProvider> {
   static createInstance(config: OpenAIInstanceConfig): ChatOpenAI {
     return new ChatOpenAI({
       model: config.model,
       ...config.config,
     });
   }
-  value(): LLMProvider {
+  value(): RuntimeLLMProvider {
     return OpenAI.createInstance({
       model: process.env.OPENAI_MODEL!,
       config: {

@@ -7,7 +7,7 @@ import {
   SqliteConnector,
   SyntacticValidatorNode,
 } from '../../../../components';
-import {LLMProvider} from '../../../../types';
+import {RuntimeLLMProvider} from '../../../../types';
 import {IAuthUserWithPermissions} from 'loopback4-authorization';
 
 describe('SyntacticValidatorNode Unit', function () {
@@ -17,7 +17,7 @@ describe('SyntacticValidatorNode Unit', function () {
 
   beforeEach(async () => {
     llmStub = sinon.stub();
-    const llm = llmStub as unknown as LLMProvider;
+    const llm = llmStub as unknown as RuntimeLLMProvider;
 
     const ds = new juggler.DataSource({
       connector: 'sqlite3',

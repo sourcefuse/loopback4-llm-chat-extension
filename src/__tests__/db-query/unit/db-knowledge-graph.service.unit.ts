@@ -1,6 +1,6 @@
 import {expect, sinon} from '@loopback/testlab';
 import {DbKnowledgeGraphService} from '../../../components';
-import {EmbeddingProvider, LLMProvider} from '../../../types';
+import {EmbeddingProvider, RuntimeLLMProvider} from '../../../types';
 
 describe(`DbKnowledgeGraphService Unit`, function () {
   let service: DbKnowledgeGraphService;
@@ -11,7 +11,7 @@ describe(`DbKnowledgeGraphService Unit`, function () {
     llmStub = sinon.stub();
     embedStub = sinon.stub();
     service = new DbKnowledgeGraphService(
-      llmStub as unknown as LLMProvider,
+      llmStub as unknown as RuntimeLLMProvider,
       {
         embedDocuments: embedStub,
       } as unknown as EmbeddingProvider,

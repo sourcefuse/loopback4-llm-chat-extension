@@ -9,7 +9,7 @@ import {AuthenticationBindings} from 'loopback4-authentication';
 import {graphNode} from '../../../decorators';
 import {IGraphNode, LLMStreamEventType, ToolStatus} from '../../../graphs';
 import {AiIntegrationBindings} from '../../../keys';
-import {LLMProvider} from '../../../types';
+import {RuntimeLLMProvider} from '../../../types';
 import {stripThinkingTokens} from '../../../utils';
 import {DbQueryAIExtensionBindings} from '../keys';
 import {DbQueryNodes} from '../nodes.enum';
@@ -23,7 +23,7 @@ import {DbSchemaHelperService} from '../services';
 export class SaveDataSetNode implements IGraphNode<DbQueryState> {
   constructor(
     @inject(AiIntegrationBindings.CheapLLM)
-    private readonly llm: LLMProvider,
+    private readonly llm: RuntimeLLMProvider,
     @inject(DbQueryAIExtensionBindings.DatasetStore)
     private readonly store: IDataSetStore,
     @inject(DbQueryAIExtensionBindings.Config)

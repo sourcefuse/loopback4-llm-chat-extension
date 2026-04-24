@@ -5,7 +5,7 @@ import {service} from '@loopback/core';
 import {graphNode} from '../../../decorators';
 import {IGraphNode, LLMStreamEventType, RunnableConfig} from '../../../graphs';
 import {AiIntegrationBindings} from '../../../keys';
-import {LLMProvider} from '../../../types';
+import {RuntimeLLMProvider} from '../../../types';
 import {stripThinkingTokens} from '../../../utils';
 import {DbQueryAIExtensionBindings} from '../keys';
 import {DbQueryNodes} from '../nodes.enum';
@@ -23,7 +23,7 @@ import {
 export class GetColumnsNode implements IGraphNode<DbQueryState> {
   constructor(
     @inject(AiIntegrationBindings.CheapLLM)
-    private readonly llm: LLMProvider,
+    private readonly llm: RuntimeLLMProvider,
     @service(DbSchemaHelperService)
     private readonly schemaHelper: DbSchemaHelperService,
     @inject(DbQueryAIExtensionBindings.Config)

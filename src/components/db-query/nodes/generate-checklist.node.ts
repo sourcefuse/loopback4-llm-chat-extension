@@ -5,7 +5,7 @@ import {inject, service} from '@loopback/core';
 import {graphNode} from '../../../decorators';
 import {IGraphNode, LLMStreamEventType} from '../../../graphs';
 import {AiIntegrationBindings} from '../../../keys';
-import {LLMProvider} from '../../../types';
+import {RuntimeLLMProvider} from '../../../types';
 import {stripThinkingTokens} from '../../../utils';
 import {AIMessage} from '@langchain/core/messages';
 import {DbQueryAIExtensionBindings} from '../keys';
@@ -18,7 +18,7 @@ import {DbQueryConfig} from '../types';
 export class GenerateChecklistNode implements IGraphNode<DbQueryState> {
   constructor(
     @inject(AiIntegrationBindings.CheapLLM)
-    private readonly llm: LLMProvider,
+    private readonly llm: RuntimeLLMProvider,
     @inject(DbQueryAIExtensionBindings.Config)
     private readonly config: DbQueryConfig,
     @service(DbSchemaHelperService)

@@ -1,8 +1,8 @@
 import {ChatCerebras, ChatCerebrasInput} from '@langchain/cerebras';
 import {Provider} from '@loopback/core';
-import {LLMProvider} from '../../../../types';
+import {RuntimeLLMProvider} from '../../../../types';
 
-export class Cerebras implements Provider<LLMProvider> {
+export class Cerebras implements Provider<RuntimeLLMProvider> {
   value() {
     if (!process.env.CEREBRAS_MODEL || !process.env.CEREBRAS_KEY) {
       throw new Error(

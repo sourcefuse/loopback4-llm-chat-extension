@@ -1,8 +1,8 @@
 import {Provider} from '@loopback/core';
-import {LLMProvider} from '../../../../types';
+import {RuntimeLLMProvider} from '../../../../types';
 import {ChatGoogleGenerativeAI} from '@langchain/google-genai';
 
-export class Gemini implements Provider<LLMProvider> {
+export class Gemini implements Provider<RuntimeLLMProvider> {
   value() {
     if (!process.env.GOOGLE_CHAT_MODEL || !process.env.GOOGLE_API_KEY) {
       throw new Error(

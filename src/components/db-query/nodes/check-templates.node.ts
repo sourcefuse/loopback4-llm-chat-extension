@@ -5,7 +5,7 @@ import {inject, service} from '@loopback/core';
 import {graphNode} from '../../../decorators';
 import {IGraphNode, LLMStreamEventType, RunnableConfig} from '../../../graphs';
 import {AiIntegrationBindings} from '../../../keys';
-import {LLMProvider} from '../../../types';
+import {RuntimeLLMProvider} from '../../../types';
 import {stripThinkingTokens} from '../../../utils';
 import {DbQueryAIExtensionBindings} from '../keys';
 import {DbQueryNodes} from '../nodes.enum';
@@ -21,7 +21,7 @@ export class CheckTemplatesNode implements IGraphNode<DbQueryState> {
     @inject(DbQueryAIExtensionBindings.TemplateCache)
     private readonly templateCache: BaseRetriever<QueryTemplateMetadata>,
     @inject(AiIntegrationBindings.CheapLLM)
-    private readonly llm: LLMProvider,
+    private readonly llm: RuntimeLLMProvider,
     @service(PermissionHelper)
     private readonly permissionHelper: PermissionHelper,
     @service(TemplateHelper)

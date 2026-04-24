@@ -2,7 +2,7 @@ import {expect, sinon} from '@loopback/testlab';
 import {LangGraphRunnableConfig} from '@langchain/langgraph';
 import {ChangeType, ClassifyChangeNode} from '../../../../components';
 import {DbQueryState} from '../../../../components/db-query/state';
-import {LLMProvider} from '../../../../types';
+import {RuntimeLLMProvider} from '../../../../types';
 
 describe('ClassifyChangeNode Unit', function () {
   let node: ClassifyChangeNode;
@@ -10,7 +10,7 @@ describe('ClassifyChangeNode Unit', function () {
 
   beforeEach(() => {
     llmStub = sinon.stub();
-    const llm = llmStub as unknown as LLMProvider;
+    const llm = llmStub as unknown as RuntimeLLMProvider;
     node = new ClassifyChangeNode(llm);
   });
 

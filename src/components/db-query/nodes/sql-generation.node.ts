@@ -5,7 +5,7 @@ import {inject, service} from '@loopback/core';
 import {graphNode} from '../../../decorators';
 import {IGraphNode, LLMStreamEventType} from '../../../graphs';
 import {AiIntegrationBindings} from '../../../keys';
-import {LLMProvider, SupportedDBs} from '../../../types';
+import {RuntimeLLMProvider, SupportedDBs} from '../../../types';
 import {stripThinkingTokens} from '../../../utils';
 import {DbQueryAIExtensionBindings} from '../keys';
 import {DbQueryNodes} from '../nodes.enum';
@@ -75,9 +75,9 @@ In the last attempt, you generated this SQL query -
 </feedback-instructions>`);
   constructor(
     @inject(AiIntegrationBindings.SmartLLM)
-    private readonly sqlLLM: LLMProvider,
+    private readonly sqlLLM: RuntimeLLMProvider,
     @inject(AiIntegrationBindings.CheapLLM)
-    private readonly cheapllm: LLMProvider,
+    private readonly cheapllm: RuntimeLLMProvider,
     @inject(DbQueryAIExtensionBindings.Config)
     private readonly config: DbQueryConfig,
     @service(DbSchemaHelperService)

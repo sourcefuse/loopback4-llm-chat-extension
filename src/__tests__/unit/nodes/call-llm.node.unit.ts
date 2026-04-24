@@ -6,7 +6,7 @@ import {CallLLMNode, ChatStore, RunnableConfig} from '../../../graphs';
 import {AiIntegrationBindings} from '../../../keys';
 import {Chat} from '../../../models';
 import {ChatRepository, MessageRepository} from '../../../repositories';
-import {LLMProvider} from '../../../types';
+import {RuntimeLLMProvider} from '../../../types';
 import {setupChats, setupMessages, stubUser} from '../../test-helper';
 
 describe('CallLLMNode Unit', function () {
@@ -24,7 +24,7 @@ describe('CallLLMNode Unit', function () {
           invoke: llmStub,
         };
       }),
-    } as unknown as LLMProvider;
+    } as unknown as RuntimeLLMProvider;
     const context = new Context('test-context');
     context.bind('services.CallLLMNode').toClass(CallLLMNode);
     context.bind('services.ChatStore').toClass(ChatStore);

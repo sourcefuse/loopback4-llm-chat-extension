@@ -7,7 +7,7 @@ import {
 } from '../../../../components';
 import {DbSchemaHelperService} from '../../../../components/db-query/services';
 import {DbQueryState} from '../../../../components/db-query/state';
-import {LLMProvider, SupportedDBs} from '../../../../types';
+import {RuntimeLLMProvider, SupportedDBs} from '../../../../types';
 
 describe('FixQueryNode Unit', function () {
   let node: FixQueryNode;
@@ -16,7 +16,7 @@ describe('FixQueryNode Unit', function () {
 
   beforeEach(() => {
     llmStub = sinon.stub();
-    const llm = llmStub as unknown as LLMProvider;
+    const llm = llmStub as unknown as RuntimeLLMProvider;
     schemaHelper = {
       asString: sinon.stub().returns('CREATE TABLE users (id INT, name TEXT);'),
       getTablesContext: sinon.stub().returns([]),

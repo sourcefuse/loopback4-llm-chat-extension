@@ -2,10 +2,12 @@ import {
   Binding,
   BindingScope,
   Component,
+  Constructor,
   ControllerClass,
   CoreBindings,
   createBindingFromClass,
   inject,
+  LifeCycleObserver,
   ProviderMap,
   ServiceOrProviderClass,
 } from '@loopback/core';
@@ -50,6 +52,8 @@ import {ChatRepository, MessageRepository} from './repositories';
 import {
   ChatCountStrategy,
   GenerationService,
+  MastraBridgeObserver,
+  MastraBridgeService,
   TokenCountPerUserStrategy,
   TokenCountStrategy,
 } from './services';
@@ -76,6 +80,10 @@ export class AiIntegrationsComponent implements Component {
       createBindingFromClass(RedisCache, {
         key: AiIntegrationBindings.Cache.key,
       }),
+      createBindingFromClass(MastraBridgeService, {
+        key: AiIntegrationBindings.MastraBridge.key,
+        defaultScope: BindingScope.SINGLETON,
+      }),
     ];
 
     this.providers = {
@@ -100,6 +108,7 @@ export class AiIntegrationsComponent implements Component {
     ];
 
     this.controllers = [GenerationController, ChatController];
+    this.lifeCycleObservers = [MastraBridgeObserver];
     this.models = [Chat, Message, CacheModel];
     this.repositories = [
       ChatRepository,
@@ -213,6 +222,11 @@ export class AiIntegrationsComponent implements Component {
    * An array of controller classes
    */
   controllers?: ControllerClass[];
+
+  /**
+   * An optional list of lifecycle observers.
+   */
+  lifeCycleObservers?: Constructor<LifeCycleObserver>[];
 
   /**
    * Setup ServiceSequence by default if no other sequnce provided

@@ -1,12 +1,16 @@
 import {VectorStore as VectorStoreType} from '@langchain/core/vectorstores';
-import {BaseCheckpointSaver} from '@langchain/langgraph';
 import {BindingKey} from '@loopback/context';
+import {
+  IMastraBridge,
+  MastraRuntimeFactory as MastraRuntimeFactoryType,
+} from './services/mastra-bridge.service';
 import {ITransport} from './transports/types';
 import {
   AIIntegrationConfig,
   EmbeddingProvider,
   ICache,
-  LLMProvider,
+  IWorkflowPersistence,
+  RuntimeLLMProvider,
   ToolStore,
 } from './types';
 import {ILimitStrategy} from './services/limit-strategies/types';
@@ -15,27 +19,31 @@ export namespace AiIntegrationBindings {
   export const Config = BindingKey.create<AIIntegrationConfig>(
     'services.ai-reporting.config',
   );
-  export const SmartLLM = BindingKey.create<LLMProvider>(
+  export const SmartLLM = BindingKey.create<RuntimeLLMProvider>(
     'services.ai-reporting.smartLLMProvider',
   );
-  export const CheapLLM = BindingKey.create<LLMProvider>(
+  export const CheapLLM = BindingKey.create<RuntimeLLMProvider>(
     'services.ai-reporting.cheapLLMProvider',
   );
-  export const FileLLM = BindingKey.create<LLMProvider>(
+  export const FileLLM = BindingKey.create<RuntimeLLMProvider>(
     'services.ai-reporting.fileLLMProvider',
   );
-  export const ChatLLM = BindingKey.create<LLMProvider>(
+  export const ChatLLM = BindingKey.create<RuntimeLLMProvider>(
     'services.ai-reporting.chatLLMProvider',
   );
-  export const SmartNonThinkingLLM = BindingKey.create<LLMProvider>(
+  export const SmartNonThinkingLLM = BindingKey.create<RuntimeLLMProvider>(
     'services.ai-reporting.smartNonThinkingLLMProvider',
   );
   export const EmbeddingModel = BindingKey.create<EmbeddingProvider>(
     'services.ai-reporting.embeddingModel',
   );
-  export const Checkpointer = BindingKey.create<BaseCheckpointSaver>(
-    'services.ai-reporting.checkpointer',
+  export const WorkflowPersistence = BindingKey.create<IWorkflowPersistence>(
+    'services.ai-reporting.workflow-persistence',
   );
+  /**
+   * @deprecated Use `WorkflowPersistence`.
+   */
+  export const Checkpointer = WorkflowPersistence;
   export const Tools = BindingKey.create<ToolStore>(
     'services.ai-reporting.tool-store',
   );
@@ -52,6 +60,13 @@ export namespace AiIntegrationBindings {
   export const ObfHandler = BindingKey.create<Function>(
     'services.ai-reporting.obf-handler',
   );
+  export const MastraBridge = BindingKey.create<IMastraBridge>(
+    'services.ai-reporting.mastra-bridge',
+  );
+  export const MastraRuntimeFactory =
+    BindingKey.create<MastraRuntimeFactoryType>(
+      'services.ai-reporting.mastra-runtime-factory',
+    );
   export const SystemContext = BindingKey.create<string[]>(
     `services.ai-reporting.system-context`,
   );

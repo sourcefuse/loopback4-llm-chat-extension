@@ -6,7 +6,7 @@ import {
   Errors,
   PermissionHelper,
 } from '../../../../components';
-import {LLMProvider} from '../../../../types';
+import {RuntimeLLMProvider} from '../../../../types';
 import {Currency, Employee, ExchangeRate} from '../../../fixtures/models';
 
 describe('CheckPermissionsNode Unit', function () {
@@ -15,7 +15,7 @@ describe('CheckPermissionsNode Unit', function () {
 
   beforeEach(() => {
     llmStub = sinon.stub();
-    const llm = llmStub as unknown as LLMProvider;
+    const llm = llmStub as unknown as RuntimeLLMProvider;
     const permissionHelper = new PermissionHelper(
       {
         models: [

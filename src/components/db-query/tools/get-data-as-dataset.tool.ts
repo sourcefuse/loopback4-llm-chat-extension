@@ -2,11 +2,9 @@ import {inject, service} from '@loopback/core';
 import {AnyObject} from '@loopback/repository';
 import {z} from 'zod';
 import {graphTool} from '../../../decorators';
-import {IGraphTool, ToolStatus} from '../../../graphs';
+import {IGraphTool, IRuntimeTool, ToolStatus} from '../../../graphs';
 import {DbQueryGraph} from '../db-query.graph';
 import {DbQueryConfig, Errors, GenerationError} from '../types';
-import {StructuredToolInterface} from '@langchain/core/tools';
-import {RunnableToolLike} from '@langchain/core/runnables';
 import {DbQueryAIExtensionBindings} from '../keys';
 import {DEFAULT_MAX_READ_ROWS_FOR_AI} from '../constant';
 
@@ -42,7 +40,10 @@ export class GetDataAsDatasetTool implements IGraphTool {
     };
   }
 
-  async build(): Promise<StructuredToolInterface | RunnableToolLike> {
+  /**
+   * Creates a runtime-agnostic tool for dataset generation.
+   */
+  async createTool(): Promise<IRuntimeTool> {
     const graph = await this.queryPipeline.build();
     const schema = z.object({
       prompt: z
@@ -59,5 +60,12 @@ export class GetDataAsDatasetTool implements IGraphTool {
                 It internally fires an event that renders a grid for the dataset on the UI for the user to see.`,
       schema,
     });
+  }
+
+  /**
+   * @deprecated Use createTool().
+   */
+  async build(): Promise<IRuntimeTool> {
+    return this.createTool();
   }
 }

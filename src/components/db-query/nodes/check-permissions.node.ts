@@ -5,7 +5,7 @@ import {service} from '@loopback/core';
 import {graphNode} from '../../../decorators';
 import {IGraphNode, RunnableConfig} from '../../../graphs';
 import {AiIntegrationBindings} from '../../../keys';
-import {LLMProvider} from '../../../types';
+import {RuntimeLLMProvider} from '../../../types';
 import {stripThinkingTokens} from '../../../utils';
 import {DbQueryNodes} from '../nodes.enum';
 import {PermissionHelper} from '../services';
@@ -16,7 +16,7 @@ import {Errors} from '../types';
 export class CheckPermissionsNode implements IGraphNode<DbQueryState> {
   constructor(
     @inject(AiIntegrationBindings.CheapLLM)
-    private readonly llm: LLMProvider, // Replace with actual type if available
+    private readonly llm: RuntimeLLMProvider, // Replace with actual type if available
 
     @service(PermissionHelper)
     private readonly permissions: PermissionHelper,

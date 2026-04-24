@@ -2,7 +2,7 @@ import {PromptTemplate} from '@langchain/core/prompts';
 import {RunnableSequence} from '@langchain/core/runnables';
 import {inject} from '@loopback/core';
 import {AiIntegrationBindings} from '../../../keys';
-import {LLMProvider} from '../../../types';
+import {RuntimeLLMProvider} from '../../../types';
 import {stripThinkingTokens} from '../../../utils';
 import {
   DatabaseSchema,
@@ -22,7 +22,7 @@ type ResolvedTemplate = {
 export class TemplateHelper {
   constructor(
     @inject(AiIntegrationBindings.CheapLLM)
-    private readonly llm: LLMProvider,
+    private readonly llm: RuntimeLLMProvider,
   ) {}
 
   extractionPrompt = PromptTemplate.fromTemplate(`

@@ -1,7 +1,7 @@
 import {PromptTemplate} from '@langchain/core/prompts';
 import {IVisualizer} from '../types';
 import {AiIntegrationBindings} from '../../../keys';
-import {LLMProvider} from '../../../types';
+import {RuntimeLLMProvider} from '../../../types';
 import {inject} from '@loopback/core';
 import {AnyObject} from '@loopback/repository';
 import {VisualizationGraphState} from '../state';
@@ -53,7 +53,7 @@ You are an expert data visualization assistant. Your task is to create a bar cha
 
   constructor(
     @inject(AiIntegrationBindings.CheapLLM)
-    private readonly llm: LLMProvider,
+    private readonly llm: RuntimeLLMProvider,
   ) {}
 
   async getConfig(state: VisualizationGraphState): Promise<AnyObject> {

@@ -13,7 +13,7 @@ import {
   SqliteConnector,
   TableSearchService,
 } from '../../../../components';
-import {LLMProvider} from '../../../../types';
+import {RuntimeLLMProvider} from '../../../../types';
 import {
   Currency,
   Employee,
@@ -34,7 +34,7 @@ describe('GetTablesNode Unit', function () {
   beforeEach(async () => {
     smartllmStub = sinon.stub();
     dumbllmStub = sinon.stub();
-    const llm = dumbllmStub as unknown as LLMProvider;
+    const llm = dumbllmStub as unknown as RuntimeLLMProvider;
 
     schemaHelper = new DbSchemaHelperService(
       new SqliteConnector(
@@ -52,7 +52,7 @@ describe('GetTablesNode Unit', function () {
     tableSearchStub = createStubInstance(TableSearchService);
     node = new GetTablesNode(
       llm,
-      dumbllmStub as unknown as LLMProvider,
+      dumbllmStub as unknown as RuntimeLLMProvider,
       {
         models: [],
       },
@@ -134,8 +134,8 @@ failed attempt: reason for failure
 
   it('should return state with minimal schema based on prompt and table search with smart llm', async () => {
     node = new GetTablesNode(
-      dumbllmStub as unknown as LLMProvider,
-      smartllmStub as unknown as LLMProvider,
+      dumbllmStub as unknown as RuntimeLLMProvider,
+      smartllmStub as unknown as RuntimeLLMProvider,
       {
         models: [],
         nodes: {

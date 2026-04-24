@@ -1,14 +1,14 @@
 import {PromptTemplate} from '@langchain/core/prompts';
-import {RunnableSequence, RunnableToolLike} from '@langchain/core/runnables';
-import {StructuredToolInterface, tool} from '@langchain/core/tools';
+import {RunnableSequence} from '@langchain/core/runnables';
+import {tool} from '@langchain/core/tools';
 import {inject} from '@loopback/context';
 import {service} from '@loopback/core';
 import {AnyObject} from '@loopback/repository';
 import z from 'zod';
 import {graphTool} from '../../../decorators';
-import {IGraphTool} from '../../../graphs';
+import {IGraphTool, IRuntimeTool} from '../../../graphs';
 import {AiIntegrationBindings} from '../../../keys';
-import {LLMProvider} from '../../../types';
+import {RuntimeLLMProvider} from '../../../types';
 import {stripThinkingTokens} from '../../../utils';
 import {DbQueryAIExtensionBindings} from '../keys';
 import {DbSchemaHelperService} from '../services';
@@ -21,7 +21,7 @@ export class AskAboutDatasetTool implements IGraphTool {
     @inject(DbQueryAIExtensionBindings.DatasetStore)
     private readonly store: IDataSetStore,
     @inject(AiIntegrationBindings.CheapLLM)
-    private readonly sqlllm: LLMProvider,
+    private readonly sqlllm: RuntimeLLMProvider,
     @service(DbSchemaHelperService)
     private readonly dbSchemaHelper: DbSchemaHelperService,
     @service(SchemaStore)
@@ -48,7 +48,10 @@ export class AskAboutDatasetTool implements IGraphTool {
   and here is the user's question -
   {question}`);
 
-  async build(): Promise<StructuredToolInterface | RunnableToolLike> {
+  /**
+   * Creates a runtime-agnostic tool that answers questions about an existing dataset.
+   */
+  async createTool(): Promise<IRuntimeTool> {
     const chain = RunnableSequence.from([
       this.prompt,
       this.sqlllm,
@@ -86,5 +89,12 @@ export class AskAboutDatasetTool implements IGraphTool {
         schema,
       },
     );
+  }
+
+  /**
+   * @deprecated Use createTool().
+   */
+  async build(): Promise<IRuntimeTool> {
+    return this.createTool();
   }
 }

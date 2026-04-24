@@ -2,7 +2,7 @@ import {Context, inject} from '@loopback/context';
 import {graphNode} from '../../../decorators';
 import {IGraphNode, LLMStreamEventType, RunnableConfig} from '../../../graphs';
 import {AiIntegrationBindings} from '../../../keys';
-import {LLMProvider} from '../../../types';
+import {RuntimeLLMProvider} from '../../../types';
 import {VisualizationGraphState} from '../state';
 import {VisualizationGraphNodes} from '../nodes.enum';
 import {PromptTemplate} from '@langchain/core/prompts';
@@ -57,7 +57,7 @@ none: reason why the visualization is not possible with the current prompt.
 `);
   constructor(
     @inject(AiIntegrationBindings.CheapLLM)
-    private readonly llm: LLMProvider,
+    private readonly llm: RuntimeLLMProvider,
     @inject.context()
     private readonly context: Context,
   ) {}

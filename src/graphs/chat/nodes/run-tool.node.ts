@@ -7,7 +7,12 @@ import {AiIntegrationBindings} from '../../../keys';
 import {ToolStore} from '../../../types';
 import {LLMStreamEventType} from '../../event.types';
 import {ChatState} from '../../state';
-import {IGraphNode, RunnableConfig, ToolStatus} from '../../types';
+import {
+  IGraphNode,
+  resolveGraphTool,
+  RunnableConfig,
+  ToolStatus,
+} from '../../types';
 import {ChatStore} from '../chat.store';
 import {ChatNodes} from '../nodes.enum';
 
@@ -55,7 +60,7 @@ export class RunToolNode implements IGraphNode<ChatState> {
         },
       });
       const toolObj = tools[toolCall.name as keyof typeof tools];
-      const tool = await toolObj.build(config);
+      const tool = await resolveGraphTool(toolObj, config);
       config.writer?.({
         type: LLMStreamEventType.Log,
         data: `Running tool: ${toolCall.name} with args: ${JSON.stringify(toolCall.args, undefined, 2)}`,
@@ -70,7 +75,7 @@ export class RunToolNode implements IGraphNode<ChatState> {
       });
       const toolMessage = new ToolMessage({
         name: toolCall.name,
-        content: output,
+        content: String(output),
         // eslint-disable-next-line @typescript-eslint/naming-convention
         tool_call_id: toolCall.id!,
       });

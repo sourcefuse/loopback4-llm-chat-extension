@@ -11,7 +11,7 @@ import {
   ToolStatus,
 } from '../../../graphs';
 import {AiIntegrationBindings} from '../../../keys';
-import {LLMProvider} from '../../../types';
+import {RuntimeLLMProvider} from '../../../types';
 import {stripThinkingTokens} from '../../../utils';
 import {DbQueryAIExtensionBindings} from '../keys';
 import {DbQueryNodes} from '../nodes.enum';
@@ -26,7 +26,7 @@ export class CheckCacheNode implements IGraphNode<DbQueryState> {
     @inject(DbQueryAIExtensionBindings.QueryCache)
     private readonly cache: BaseRetriever<QueryCacheMetadata>,
     @inject(AiIntegrationBindings.CheapLLM)
-    private readonly smartLLM: LLMProvider,
+    private readonly smartLLM: RuntimeLLMProvider,
     @service(DataSetHelper)
     private readonly dataSetHelper: DataSetHelper,
   ) {}

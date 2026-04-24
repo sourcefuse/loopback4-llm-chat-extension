@@ -4,11 +4,11 @@ import {service} from '@loopback/core';
 import {HttpErrors} from '@loopback/rest';
 import {graphNode} from '../../../decorators';
 import {AiIntegrationBindings} from '../../../keys';
-import {LLMProvider, ToolStore} from '../../../types';
+import {RuntimeLLMProvider, ToolStore} from '../../../types';
 import {getTextContent} from '../../../utils';
 import {LLMStreamEventType} from '../../event.types';
 import {ChatState} from '../../state';
-import {IGraphNode, RunnableConfig} from '../../types';
+import {IGraphNode, resolveGraphTool, RunnableConfig} from '../../types';
 import {ChatStore} from '../chat.store';
 import {ChatNodes} from '../nodes.enum';
 
@@ -18,7 +18,7 @@ const debug = require('debug')('ai-integration:chat:call-llm.node');
 export class CallLLMNode implements IGraphNode<ChatState> {
   constructor(
     @inject(AiIntegrationBindings.ChatLLM)
-    private readonly llm: LLMProvider,
+    private readonly llm: RuntimeLLMProvider,
     @inject(AiIntegrationBindings.Tools)
     private readonly tools: ToolStore,
     @service(ChatStore)
@@ -27,7 +27,7 @@ export class CallLLMNode implements IGraphNode<ChatState> {
 
   async execute(state: ChatState, config: RunnableConfig): Promise<ChatState> {
     const tools = await Promise.all(
-      this.tools.list.map(tool => tool.build(config)),
+      this.tools.list.map(tool => resolveGraphTool(tool, config)),
     );
     debug(
       'Calling LLM with tools:',
