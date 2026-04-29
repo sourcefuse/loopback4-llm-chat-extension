@@ -30,6 +30,16 @@ export interface GraphToolBindingDescriptor {
   bindingKey: string;
   key: string;
   name: string;
+  /**
+   * Human-readable description stored in the binding tag by `@graphTool({ description })`.
+   * Available at startup without resolving the tool instance.
+   */
+  description?: string;
+  /**
+   * Zod input schema stored in the binding tag by `@graphTool({ inputSchema })`.
+   * Available at startup without resolving the tool instance.
+   */
+  inputSchema?: unknown;
   resolve: BindingResolver<IGraphTool>;
 }
 
@@ -43,10 +53,14 @@ export interface MastraBootstrapPayload {
 
 /**
  * Minimal runtime contract required by the migration bridge.
+ *
+ * Returns `unknown` intentionally so that host-app factory implementations can
+ * return concrete agent / workflow types without a generic mismatch.  Callers
+ * should cast the return value to the expected interface at the call site.
  */
 export interface MastraRuntimeAdapter {
-  getAgent<T>(name: string): T | undefined;
-  getWorkflow<T>(name: string): T | undefined;
+  getAgent(name: string): unknown;
+  getWorkflow(name: string): unknown;
 }
 
 /**
@@ -61,8 +75,25 @@ export type MastraRuntimeFactory = (
  */
 export interface IMastraBridge {
   initialize(): Promise<void>;
-  getAgent<T>(name: string): T | undefined;
-  getWorkflow<T>(name: string): T | undefined;
+  /**
+   * Returns the underlying runtime adapter.  Use this when you need to access
+   * the adapter beyond the typed `getTypedAgent` / `getTypedWorkflow` shortcuts.
+   */
+  getRuntime(): MastraRuntimeAdapter;
+  /** Returns the raw (untyped) agent instance registered under the given name. */
+  getAgent(name: string): unknown;
+  /** Returns the raw (untyped) workflow instance registered under the given name. */
+  getWorkflow(name: string): unknown;
+  /**
+   * Type-safe accessor for a registered agent.  The cast is performed internally;
+   * callers receive `T | undefined` without any explicit cast at the call site.
+   */
+  getTypedAgent<T>(name: string): T | undefined;
+  /**
+   * Type-safe accessor for a registered workflow.  The cast is performed internally;
+   * callers receive `T | undefined` without any explicit cast at the call site.
+   */
+  getTypedWorkflow<T>(name: string): T | undefined;
   getBootstrapSnapshot(): MastraBootstrapPayload;
 }
 
@@ -73,14 +104,14 @@ class NoopMastraRuntimeAdapter implements MastraRuntimeAdapter {
   /**
    * Returns undefined for all agents in no-op mode.
    */
-  getAgent<T>(_name: string): T | undefined {
+  getAgent(_name: string): unknown {
     return undefined;
   }
 
   /**
    * Returns undefined for all workflows in no-op mode.
    */
-  getWorkflow<T>(_name: string): T | undefined {
+  getWorkflow(_name: string): unknown {
     return undefined;
   }
 }
@@ -111,24 +142,54 @@ export class MastraBridgeService implements IMastraBridge {
     }
 
     this.payload = this.collectBootstrapPayload();
-    this.runtime = this.runtimeFactory
-      ? await this.runtimeFactory(this.payload)
-      : new NoopMastraRuntimeAdapter();
-    this.initialized = true;
+    try {
+      this.runtime = await (this.runtimeFactory
+        ? this.runtimeFactory(this.payload)
+        : new NoopMastraRuntimeAdapter());
+      this.initialized = true;
+    } catch (error) {
+      throw new Error(`Mastra runtime initialization failed: ${error}`);
+    }
   }
 
   /**
-   * Returns a typed agent instance from the runtime adapter.
+   * Returns the underlying runtime adapter.
    */
-  getAgent<T>(name: string): T | undefined {
-    return this.runtime.getAgent<T>(name);
+  getRuntime(): MastraRuntimeAdapter {
+    if (!this.initialized) {
+      throw new Error('MastraBridgeService not initialized');
+    }
+    return this.runtime;
   }
 
   /**
-   * Returns a typed workflow instance from the runtime adapter.
+   * Returns the raw (untyped) agent instance registered under the given name.
    */
-  getWorkflow<T>(name: string): T | undefined {
-    return this.runtime.getWorkflow<T>(name);
+  getAgent(name: string): unknown {
+    return this.getRuntime().getAgent(name);
+  }
+
+  /**
+   * Returns the raw (untyped) workflow instance registered under the given name.
+   */
+  getWorkflow(name: string): unknown {
+    return this.getRuntime().getWorkflow(name);
+  }
+
+  /**
+   * Type-safe accessor: retrieves the agent and narrows it to `T`.
+   * The single internal cast is contained here so call sites remain cast-free.
+   */
+  getTypedAgent<T>(name: string): T | undefined {
+    return this.getRuntime().getAgent(name) as T | undefined;
+  }
+
+  /**
+   * Type-safe accessor: retrieves the workflow and narrows it to `T`.
+   * The single internal cast is contained here so call sites remain cast-free.
+   */
+  getTypedWorkflow<T>(name: string): T | undefined {
+    return this.getRuntime().getWorkflow(name) as T | undefined;
   }
 
   /**
@@ -159,6 +220,8 @@ export class MastraBridgeService implements IMastraBridge {
       bindingKey: binding.key,
       key: String(binding.key),
       name: String(binding.tagMap?.[TOOL_NAME] ?? binding.key),
+      description: binding.tagMap?.['toolDescription'] as string | undefined,
+      inputSchema: binding.tagMap?.['toolInputSchema'],
       resolve: async () => this.context.get<IGraphTool>(binding.key),
     }));
 

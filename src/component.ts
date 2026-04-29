@@ -49,6 +49,7 @@ import {Chat, Message} from './models';
 import {CacheModel, ToolsProvider} from './providers';
 import {RedisCache, RedisCacheRepository} from './providers/cache/redis';
 import {ChatRepository, MessageRepository} from './repositories';
+import {MastraChatAgent} from './mastra';
 import {
   ChatCountStrategy,
   GenerationService,
@@ -96,6 +97,8 @@ export class AiIntegrationsComponent implements Component {
       TokenCounter,
       GenerationService,
       ChatStore,
+      // mastra
+      MastraChatAgent,
       // graph
       ChatGraph,
       // nodes

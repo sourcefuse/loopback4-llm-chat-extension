@@ -8,6 +8,7 @@ import {
 } from '@loopback/testlab';
 import {PassThrough} from 'stream';
 import {ChatGraph, LLMStreamEvent} from '../../graphs';
+import {MastraChatAgent} from '../../mastra';
 import {GenerationService} from '../../services';
 import {HttpTransport, SSETransport} from '../../transports';
 
@@ -16,10 +17,12 @@ describe(`GenerationService Integration`, () => {
   let dummyRequest: Request;
   let dummyResponse: Response;
   let graph: StubbedInstanceWithSinonAccessor<ChatGraph>;
+  let mastraAgent: StubbedInstanceWithSinonAccessor<MastraChatAgent>;
 
   describe('with SSETransport', () => {
     beforeEach(() => {
       graph = createStubInstance(ChatGraph);
+      mastraAgent = createStubInstance(MastraChatAgent);
       dummyResponse = {
         write: sinon.stub(),
         end: sinon.stub(),
@@ -30,7 +33,7 @@ describe(`GenerationService Integration`, () => {
         once: sinon.stub(),
       } as unknown as Request;
       const transport = new SSETransport(dummyResponse, dummyRequest);
-      service = new GenerationService(graph, transport);
+      service = new GenerationService(graph, mastraAgent, transport, undefined);
     });
     it('should handle generation request and return response', async () => {
       const dummyStream = new PassThrough({objectMode: true});
@@ -140,6 +143,7 @@ describe(`GenerationService Integration`, () => {
   describe('with HttpTransport', () => {
     beforeEach(() => {
       graph = createStubInstance(ChatGraph);
+      mastraAgent = createStubInstance(MastraChatAgent);
       dummyResponse = {
         write: sinon.stub(),
         end: sinon.stub(),
@@ -150,7 +154,7 @@ describe(`GenerationService Integration`, () => {
         once: sinon.stub(),
       } as unknown as Request;
       const transport = new HttpTransport(dummyResponse, dummyRequest);
-      service = new GenerationService(graph, transport);
+      service = new GenerationService(graph, mastraAgent, transport, undefined);
     });
     it('should handle generation request and return response', async () => {
       const dummyStream = new PassThrough({objectMode: true});

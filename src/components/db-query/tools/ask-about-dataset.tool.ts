@@ -1,7 +1,7 @@
 import {PromptTemplate} from '@langchain/core/prompts';
 import {RunnableSequence} from '@langchain/core/runnables';
 import {tool} from '@langchain/core/tools';
-import {inject} from '@loopback/context';
+import {Context, inject} from '@loopback/context';
 import {service} from '@loopback/core';
 import {AnyObject} from '@loopback/repository';
 import z from 'zod';
@@ -15,7 +15,18 @@ import {DbSchemaHelperService} from '../services';
 import {SchemaStore} from '../services/schema.store';
 import {IDataSetStore} from '../types';
 
-@graphTool()
+@graphTool({
+  description:
+    'Tool for answering questions about an existing dataset, note that it can only answer questions about the dataset definition, not the data it contains. Call this only if you have a valid dataset ID available.',
+  inputSchema: z.object({
+    datasetId: z
+      .string()
+      .describe('uuid ID of the dataset to answer the question for'),
+    question: z
+      .string()
+      .describe('The question that the user asked about the query.'),
+  }),
+})
 export class AskAboutDatasetTool implements IGraphTool {
   constructor(
     @inject(DbQueryAIExtensionBindings.DatasetStore)
@@ -26,12 +37,25 @@ export class AskAboutDatasetTool implements IGraphTool {
     private readonly dbSchemaHelper: DbSchemaHelperService,
     @service(SchemaStore)
     private readonly schemaStore: SchemaStore,
-    @inject(DbQueryAIExtensionBindings.GlobalContext, {optional: true})
-    private readonly checks?: string[],
+    // Use context injection so GlobalContext is resolved lazily at call time,
+    // not at construction time.  This allows the tool to be instantiated from
+    // the application (singleton) context without requiring a live request.
+    @inject.context()
+    private readonly _ctx: Context,
   ) {}
 
   key = 'ask-about-dataset';
   needsReview = false;
+  description =
+    'Tool for answering questions about an existing dataset, note that it can only answer questions about the dataset definition, not the data it contains. Call this only if you have a valid dataset ID available.';
+  inputSchema = z.object({
+    datasetId: z
+      .string()
+      .describe('uuid ID of the dataset to answer the question for'),
+    question: z
+      .string()
+      .describe('The question that the user asked about the query.'),
+  });
 
   private readonly prompt =
     PromptTemplate.fromTemplate(`You are an AI assistant that answers questions about a query, without revealing any technical details, you need to answer the question the user's question.
@@ -52,6 +76,20 @@ export class AskAboutDatasetTool implements IGraphTool {
    * Creates a runtime-agnostic tool that answers questions about an existing dataset.
    */
   async createTool(): Promise<IRuntimeTool> {
+    // Resolve GlobalContext lazily.  When called from a request context the
+    // checks will be populated; when called from the application context
+    // (e.g. during Mastra bridge startup) the resolution may fail and we
+    // gracefully fall back to an empty list.
+    let checks: string[] | undefined;
+    try {
+      checks = await this._ctx.get<string[]>(
+        DbQueryAIExtensionBindings.GlobalContext,
+        {optional: true},
+      );
+    } catch {
+      checks = undefined;
+    }
+
     const chain = RunnableSequence.from([
       this.prompt,
       this.sqlllm,
@@ -76,7 +114,7 @@ export class AskAboutDatasetTool implements IGraphTool {
           question: args.question,
           schema: compressedSchema,
           context: [
-            ...(this.checks ?? []),
+            ...(checks ?? []),
             ...this.dbSchemaHelper.getTablesContext(compressedSchema),
           ].join('\n'),
         });

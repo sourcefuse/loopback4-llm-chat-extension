@@ -5,6 +5,7 @@ export * from './controllers';
 export * from './decorators';
 export * from './graphs';
 export * from './keys';
+export * from './mastra';
 export * from './providers';
 export * from './services';
 export * from './transports';

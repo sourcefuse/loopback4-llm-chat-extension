@@ -8,10 +8,33 @@ import {DbQueryConfig, Errors, GenerationError} from '../types';
 import {DbQueryAIExtensionBindings} from '../keys';
 import {DEFAULT_MAX_READ_ROWS_FOR_AI} from '../constant';
 
-@graphTool()
+@graphTool({
+  description: `Query tool for generating SQL queries for a users request. Use it only when the user needs raw tabular data from the database.
+                Do not use this tool if the user's request involves trends, growth, decline, comparisons, distributions, patterns, or any form of analytical insight — use the 'generate-visualization' tool instead.
+                Note that it does not return the query, instead only a dataset ID that is not relevant to the user.
+                It internally fires an event that renders a grid for the dataset on the UI for the user to see.`,
+  inputSchema: z.object({
+    prompt: z
+      .string()
+      .describe(
+        `Prompt from the user that will be used for generating an SQL query and create a dataset from it.`,
+      ),
+  }),
+})
 export class GetDataAsDatasetTool implements IGraphTool {
   needsReview = false;
   key = 'get-data-as-dataset';
+  description = `Query tool for generating SQL queries for a users request. Use it only when the user needs raw tabular data from the database.
+                Do not use this tool if the user's request involves trends, growth, decline, comparisons, distributions, patterns, or any form of analytical insight — use the 'generate-visualization' tool instead.
+                Note that it does not return the query, instead only a dataset ID that is not relevant to the user.
+                It internally fires an event that renders a grid for the dataset on the UI for the user to see.`;
+  inputSchema = z.object({
+    prompt: z
+      .string()
+      .describe(
+        `Prompt from the user that will be used for generating an SQL query and create a dataset from it.`,
+      ),
+  });
   constructor(
     @service(DbQueryGraph)
     private readonly queryPipeline: DbQueryGraph,

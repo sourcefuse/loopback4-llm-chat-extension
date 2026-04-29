@@ -81,11 +81,11 @@ describe('MastraBridgeService Unit', () => {
     await bridge.initialize();
 
     expect(callCount).to.equal(1);
-    expect(bridge.getAgent<{name: string}>('chat-agent')?.name).to.equal(
+    expect(bridge.getTypedAgent<{name: string}>('chat-agent')?.name).to.equal(
       'agent',
     );
-    expect(bridge.getWorkflow<{name: string}>('db-workflow')?.name).to.equal(
-      'workflow',
-    );
+    expect(
+      bridge.getTypedWorkflow<{name: string}>('db-workflow')?.name,
+    ).to.equal('workflow');
   });
 });

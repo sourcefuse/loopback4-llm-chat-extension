@@ -37,9 +37,19 @@ export type SavedMessage = HumanMessage | AIMessage | ToolMessage;
 
 /**
  * Minimal runtime tool contract shared across LangGraph and Mastra-compatible tooling.
+ *
+ * `description` and `schema` are optional but MUST be populated by any tool that
+ * needs to work with Mastra.  LangChain StructuredTool instances (returned by
+ * `build()` / `createTool()`) already carry these properties; they just were not
+ * exposed through this interface previously.
  */
 export interface IRuntimeTool<TResult = unknown, TArgs = unknown> {
   name: string;
+  /** Human-readable description shown to the LLM when deciding which tool to call. */
+  description?: string;
+  /** Zod schema describing the tool's input.  Typed as `unknown` to avoid a hard
+   *  dependency on `zod` in consuming packages; cast to `ZodObject` at the call site. */
+  schema?: unknown;
   invoke(input: TArgs): Promise<TResult>;
 }
 
@@ -48,6 +58,23 @@ export interface IRuntimeTool<TResult = unknown, TArgs = unknown> {
  */
 export interface IGraphTool {
   key: string;
+  /**
+   * Human-readable description exposed at Mastra agent registration time.
+   *
+   * Populate this as a class property so the Mastra bridge factory can read it
+   * WITHOUT calling `createTool()` / `build()`.  This avoids resolving the full
+   * dependency tree (e.g. graph nodes with request-scoped dependencies) at
+   * application startup.
+   */
+  description?: string;
+  /**
+   * Zod schema for the tool's input, exposed at Mastra agent registration time.
+   *
+   * Same rationale as `description` — must be accessible without a `createTool()` call.
+   * Type is `unknown` to avoid a hard dependency on `zod` in consuming code; cast to
+   * `ZodObject` at the call site.
+   */
+  inputSchema?: unknown;
   createTool?(config: RunnableConfig): Promise<IRuntimeTool>;
   /**
    * @deprecated Use `createTool()`.

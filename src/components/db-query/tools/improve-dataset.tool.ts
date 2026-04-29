@@ -8,10 +8,35 @@ import {DbQueryConfig, Errors, GenerationError} from '../types';
 import {DbQueryAIExtensionBindings} from '../keys';
 import {DEFAULT_MAX_READ_ROWS_FOR_AI} from '../constant';
 
-@graphTool()
+@graphTool({
+  description:
+    'Tool for improving an existing dataset based on user feedback. It takes a dataset ID and a prompt describing the desired changes, and returns an updated dataset. Call this only if you have a valid dataset ID available.',
+  inputSchema: z.object({
+    datasetId: z
+      .string()
+      .describe(`UUID ID of the existing dataset to improve`),
+    prompt: z
+      .string()
+      .describe(
+        `A description of what changes or improvements the user wants in the existing dataset.`,
+      ),
+  }),
+})
 export class ImproveDatasetTool implements IGraphTool {
   needsReview = false;
   key = 'improve-dataset';
+  description =
+    'Tool for improving an existing dataset based on user feedback. It takes a dataset ID and a prompt describing the desired changes, and returns an updated dataset. Call this only if you have a valid dataset ID available.';
+  inputSchema = z.object({
+    datasetId: z
+      .string()
+      .describe(`UUID ID of the existing dataset to improve`),
+    prompt: z
+      .string()
+      .describe(
+        `A description of what changes or improvements the user wants in the existing dataset.`,
+      ),
+  });
   constructor(
     @service(DbQueryGraph)
     private readonly queryPipeline: DbQueryGraph,
