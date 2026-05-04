@@ -1,5 +1,5 @@
 import {AnyObject} from '@loopback/repository';
-import {LLMStreamEvent} from '../graphs/event.types';
+import {LLMStreamEvent} from '../types/events';
 
 export interface ITransport {
   start(): Promise<void>;

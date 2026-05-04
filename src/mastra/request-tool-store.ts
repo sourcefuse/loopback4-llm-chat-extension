@@ -1,5 +1,5 @@
-import {LLMStreamEvent} from '../graphs/event.types';
-import {IRuntimeTool} from '../graphs/types';
+import {LLMStreamEvent} from '../types/events';
+import {IRuntimeTool} from '../types/tool';
 
 /**
  * Per-request IRuntimeTool registry.

@@ -1,6 +1,6 @@
 import {hasMany, model, property} from '@loopback/repository';
 import {Message as SourceloopMessage} from '@sourceloop/chat-service';
-import {MessageMetadata} from '../graphs';
+import {MessageMetadata} from '../services/chat-metadata.type';
 @model({
   name: 'messages',
 })

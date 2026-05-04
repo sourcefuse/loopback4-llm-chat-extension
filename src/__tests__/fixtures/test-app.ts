@@ -27,8 +27,8 @@ import {SupportedDBs} from '../../types';
 import {Currency, ExchangeRate} from './models';
 import {Employee} from './models/employee.model';
 import {EmployeeRepository} from './repositories';
-import {Ollama, OllamaEmbedding} from '../../sub-modules/providers/ollama';
-import {Cerebras} from '../../sub-modules/providers/cerebras';
+import {OllamaSdk} from '../../sub-modules/providers/ollama';
+import {CerebrasSdk} from '../../sub-modules/providers/cerebras';
 import {sinon} from '@loopback/testlab';
 export class TestApp extends BootMixin(
   ServiceMixin(RepositoryMixin(RestApplication)),
@@ -41,27 +41,40 @@ export class TestApp extends BootMixin(
       useCustomSequence: true,
     });
     if (process.env.OLLAMA === '1') {
-      this.bind(AiIntegrationBindings.CheapLLM).toProvider(Ollama);
-      this.bind(AiIntegrationBindings.SmartLLM).toProvider(Ollama);
-      this.bind(AiIntegrationBindings.FileLLM).toProvider(Ollama);
-      this.bind(AiIntegrationBindings.ChatLLM).toProvider(Ollama);
-      this.bind(AiIntegrationBindings.EmbeddingModel).toProvider(
-        OllamaEmbedding,
+      this.bind(AiIntegrationBindings.CheapLLM).toProvider(OllamaSdk);
+      this.bind(AiIntegrationBindings.SmartLLM).toProvider(OllamaSdk);
+      this.bind(AiIntegrationBindings.FileLLM).toProvider(OllamaSdk);
+      this.bind(AiIntegrationBindings.ChatLLM).toProvider(OllamaSdk);
+      this.bind(AiIntegrationBindings.AiSdkCheapLLM).toProvider(OllamaSdk);
+      this.bind(AiIntegrationBindings.AiSdkSmartLLM).toProvider(OllamaSdk);
+      this.bind(AiIntegrationBindings.EmbeddingModel).to(
+        undefined as unknown as never,
+      );
+      this.bind(AiIntegrationBindings.AiSdkEmbeddingModel).to(
+        undefined as unknown as never,
       );
     } else if (process.env.CEREBRAS === '1') {
-      this.bind(AiIntegrationBindings.CheapLLM).toProvider(Cerebras);
-      this.bind(AiIntegrationBindings.SmartLLM).toProvider(Cerebras);
-      this.bind(AiIntegrationBindings.FileLLM).toProvider(Cerebras);
-      this.bind(AiIntegrationBindings.ChatLLM).toProvider(Cerebras);
-      this.bind(AiIntegrationBindings.EmbeddingModel).toProvider(
-        OllamaEmbedding,
+      this.bind(AiIntegrationBindings.CheapLLM).toProvider(CerebrasSdk);
+      this.bind(AiIntegrationBindings.SmartLLM).toProvider(CerebrasSdk);
+      this.bind(AiIntegrationBindings.FileLLM).toProvider(CerebrasSdk);
+      this.bind(AiIntegrationBindings.ChatLLM).toProvider(CerebrasSdk);
+      this.bind(AiIntegrationBindings.AiSdkCheapLLM).toProvider(CerebrasSdk);
+      this.bind(AiIntegrationBindings.AiSdkSmartLLM).toProvider(CerebrasSdk);
+      this.bind(AiIntegrationBindings.EmbeddingModel).to(
+        undefined as unknown as never,
+      );
+      this.bind(AiIntegrationBindings.AiSdkEmbeddingModel).to(
+        undefined as unknown as never,
       );
     } else if (options.llmStub) {
       this.bind(AiIntegrationBindings.CheapLLM).to(options.llmStub);
       this.bind(AiIntegrationBindings.SmartLLM).to(options.llmStub);
       this.bind(AiIntegrationBindings.FileLLM).to(options.llmStub);
       this.bind(AiIntegrationBindings.ChatLLM).to(options.llmStub);
+      this.bind(AiIntegrationBindings.AiSdkCheapLLM).to(options.llmStub);
+      this.bind(AiIntegrationBindings.AiSdkSmartLLM).to(options.llmStub);
       this.bind(AiIntegrationBindings.EmbeddingModel).to(options.llmStub);
+      this.bind(AiIntegrationBindings.AiSdkEmbeddingModel).to(options.llmStub);
     }
     this.bind('datasources.readerdb').to(
       new juggler.DataSource({
@@ -110,7 +123,7 @@ export class TestApp extends BootMixin(
       .toClass(SqliteConnector)
       .inScope(BindingScope.TRANSIENT);
 
-    this.bind(AiIntegrationBindings.VectorStore)
+    this.bind(AiIntegrationBindings.AiSdkVectorStore)
       .toProvider(InMemoryVectorStore)
       .inScope(BindingScope.SINGLETON);
 

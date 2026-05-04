@@ -34,16 +34,7 @@ import {
 } from './components';
 import {DEFAULT_FILE_SIZE, MAX_TOTAL_SIZE} from './constant';
 import {ChatController, GenerationController} from './controllers';
-import {
-  CallLLMNode,
-  ChatGraph,
-  ChatStore,
-  ContextCompressionNode,
-  EndSessionNode,
-  InitSessionNode,
-  RunToolNode,
-  SummariseFileNode,
-} from './graphs/chat';
+import {ChatStore} from './services/chat.store';
 import {WriterDB, AiIntegrationBindings, ReaderDB} from './keys';
 import {Chat, Message} from './models';
 import {CacheModel, ToolsProvider} from './providers';
@@ -61,7 +52,7 @@ import {
 import {TokenCounter} from './services/token-counter.service';
 import {SSETransport} from './transports';
 import {AIIntegrationConfig} from './types';
-import {PgVectorStore} from './sub-modules/db/postgresql';
+import {PgVectorSdkStore} from './sub-modules/db/postgresql';
 
 const debug = require('debug')('ai-integration:log-events:component');
 export class AiIntegrationsComponent implements Component {
@@ -88,7 +79,7 @@ export class AiIntegrationsComponent implements Component {
     ];
 
     this.providers = {
-      [AiIntegrationBindings.VectorStore.key]: PgVectorStore,
+      [AiIntegrationBindings.AiSdkVectorStore.key]: PgVectorSdkStore,
       [AiIntegrationBindings.Tools.key]: ToolsProvider,
     };
 
@@ -99,15 +90,6 @@ export class AiIntegrationsComponent implements Component {
       ChatStore,
       // mastra
       MastraChatAgent,
-      // graph
-      ChatGraph,
-      // nodes
-      CallLLMNode,
-      RunToolNode,
-      InitSessionNode,
-      SummariseFileNode,
-      ContextCompressionNode,
-      EndSessionNode,
     ];
 
     this.controllers = [GenerationController, ChatController];

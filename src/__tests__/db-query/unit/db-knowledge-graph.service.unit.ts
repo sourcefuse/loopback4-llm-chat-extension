@@ -1,20 +1,44 @@
-import {expect, sinon} from '@loopback/testlab';
+import {expect} from '@loopback/testlab';
 import {DbKnowledgeGraphService} from '../../../components';
-import {EmbeddingProvider, RuntimeLLMProvider} from '../../../types';
+import {EmbeddingProvider, LLMProvider} from '../../../types';
+import {EmbeddingModelV2} from '@ai-sdk/provider';
+import {createFakeStreamingLanguageModel} from '../../fixtures/fake-ai-models';
+
+function createTableEmbeddingModel(): EmbeddingModelV2<string> {
+  return {
+    specificationVersion: 'v2',
+    provider: 'test',
+    modelId: 'test-embedding',
+    maxEmbeddingsPerCall: null,
+    supportsParallelCalls: true,
+    doEmbed: async ({values}: {values: string[]}) => {
+      const embeddings = values.map((v: string) => {
+        if (v.startsWith('employee_salaries')) return [0.1, 0.2, 0.3];
+        if (v.startsWith('employees')) return [0.1, 0.2, 0.3];
+        if (v.startsWith('orders')) return [0.9, 0.8, 0.7];
+        return [0.1, 0.2, 0.6];
+      });
+      return {embeddings, warnings: []};
+    },
+  } as unknown as EmbeddingModelV2<string>;
+}
 
 describe(`DbKnowledgeGraphService Unit`, function () {
   let service: DbKnowledgeGraphService;
-  let llmStub: sinon.SinonStub;
-  let embedStub: sinon.SinonStub;
+  let fakeModel: LLMProvider;
 
   beforeEach(() => {
-    llmStub = sinon.stub();
-    embedStub = sinon.stub();
+    fakeModel = createFakeStreamingLanguageModel(
+      JSON.stringify({
+        concept: 'employees',
+        description: 'test description',
+        domain: 'test domain',
+        confidence: 0.9,
+      }),
+    ) as unknown as LLMProvider;
     service = new DbKnowledgeGraphService(
-      llmStub as unknown as RuntimeLLMProvider,
-      {
-        embedDocuments: embedStub,
-      } as unknown as EmbeddingProvider,
+      fakeModel,
+      createTableEmbeddingModel() as unknown as EmbeddingProvider,
       {
         models: [],
         knowledgeGraph: {
@@ -28,26 +52,6 @@ describe(`DbKnowledgeGraphService Unit`, function () {
   });
 
   it('should generate a knowledge graph for a schema and should be able to find from it', async () => {
-    embedStub.callsFake(async doc => {
-      if (doc[0].startsWith('employee_salaries')) {
-        return [[0.1, 0.2, 0.3]];
-      }
-      if (doc[0].startsWith('employees')) {
-        return [[0.1, 0.2, 0.3]];
-      }
-      if (doc[0].startsWith('orders')) {
-        return [[0.9, 0.8, 0.7]];
-      }
-      return [[0.1, 0.2, 0.6]];
-    });
-    llmStub.resolves({
-      content: JSON.stringify({
-        concept: 'employees',
-        description: 'test description',
-        domain: 'test domain',
-        confidence: 0.9,
-      }),
-    });
     const schema = {
       tables: {
         // eslint-disable-next-line @typescript-eslint/naming-convention

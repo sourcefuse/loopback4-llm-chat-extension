@@ -5,7 +5,7 @@ import {
   injectable,
   Provider,
 } from '@loopback/core';
-import {IGraphTool} from '../graphs/types';
+import {IGraphTool} from '../types/tool';
 import {ToolStore} from '../types';
 
 @injectable({scope: BindingScope.REQUEST})

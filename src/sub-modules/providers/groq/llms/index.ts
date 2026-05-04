@@ -1,1 +1,1 @@
-export * from './groq.provider';
+export * from './groq-sdk.provider';

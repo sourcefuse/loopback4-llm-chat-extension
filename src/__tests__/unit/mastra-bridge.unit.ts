@@ -7,7 +7,7 @@ import {
   TOOL_NAME,
   TOOL_TAG,
 } from '../../constant';
-import {IGraphNode, IGraphTool} from '../../graphs/types';
+import {IGraphNode, IGraphTool} from '../../types/tool';
 import {
   MastraBridgeService,
   MastraRuntimeFactory,

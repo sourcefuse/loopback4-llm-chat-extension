@@ -2,10 +2,11 @@ import {Context, inject, service} from '@loopback/core';
 import {AnyObject} from '@loopback/repository';
 import {z} from 'zod';
 import {graphTool} from '../../../decorators';
-import {IGraphTool, IRuntimeTool, ToolStatus} from '../../../graphs';
-import {VisualizationGraph} from '../visualization.graph';
-import {VISUALIZATION_KEY} from '../keys';
-import {IVisualizer} from '../types';
+import {IGraphTool, IRuntimeTool, ToolStatus} from '../../../types/tool';
+import {
+  MastraVisualizationWorkflow,
+  MastraVisualizationContext,
+} from '../../../mastra/visualization';
 
 @graphTool({
   description: `Generates a visualization for the user's request. It takes in a prompt and an optional dataset ID.
@@ -62,11 +63,12 @@ It does not return anything, instead it fires an event internally that renders t
         `Type of visualization to be generated (e.g. bar, line, pie). If not provided, the system will decide the best visualization based on the data and prompt.`,
       ),
   });
+
   constructor(
-    @service(VisualizationGraph)
-    private readonly visualizationGraph: VisualizationGraph,
     @inject.context()
     private readonly context: Context,
+    @service(MastraVisualizationWorkflow)
+    private readonly mastraWorkflow: MastraVisualizationWorkflow,
   ) {}
 
   getValue(result: Record<string, string>): string {
@@ -90,39 +92,31 @@ It does not return anything, instead it fires an event internally that renders t
   }
 
   /**
-   * Creates a runtime-agnostic visualization tool.
+   * Creates a Mastra-compatible visualization tool.
    */
   async createTool(): Promise<IRuntimeTool> {
-    const visualizations = await this._getVisualizations();
-    const graph = await this.visualizationGraph.build();
-    const schema = z.object({
-      prompt: z
-        .string()
-        .describe(
-          `Prompt from the user that will be used for generating the visualization.`,
-        ),
-      datasetId: z
-        .string()
-        .optional()
-        .describe(
-          `ID of the dataset that needs to be visualized. Use the dataset ID from 'get-data-as-dataset' or 'improve-dataset' tool if available. If not provided, the tool will internally fetch the data.`,
-        ),
-      type: z
-        .string()
-        .optional()
-        .describe(
-          `Type of visualization to be generated. It can be one of the following: ${visualizations.map(v => v.name).join(', ')}. If not provided, the system will decide the best visualization based on the data and prompt.`,
-        ),
-    }) as AnyObject[string];
-    return graph.asTool({
+    return {
       name: this.key,
-      description: `Generates a visualization for the user's request. It takes in a prompt and an optional dataset ID.
-If the user's request involves trends, growth, decline, comparisons, distributions, patterns, correlations, or any analytical insight, ALWAYS use this tool instead of 'get-data-as-dataset'.
-No need to call 'get-data-as-dataset' tool before this — if the dataset ID is not provided, this tool will internally fetch the data to be visualized.
-It does not return anything, instead it fires an event internally that renders the visualization on the UI for the user to see.
-It supports the following types of visualizations: ${visualizations.map(v => v.name).join(', ')}.`,
-      schema,
-    });
+      description: this.description,
+      schema: this.inputSchema,
+      invoke: async (
+        input: unknown,
+        opts?: {
+          writer?: MastraVisualizationContext['writer'];
+          signal?: AbortSignal;
+        },
+      ) => {
+        const {prompt, datasetId, type} = input as {
+          prompt: string;
+          datasetId?: string;
+          type?: string;
+        };
+        return this.mastraWorkflow.run(
+          {prompt, datasetId, type},
+          {writer: opts?.writer, signal: opts?.signal},
+        );
+      },
+    } as IRuntimeTool;
   }
 
   /**
@@ -130,17 +124,5 @@ It supports the following types of visualizations: ${visualizations.map(v => v.n
    */
   async build(): Promise<IRuntimeTool> {
     return this.createTool();
-  }
-
-  private async _getVisualizations() {
-    const bindings = this.context.findByTag({
-      [VISUALIZATION_KEY]: true,
-    });
-    if (bindings.length === 0) {
-      throw new Error(`Node with key ${VISUALIZATION_KEY} not found`);
-    }
-    return Promise.all(
-      bindings.map(binding => this.context.get<IVisualizer>(binding.key)),
-    );
   }
 }

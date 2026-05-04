@@ -1,23 +1,25 @@
-import {
-  AIMessage,
-  MessageContent,
-  MessageContentComplex,
-  MessageContentText,
-} from '@langchain/core/messages';
-
-export function isTextContent(
-  content: MessageContent | MessageContentComplex | string,
-): content is MessageContentText {
+export function getTextContent(content: string | unknown): string {
   if (typeof content === 'string') {
-    return true;
-  }
-  if ((content as MessageContentText).text !== undefined) {
-    return true;
+    return content;
   }
   if (Array.isArray(content)) {
-    return content.filter(v => v.type === 'text').every(isTextContent);
+    return content
+      .map((c: unknown) => {
+        if (typeof c === 'string') return c;
+        if (
+          c !== null &&
+          typeof c === 'object' &&
+          'text' in c &&
+          typeof (c as {text: unknown}).text === 'string'
+        ) {
+          return (c as {text: string}).text;
+        }
+        return '';
+      })
+      .filter(Boolean)
+      .join('');
   }
-  return false;
+  return '';
 }
 
 export function mergeAttachments(
@@ -30,39 +32,24 @@ summary of file - ${fileName}:
 ${summary}`;
 }
 
-export function getTextContent(content: MessageContent | string): string {
-  if (typeof content === 'string') {
-    return content;
-  }
-  if (isTextContent(content)) {
-    return typeof content === 'string'
-      ? content
-      : content
-          .map(c => (isTextContent(c) ? c.text : ''))
-          .filter(v => !!v)
-          .join('');
-  }
-  return '';
-}
-
-export function stripThinkingTokens(text: AIMessage): string {
-  const message = getTextContent(text.content ?? text);
+/**
+ * Strips `<think>` / `<thinking>` tags from a plain text string.
+ * Previously accepted `AIMessage` — now accepts a plain string so this
+ * function has zero dependency on @langchain.
+ */
+export function stripThinkingTokens(text: string): string {
   // remove all the content between <think> and <thinking> tags
-  let stripped = message.replace(/<think(ing)?>.*?<\/think(ing)?>/gs, '');
-  // also strip any string that ends with <thinking> or <think>
+  let stripped = text.replace(/<think(ing)?>.*?<\/think(ing)?>/gs, '');
+  // also strip any string that ends with </thinking> or </think>
   stripped = stripped.replace(/.*?<\/think(ing)?>/gs, '');
   return stripped.trim();
 }
 
-export function approxTokenCounter(content: MessageContent): number {
+export function approxTokenCounter(content: string | unknown): number {
   const text = getTextContent(content);
   // Approximate token count: 1 token ~ 4 characters
   // This is a rough estimate, actual tokenization may vary
-  if (typeof text === 'string') {
-    return Math.ceil(text.length / 4);
-  }
-
-  return 0;
+  return Math.ceil(text.length / 4);
 }
 
 export function numericEnumValues(enumType: Object) {

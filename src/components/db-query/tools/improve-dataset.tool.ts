@@ -2,8 +2,11 @@ import {inject, service} from '@loopback/core';
 import {AnyObject} from '@loopback/repository';
 import {z} from 'zod';
 import {graphTool} from '../../../decorators';
-import {IGraphTool, IRuntimeTool, ToolStatus} from '../../../graphs';
-import {DbQueryGraph} from '../db-query.graph';
+import {IGraphTool, IRuntimeTool, ToolStatus} from '../../../types/tool';
+import {
+  MastraDbQueryWorkflow,
+  MastraDbQueryContext,
+} from '../../../mastra/db-query';
 import {DbQueryConfig, Errors, GenerationError} from '../types';
 import {DbQueryAIExtensionBindings} from '../keys';
 import {DEFAULT_MAX_READ_ROWS_FOR_AI} from '../constant';
@@ -38,10 +41,10 @@ export class ImproveDatasetTool implements IGraphTool {
       ),
   });
   constructor(
-    @service(DbQueryGraph)
-    private readonly queryPipeline: DbQueryGraph,
     @inject(DbQueryAIExtensionBindings.Config)
     private readonly config: DbQueryConfig,
+    @service(MastraDbQueryWorkflow)
+    private readonly mastraWorkflow: MastraDbQueryWorkflow,
   ) {}
 
   getValue(result: Record<string, string>): string {
@@ -66,26 +69,33 @@ export class ImproveDatasetTool implements IGraphTool {
   }
 
   /**
-   * Creates a runtime-agnostic tool for dataset improvement.
+   * Creates a Mastra-compatible `IRuntimeTool` that executes the imperative workflow.
    */
   async createTool(): Promise<IRuntimeTool> {
-    const graph = await this.queryPipeline.build();
-    const schema = z.object({
-      datasetId: z
-        .string()
-        .describe(`UUID ID of the existing dataset to improve`),
-      prompt: z
-        .string()
-        .describe(
-          `A description of what changes or improvements the user wants in the existing dataset.`,
-        ),
-    }) as AnyObject[string];
-    return graph.asTool({
+    return {
       name: this.key,
-      description:
-        'Tool for improving an existing dataset based on user feedback. It takes a dataset ID and a prompt describing the desired changes, and returns an updated dataset. Call this only if you have a valid dataset ID available.',
-      schema,
-    });
+      description: this.description,
+      schema: this.inputSchema,
+      invoke: async (
+        input: unknown,
+        opts?: {
+          writer?: MastraDbQueryContext['writer'];
+          signal?: AbortSignal;
+        },
+      ) => {
+        const {datasetId, prompt} = input as {
+          datasetId: string;
+          prompt: string;
+        };
+        return this.mastraWorkflow.run(
+          {prompt, datasetId},
+          {
+            writer: opts?.writer,
+            signal: opts?.signal,
+          },
+        );
+      },
+    } as IRuntimeTool;
   }
 
   /**

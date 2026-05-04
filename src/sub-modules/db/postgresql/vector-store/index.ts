@@ -1,1 +1,1 @@
-export * from './pgvector.store';
+export * from './pgvector-sdk.store';

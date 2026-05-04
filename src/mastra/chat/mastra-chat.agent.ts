@@ -1,30 +1,23 @@
-import {BaseMessage, HumanMessage} from '@langchain/core/messages';
 import {inject, injectable, BindingScope, service} from '@loopback/core';
-import {HttpErrors} from '@loopback/rest';
-import {LLMStreamEvent, LLMStreamEventType} from '../../graphs/event.types';
-import {ChatStore} from '../../graphs/chat/chat.store';
+import {streamText, tool, ToolSet, stepCountIs} from 'ai';
+import {LLMStreamEvent, LLMStreamEventType} from '../../types/events';
+import {ChatStore} from '../../services/chat.store';
 import {AiIntegrationBindings} from '../../keys';
-import {IMastraBridge} from '../../services/mastra-bridge.service';
-import {AIIntegrationConfig, RuntimeLLMProvider, ToolStore} from '../../types';
-import {IMastraChatAgentRunnable} from '../types';
-import {
-  mastraRequestToolStore,
-  mastraRequestWriterStore,
-} from '../request-tool-store';
+import {AIIntegrationConfig, LLMProvider, ToolStore} from '../../types';
+import {MastraAgentMessage} from '../types';
+import {IRuntimeTool} from '../../types/tool';
+import {z} from 'zod';
+import {normalizeMessages} from './utils/normalize-messages.util';
+import {adaptStreamResult} from './utils/adapt-stream.util';
+import {mastraRequestWriterStore} from '../request-tool-store';
 import {compressContextIfNeeded} from './steps/context-compression.step';
 import {initSession} from './steps/init-session.step';
 import {summariseOneFile} from './steps/summarise-file.step';
 import {handleStream} from './steps/stream-handler.step';
-import {toMastraMessages} from './mappers/message.mapper';
 import {accumulateUsage} from './utils/token-accumulator.util';
 import {TokenAccumulator} from './types/chat.types';
 
 const debug = require('debug')('ai-integration:mastra:chat-agent');
-
-/**
- * Registered name used to retrieve the chat agent via the Mastra bridge.
- */
-export const MASTRA_CHAT_AGENT_NAME = 'chat-agent';
 
 /**
  * Mastra-runtime chat execution service.
@@ -34,18 +27,17 @@ export const MASTRA_CHAT_AGENT_NAME = 'chat-agent';
  *  1. `initSession`            — load/create chat, persist human message, build history
  *  2. `summariseOneFile`*      — pre-process uploaded files before the agent sees them
  *  3. `compressContextIfNeeded`— trim history if it exceeds the token budget
- *  4. `toMastraMessages`       — convert LangChain messages → Mastra/AI SDK format
- *  5. Bridge agent execution   — Mastra Agent owns the CallLLM ↔ RunTool loop
- *  6. `handleStream`           — adapt Mastra events → LLMStreamEvent, persist steps
- *  7. EndSession               — emit TokenCount, update DB
+ *  4. `streamText` execution   — library calls AI SDK directly, owns the LLM ↔ tool loop
+ *  5. `handleStream`           — adapt AI SDK events → LLMStreamEvent, persist steps
+ *  6. EndSession               — emit TokenCount, update DB
  */
 @injectable({scope: BindingScope.REQUEST})
 export class MastraChatAgent {
   constructor(
-    @inject(AiIntegrationBindings.MastraBridge)
-    private readonly mastraBridge: IMastraBridge,
-    @inject(AiIntegrationBindings.FileLLM)
-    private readonly fileLLM: RuntimeLLMProvider,
+    @inject(AiIntegrationBindings.AiSdkChatLLM)
+    private readonly chatLLM: LLMProvider,
+    @inject(AiIntegrationBindings.AiSdkFileLLM)
+    private readonly fileLLM: LLMProvider,
     @inject(AiIntegrationBindings.Config)
     private readonly aiConfig: AIIntegrationConfig,
     @inject(AiIntegrationBindings.Tools)
@@ -107,35 +99,17 @@ export class MastraChatAgent {
     }
 
     // ── Step 3: Build message list + fallback context compression ────────────
-    const rawMessages: BaseMessage[] = [
+    const rawMessages: MastraAgentMessage[] = [
       ...baseMessages,
-      new HumanMessage({content: finalPrompt}),
+      {role: 'user', content: finalPrompt},
     ];
     const compressedMessages = await compressContextIfNeeded(
       rawMessages,
       this.aiConfig.maxTokenCount,
     );
 
-    // ── Step 4: Map messages to Mastra format ─────────────────────────────────
-    const agentMessages = toMastraMessages(compressedMessages);
-
-    // ── Step 5: Obtain agent from bridge ─────────────────────────────────────
-    const agent = this.mastraBridge.getTypedAgent<IMastraChatAgentRunnable>(
-      MASTRA_CHAT_AGENT_NAME,
-    );
-    if (!agent) {
-      throw new HttpErrors.NotImplemented(
-        `Mastra chat agent '${MASTRA_CHAT_AGENT_NAME}' is not registered. ` +
-          'Bind a MastraRuntimeFactory at AiIntegrationBindings.MastraRuntimeFactory ' +
-          "that registers a chat agent under the name 'chat-agent'.",
-      );
-    }
-
-    // ── Step 5b: Build per-request tool map and register for bridge tools ─────
-    const requestToolMap = new Map<
-      string,
-      import('../../graphs/types').IRuntimeTool
-    >();
+    // ── Step 4: Build per-request tool map ──────────────────────────────────
+    const requestToolMap = new Map<string, IRuntimeTool>();
     for (const graphTool of this.tools.list) {
       try {
         // Build tools at request time (they may have request-scoped dependencies).
@@ -148,15 +122,13 @@ export class MastraChatAgent {
           // Wrap invoke to inject the lazy writer into the LangGraph config so
           // internal graph nodes (e.g. RenderVisualizationNode, SaveDatasetNode)
           // get config.writer and their ToolStatus events reach the SSE stream.
-          // Tools built with createTool() ignore the config param, but LangGraph
+          // Tools built with createTool() ignore the config param, but the
           // tool.invoke(input, { writer }) passes it straight to every node.
           const lazyWriter = {
             writer: (event: unknown) =>
-              mastraRequestWriterStore.get(chatId)?.(
-                event as import('../../graphs/event.types').LLMStreamEvent,
-              ),
+              mastraRequestWriterStore.get(chatId)?.(event as LLMStreamEvent),
           };
-          const wrappedRt: import('../../graphs/types').IRuntimeTool = {
+          const wrappedRt: IRuntimeTool = {
             name: rt.name,
             description: rt.description,
             schema: rt.schema,
@@ -164,13 +136,10 @@ export class MastraChatAgent {
             invoke: (input: unknown) => (rt as any).invoke(input, lazyWriter),
           };
 
-          // Store by kebab key (e.g. 'get-data-as-dataset') — LangGraph path
+          // Keyed by graphTool.key (e.g. 'get-data-as-dataset').
+          // This is the name the LLM will use when calling the tool, and what
+          // handleStream uses to look up display values.
           requestToolMap.set(graphTool.key, wrappedRt);
-          // Also store by class name (e.g. 'GetDataAsDatasetTool') — Mastra factory path
-          const className = (graphTool as object).constructor?.name;
-          if (className && className !== graphTool.key) {
-            requestToolMap.set(className, wrappedRt);
-          }
         }
       } catch (err) {
         debug(
@@ -180,25 +149,49 @@ export class MastraChatAgent {
         );
       }
     }
-    mastraRequestToolStore.set(chatId, requestToolMap);
     debug(
-      'Registered %d tools for chatId %s: %s',
+      'Built %d tools for chatId %s: %s',
       requestToolMap.size,
       chatId,
       [...requestToolMap.keys()].join(', '),
     );
 
-    // ── Step 6: Stream from bridge agent, adapt events to LLMStreamEvent ─────
+    // ── Step 5: Build AI SDK tool set and call streamText() directly ──────────
+    const aiTools: ToolSet = {};
+    for (const [toolName, rt] of requestToolMap) {
+      if (aiTools[toolName]) continue;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const inputSchema: z.ZodTypeAny = (rt.schema as any) ?? z.object({});
+      aiTools[toolName] = tool({
+        description: rt.description ?? toolName,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        inputSchema: inputSchema as any,
+        execute: async (input: unknown) => {
+          try {
+            return await rt.invoke(input);
+          } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err);
+            debug('Tool "%s" failed: %s', toolName, msg);
+            return {error: true, message: msg};
+          }
+        },
+      });
+    }
+
     debug(
-      'Delegating to Mastra bridge agent — %d messages, %d tools',
-      agentMessages.length,
-      requestToolMap.size,
+      'Calling streamText() directly — %d messages, %d tools',
+      compressedMessages.length,
+      Object.keys(aiTools).length,
     );
     try {
-      const agentStream = await agent.stream(agentMessages, {
-        signal: abort,
-        threadId: chatId,
+      const streamResult = streamText({
+        model: this.chatLLM,
+        messages: normalizeMessages(compressedMessages),
+        tools: aiTools,
+        stopWhen: stepCountIs(10),
+        abortSignal: abort,
       });
+      const agentStream = adaptStreamResult(streamResult);
 
       for await (const event of handleStream({
         agentStream,
@@ -246,8 +239,7 @@ export class MastraChatAgent {
         tokens.map,
       );
     } finally {
-      // Always clean up per-request stores so memory doesn't leak.
-      mastraRequestToolStore.delete(chatId);
+      // Clean up the per-request writer store so memory doesn't leak.
       mastraRequestWriterStore.delete(chatId);
     }
   }

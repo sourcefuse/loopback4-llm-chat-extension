@@ -7,7 +7,6 @@ import {
   post,
   requestBody,
 } from '@loopback/rest';
-import {BaseRetriever} from '@langchain/core/retrievers';
 import {
   CONTENT_TYPE,
   IAuthUserWithPermissions,
@@ -21,28 +20,25 @@ import {
   AuthenticationBindings,
 } from 'loopback4-authentication';
 import {authorize} from 'loopback4-authorization';
-import {VectorStore} from '@langchain/core/vectorstores';
 import {AiIntegrationBindings} from '../../../keys';
+import {IVectorStore} from '../../../types';
 import {PermissionKey} from '../../../permissions';
 import {QueryTemplateDTO, TemplatePlaceholderDTO} from '../models';
-import {
-  DbQueryStoredTypes,
-  IQueryTemplateStore,
-  QueryTemplateMetadata,
-} from '../types';
+import {DbQueryStoredTypes, IQueryTemplateStore} from '../types';
 import {DbQueryAIExtensionBindings} from '../keys';
 import {SchemaStore} from '../services/schema.store';
+import {TemplateSearchService} from '../../../mastra/db-query/services/template-search.service';
 
 export class TemplateController {
   constructor(
-    @inject(AiIntegrationBindings.VectorStore)
-    private readonly vectorStore: VectorStore,
+    @inject(AiIntegrationBindings.AiSdkVectorStore)
+    private readonly vectorStore: IVectorStore,
     @inject(AuthenticationBindings.CURRENT_USER)
     private readonly user: IAuthUserWithPermissions,
     @service(SchemaStore)
     private readonly schemaStore: SchemaStore,
-    @inject(DbQueryAIExtensionBindings.TemplateCache)
-    private readonly templateRetriever: BaseRetriever<QueryTemplateMetadata>,
+    @service(TemplateSearchService)
+    private readonly templateSearchService: TemplateSearchService,
     @inject(DbQueryAIExtensionBindings.TemplateStore, {optional: true})
     private readonly templateStore: IQueryTemplateStore | undefined,
   ) {}
@@ -155,7 +151,7 @@ export class TemplateController {
   ) {
     // Similarity-ranked search when query is provided
     if (query) {
-      const docs = await this.templateRetriever.invoke(query);
+      const docs = await this.templateSearchService.search(query);
       return docs.map(doc => ({
         id: doc.metadata.templateId,
         prompt: doc.pageContent,

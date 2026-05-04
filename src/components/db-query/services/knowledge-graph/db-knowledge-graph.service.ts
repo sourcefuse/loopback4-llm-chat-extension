@@ -1,8 +1,9 @@
-import {RunnableSequence} from '@langchain/core/runnables';
+import {generateText} from 'ai';
+import {embedMany} from 'ai';
 import {BindingScope, inject, injectable} from '@loopback/core';
 import {AnyObject} from '@loopback/repository';
 import {AiIntegrationBindings} from '../../../../keys';
-import {EmbeddingProvider, RuntimeLLMProvider} from '../../../../types';
+import {AiSdkEmbeddingModel, LLMProvider} from '../../../../types';
 import {stripThinkingTokens} from '../../../../utils';
 import {DbQueryAIExtensionBindings} from '../../keys';
 import {DatabaseSchema, DbQueryConfig, TableSchema} from '../../types';
@@ -34,10 +35,10 @@ export class DbKnowledgeGraphService implements KnowledgeGraph<
   private maxClusterSize: number; // Max size of clusters to consider for concept extraction
 
   constructor(
-    @inject(AiIntegrationBindings.CheapLLM)
-    private readonly llm: RuntimeLLMProvider,
-    @inject(AiIntegrationBindings.EmbeddingModel)
-    private readonly embeddingModel: EmbeddingProvider,
+    @inject(AiIntegrationBindings.AiSdkCheapLLM)
+    private readonly llm: LLMProvider,
+    @inject(AiIntegrationBindings.AiSdkEmbeddingModel)
+    private readonly embeddingModel: AiSdkEmbeddingModel,
     @inject(DbQueryAIExtensionBindings.Config)
     private readonly config: DbQueryConfig,
   ) {
@@ -264,12 +265,14 @@ export class DbKnowledgeGraphService implements KnowledgeGraph<
   }
 
   private async generateEmbedding(text: string): Promise<number[]> {
-    return this.embeddingModel.embedDocuments([text]).then(embeddings => {
-      if (embeddings.length === 0 || !embeddings[0]) {
-        throw new Error('Failed to generate embedding');
-      }
-      return embeddings[0];
+    const {embeddings} = await embedMany({
+      model: this.embeddingModel,
+      values: [text],
     });
+    if (embeddings.length === 0 || !embeddings[0]) {
+      throw new Error('Failed to generate embedding');
+    }
+    return embeddings[0];
   }
 
   // Smart concept extraction using clustering
@@ -405,8 +408,11 @@ The output should be JUST a valid JSON and no other markdown or formatting text.
 Focus on the core business concept or data domain. AGAIN, ensure the output is a valid JSON object with no additional text or formatting that can be parsed directly.`;
 
     try {
-      const chain = RunnableSequence.from([this.llm, stripThinkingTokens]);
-      const response = await chain.invoke([{role: 'user', content: prompt}]);
+      const {text} = await generateText({
+        model: this.llm,
+        messages: [{role: 'user', content: prompt}],
+      });
+      const response = stripThinkingTokens(text);
 
       debug(`Extracted concept for cluster ${clusterIndex}:`, response);
       const concept = JSON.parse(response);

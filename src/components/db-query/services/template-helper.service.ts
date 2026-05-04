@@ -1,8 +1,7 @@
-import {PromptTemplate} from '@langchain/core/prompts';
-import {RunnableSequence} from '@langchain/core/runnables';
+import {generateText} from 'ai';
 import {inject} from '@loopback/core';
 import {AiIntegrationBindings} from '../../../keys';
-import {RuntimeLLMProvider} from '../../../types';
+import {LLMProvider} from '../../../types';
 import {stripThinkingTokens} from '../../../utils';
 import {
   DatabaseSchema,
@@ -10,7 +9,7 @@ import {
   QueryTemplateMetadata,
   TemplatePlaceholder,
 } from '../types';
-import {RunnableConfig} from '../../../graphs';
+import {RunnableConfig} from '../../../types/tool';
 
 const MAX_TEMPLATE_RECURSION_DEPTH = 3;
 
@@ -21,24 +20,28 @@ type ResolvedTemplate = {
 
 export class TemplateHelper {
   constructor(
-    @inject(AiIntegrationBindings.CheapLLM)
-    private readonly llm: RuntimeLLMProvider,
+    @inject(AiIntegrationBindings.AiSdkCheapLLM)
+    private readonly llm: LLMProvider,
   ) {}
 
-  extractionPrompt = PromptTemplate.fromTemplate(`
-<instructions>
+  private buildExtractionPrompt(
+    prompt: string,
+    template: string,
+    placeholders: string,
+  ): string {
+    return `<instructions>
 You are an expert at extracting parameter values from natural language prompts.
 Given a user prompt, a SQL template, and a list of placeholders with their descriptions and types, extract the value for each placeholder from the prompt.
 For sql_expression placeholders, generate a valid SQL fragment that fits the position of the placeholder in the template.
 </instructions>
 <user-prompt>
-{prompt}
+${prompt}
 </user-prompt>
 <sql-template>
-{template}
+${template}
 </sql-template>
 <placeholders>
-{placeholders}
+${placeholders}
 </placeholders>
 <output-format>
 Return each extracted value as an XML tag where the tag name is the placeholder name.
@@ -51,7 +54,8 @@ Rules per type:
 - sql_expression: Return a complete, valid SQL fragment with proper SQL syntax including quotes where needed. Example: <date_filter>created_at > '2024-01-01'</date_filter>
 
 Do not return any other text or explanation, just the XML tags.
-</output-format>`);
+</output-format>`;
+  }
 
   async extractPlaceholderValues(
     placeholders: TemplatePlaceholder[],
@@ -60,12 +64,6 @@ Do not return any other text or explanation, just the XML tags.
     config: RunnableConfig,
     schema?: DatabaseSchema,
   ): Promise<Record<string, string | null>> {
-    const chain = RunnableSequence.from([
-      this.extractionPrompt,
-      this.llm,
-      stripThinkingTokens,
-    ]);
-
     const placeholderDescriptions = placeholders
       .map(p => {
         let desc = `- ${p.name} (type: ${p.type}): ${p.description}`;
@@ -76,16 +74,22 @@ Do not return any other text or explanation, just the XML tags.
       })
       .join('\n');
 
-    const response = await chain.invoke(
-      {
-        prompt,
-        template: sqlTemplate,
-        placeholders: placeholderDescriptions,
-      },
-      config,
-    );
+    const {text} = await generateText({
+      model: this.llm,
+      messages: [
+        {
+          role: 'user',
+          content: this.buildExtractionPrompt(
+            prompt,
+            sqlTemplate,
+            placeholderDescriptions,
+          ),
+        },
+      ],
+      abortSignal: config.signal,
+    });
 
-    return this._parseXmlValues(response, placeholders);
+    return this._parseXmlValues(stripThinkingTokens(text), placeholders);
   }
 
   private _getColumnContext(

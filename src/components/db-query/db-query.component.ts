@@ -12,38 +12,20 @@ import {
 import {AnyObject} from '@loopback/repository';
 import {DataSetController, TemplateController} from './controller';
 import {DatasetServiceComponent} from './dataset-service.component';
-import {DbQueryGraph} from './db-query.graph';
 import {DbQueryAIExtensionBindings} from './keys';
-import {
-  CheckCacheNode,
-  CheckPermissionsNode,
-  ClassifyChangeNode,
-  FixQueryNode,
-  CheckTemplatesNode,
-  GenerateChecklistNode,
-  GenerateDescriptionNode,
-  FailedNode,
-  GetColumnsNode,
-  GetTablesNode,
-  IsImprovementNode,
-  SaveDataSetNode,
-  SemanticValidatorNode,
-  SqlGenerationNode,
-  SyntacticValidatorNode,
-  VerifyChecklistNode,
-} from './nodes';
 import {TableSeedObserver} from './observers';
-import {DatasetRetriever, TemplateRetriever} from './providers';
 import {DataSetHelper, DbSchemaHelperService, TemplateHelper} from './services';
 import {PermissionHelper} from './services/permission-helper.service';
 import {SchemaStore} from './services/schema.store';
 import {TableSearchService} from './services/search/table-search.service';
-import {
-  AskAboutDatasetTool,
-  GetDataAsDatasetTool,
-  ImproveDatasetTool,
-} from './tools';
+import {GetDataAsDatasetTool, ImproveDatasetTool} from './tools';
 import {PgWithRlsConnector} from './connectors/pg';
+import {MastraDbQueryWorkflow} from '../../mastra/db-query';
+import {
+  DatasetSearchService,
+  MastraTemplateHelperService,
+  TemplateSearchService,
+} from '../../mastra/db-query/services';
 
 export class DbQueryComponent implements Component {
   services: ServiceOrProviderClass[] | undefined;
@@ -54,10 +36,7 @@ export class DbQueryComponent implements Component {
   lifeCycleObservers: Constructor<LifeCycleObserver>[] | undefined;
   constructor() {
     this.controllers = [DataSetController, TemplateController];
-    this.providers = {
-      [DbQueryAIExtensionBindings.QueryCache.key]: DatasetRetriever,
-      [DbQueryAIExtensionBindings.TemplateCache.key]: TemplateRetriever,
-    };
+    this.providers = {};
     this.bindings = [
       createBindingFromClass(PgWithRlsConnector, {
         key: DbQueryAIExtensionBindings.Connector.key,
@@ -73,29 +52,15 @@ export class DbQueryComponent implements Component {
       SchemaStore,
       TableSearchService,
       TemplateHelper,
-      // graph
-      DbQueryGraph,
+      // Mastra workflow (Phase 3: AI SDK-based nodes, no LangChain)
+      MastraDbQueryWorkflow,
+      // Mastra search services (replace LangChain BaseRetriever pattern)
+      DatasetSearchService,
+      TemplateSearchService,
+      MastraTemplateHelperService,
       // tools
-      AskAboutDatasetTool,
       GetDataAsDatasetTool,
       ImproveDatasetTool,
-      // nodes
-      IsImprovementNode,
-      GetTablesNode,
-      CheckPermissionsNode,
-      SqlGenerationNode,
-      SyntacticValidatorNode,
-      SemanticValidatorNode,
-      FailedNode,
-      SaveDataSetNode,
-      CheckCacheNode,
-      ClassifyChangeNode,
-      FixQueryNode,
-      GenerateChecklistNode,
-      GenerateDescriptionNode,
-      VerifyChecklistNode,
-      GetColumnsNode,
-      CheckTemplatesNode,
     ];
     this.components = [DatasetServiceComponent];
   }

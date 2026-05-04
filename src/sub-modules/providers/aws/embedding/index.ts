@@ -1,1 +1,2 @@
-export * from './bedrock-embedding.provider';
+export * from './bedrock-embedding-sdk.provider';
+export {BedrockEmbeddingSdk as BedrockEmbedding} from './bedrock-embedding-sdk.provider';

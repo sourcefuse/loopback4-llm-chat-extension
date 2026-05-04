@@ -4,7 +4,7 @@ import {
   TOOL_NAME,
   TOOL_TAG,
 } from '../constant';
-import {IGraphNode, IGraphTool} from '../graphs/types';
+import {IGraphNode, IGraphTool} from '../types/tool';
 import {AiIntegrationBindings} from '../keys';
 import {AnyObject} from '@loopback/repository';
 import {Context, inject, injectable, BindingScope} from '@loopback/core';

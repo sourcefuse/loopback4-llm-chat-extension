@@ -4,7 +4,7 @@ import {get, param} from '@loopback/rest';
 import {OPERATION_SECURITY_SPEC} from '@sourceloop/core';
 import {authenticate, STRATEGY} from 'loopback4-authentication';
 import {authorize} from 'loopback4-authorization';
-import {ChatStore} from '../graphs/chat/chat.store';
+import {ChatStore} from '../services/chat.store';
 import {Chat} from '../models';
 import {PermissionKey} from '../permissions';
 

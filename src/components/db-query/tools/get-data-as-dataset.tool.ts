@@ -2,8 +2,11 @@ import {inject, service} from '@loopback/core';
 import {AnyObject} from '@loopback/repository';
 import {z} from 'zod';
 import {graphTool} from '../../../decorators';
-import {IGraphTool, IRuntimeTool, ToolStatus} from '../../../graphs';
-import {DbQueryGraph} from '../db-query.graph';
+import {IGraphTool, IRuntimeTool, ToolStatus} from '../../../types/tool';
+import {
+  MastraDbQueryWorkflow,
+  MastraDbQueryContext,
+} from '../../../mastra/db-query';
 import {DbQueryConfig, Errors, GenerationError} from '../types';
 import {DbQueryAIExtensionBindings} from '../keys';
 import {DEFAULT_MAX_READ_ROWS_FOR_AI} from '../constant';
@@ -36,10 +39,10 @@ export class GetDataAsDatasetTool implements IGraphTool {
       ),
   });
   constructor(
-    @service(DbQueryGraph)
-    private readonly queryPipeline: DbQueryGraph,
     @inject(DbQueryAIExtensionBindings.Config)
     private readonly config: DbQueryConfig,
+    @service(MastraDbQueryWorkflow)
+    private readonly mastraWorkflow: MastraDbQueryWorkflow,
   ) {}
 
   getValue(result: Record<string, string>): string {
@@ -64,25 +67,30 @@ export class GetDataAsDatasetTool implements IGraphTool {
   }
 
   /**
-   * Creates a runtime-agnostic tool for dataset generation.
+   * Creates a Mastra-compatible `IRuntimeTool` that executes the imperative workflow.
    */
   async createTool(): Promise<IRuntimeTool> {
-    const graph = await this.queryPipeline.build();
-    const schema = z.object({
-      prompt: z
-        .string()
-        .describe(
-          `Prompt from the user that will be used for generating an SQL query and create a dataset from it.`,
-        ),
-    }) as AnyObject[string];
-    return graph.asTool({
+    return {
       name: this.key,
-      description: `Query tool for generating SQL queries for a users request. Use it only when the user needs raw tabular data from the database.
-                Do not use this tool if the user's request involves trends, growth, decline, comparisons, distributions, patterns, or any form of analytical insight — use the 'generate-visualization' tool instead.
-                Note that it does not return the query, instead only a dataset ID that is not relevant to the user.
-                It internally fires an event that renders a grid for the dataset on the UI for the user to see.`,
-      schema,
-    });
+      description: this.description,
+      schema: this.inputSchema,
+      invoke: async (
+        input: unknown,
+        opts?: {
+          writer?: MastraDbQueryContext['writer'];
+          signal?: AbortSignal;
+        },
+      ) => {
+        const {prompt} = input as {prompt: string};
+        return this.mastraWorkflow.run(
+          {prompt},
+          {
+            writer: opts?.writer,
+            signal: opts?.signal,
+          },
+        );
+      },
+    } as IRuntimeTool;
   }
 
   /**

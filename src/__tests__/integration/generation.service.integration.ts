@@ -1,4 +1,3 @@
-import {IterableReadableStream} from '@langchain/core/utils/stream';
 import {Request, Response} from '@loopback/rest';
 import {
   createStubInstance,
@@ -7,7 +6,7 @@ import {
   StubbedInstanceWithSinonAccessor,
 } from '@loopback/testlab';
 import {PassThrough} from 'stream';
-import {ChatGraph, LLMStreamEvent} from '../../graphs';
+import {LLMStreamEvent} from '../../types/events';
 import {MastraChatAgent} from '../../mastra';
 import {GenerationService} from '../../services';
 import {HttpTransport, SSETransport} from '../../transports';
@@ -16,12 +15,10 @@ describe(`GenerationService Integration`, () => {
   let service: GenerationService;
   let dummyRequest: Request;
   let dummyResponse: Response;
-  let graph: StubbedInstanceWithSinonAccessor<ChatGraph>;
   let mastraAgent: StubbedInstanceWithSinonAccessor<MastraChatAgent>;
 
   describe('with SSETransport', () => {
     beforeEach(() => {
-      graph = createStubInstance(ChatGraph);
       mastraAgent = createStubInstance(MastraChatAgent);
       dummyResponse = {
         write: sinon.stub(),
@@ -33,12 +30,12 @@ describe(`GenerationService Integration`, () => {
         once: sinon.stub(),
       } as unknown as Request;
       const transport = new SSETransport(dummyResponse, dummyRequest);
-      service = new GenerationService(graph, mastraAgent, transport, undefined);
+      service = new GenerationService(mastraAgent, transport, undefined);
     });
     it('should handle generation request and return response', async () => {
       const dummyStream = new PassThrough({objectMode: true});
-      graph.stubs.execute.callsFake(async () => {
-        return dummyStream as unknown as IterableReadableStream<LLMStreamEvent>;
+      mastraAgent.stubs.execute.callsFake(async function* () {
+        yield* dummyStream as unknown as AsyncIterable<LLMStreamEvent>;
       });
       dummyStream.push({
         type: 'text',
@@ -90,8 +87,8 @@ describe(`GenerationService Integration`, () => {
 
     it('should handle error gracyfully', async () => {
       const dummyStream = new PassThrough({objectMode: true});
-      graph.stubs.execute.callsFake(async () => {
-        return dummyStream as unknown as IterableReadableStream<LLMStreamEvent>;
+      mastraAgent.stubs.execute.callsFake(async function* () {
+        yield* dummyStream as unknown as AsyncIterable<LLMStreamEvent>;
       });
       dummyStream.push({
         type: 'text',
@@ -142,7 +139,6 @@ describe(`GenerationService Integration`, () => {
 
   describe('with HttpTransport', () => {
     beforeEach(() => {
-      graph = createStubInstance(ChatGraph);
       mastraAgent = createStubInstance(MastraChatAgent);
       dummyResponse = {
         write: sinon.stub(),
@@ -154,12 +150,12 @@ describe(`GenerationService Integration`, () => {
         once: sinon.stub(),
       } as unknown as Request;
       const transport = new HttpTransport(dummyResponse, dummyRequest);
-      service = new GenerationService(graph, mastraAgent, transport, undefined);
+      service = new GenerationService(mastraAgent, transport, undefined);
     });
     it('should handle generation request and return response', async () => {
       const dummyStream = new PassThrough({objectMode: true});
-      graph.stubs.execute.callsFake(async () => {
-        return dummyStream as unknown as IterableReadableStream<LLMStreamEvent>;
+      mastraAgent.stubs.execute.callsFake(async function* () {
+        yield* dummyStream as unknown as AsyncIterable<LLMStreamEvent>;
       });
       dummyStream.push({
         type: 'text',
@@ -205,8 +201,8 @@ describe(`GenerationService Integration`, () => {
 
     it('should handle error gracyfully', async () => {
       const dummyStream = new PassThrough({objectMode: true});
-      graph.stubs.execute.callsFake(async () => {
-        return dummyStream as unknown as IterableReadableStream<LLMStreamEvent>;
+      mastraAgent.stubs.execute.callsFake(async function* () {
+        yield* dummyStream as unknown as AsyncIterable<LLMStreamEvent>;
       });
       dummyStream.push({
         type: 'text',

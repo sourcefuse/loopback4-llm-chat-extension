@@ -1,8 +1,8 @@
-import {VectorStore} from '@langchain/core/vectorstores';
 import {inject, service} from '@loopback/core';
 import {Filter} from '@loopback/repository';
 import {HttpErrors} from '@loopback/rest';
 import {AiIntegrationBindings} from '../../../keys';
+import {IVectorStore} from '../../../types';
 import {DbQueryAIExtensionBindings} from '../keys';
 import {DbQueryStoredTypes, IDataSet, IDataSetStore} from '../types';
 import {PermissionHelper} from './permission-helper.service';
@@ -14,8 +14,8 @@ export class DataSetHelper {
     private readonly store: IDataSetStore,
     @service(PermissionHelper)
     private readonly permissionHelper: PermissionHelper,
-    @inject(AiIntegrationBindings.VectorStore)
-    private readonly vectorStore: VectorStore,
+    @inject(AiIntegrationBindings.AiSdkVectorStore)
+    private readonly vectorStore: IVectorStore,
   ) {}
 
   async checkPermissions(datasetId: string) {

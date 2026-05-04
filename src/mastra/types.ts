@@ -1,5 +1,3 @@
-import {AnyObject} from '@loopback/repository';
-
 /**
  * A single message in the format accepted by Mastra (compatible with AI SDK `CoreMessage`).
  *

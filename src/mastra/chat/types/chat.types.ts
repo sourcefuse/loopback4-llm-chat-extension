@@ -1,4 +1,4 @@
-import {LLMStreamEvent} from '../../../graphs/event.types';
+import {LLMStreamEvent} from '../../../types/events';
 import {TokenMetadata} from '../../../types';
 
 /**

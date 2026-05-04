@@ -1,8 +1,8 @@
-import {BaseMessage, trimMessages} from '@langchain/core/messages';
 import {DEFAULT_MAX_TOKEN_COUNT} from '../../../constant';
 import {approxTokenCounter} from '../../../utils';
+import {MastraAgentMessage} from '../../types';
 
-const debug = require('debug')('ai-integration:mastra:chat-agent');
+const debug = require('debug')('mastra:chat:context-compression');
 
 /**
  * Mirrors `ContextCompressionNode`: trims the message list to `maxTokenCount`
@@ -18,9 +18,9 @@ const debug = require('debug')('ai-integration:mastra:chat-agent');
  *                      `MAX_TOKEN_COUNT` env var or the package default.
  */
 export async function compressContextIfNeeded(
-  messages: BaseMessage[],
+  messages: MastraAgentMessage[],
   maxTokenCount: number | undefined,
-): Promise<BaseMessage[]> {
+): Promise<MastraAgentMessage[]> {
   const limit = +(
     maxTokenCount ??
     process.env.MAX_TOKEN_COUNT ??
@@ -30,18 +30,43 @@ export async function compressContextIfNeeded(
     (acc, m) => acc + approxTokenCounter(m.content),
     0,
   );
-  if (tokenCount > limit) {
-    debug(
-      'Compressing context before agent call: %d tokens > limit %d',
-      tokenCount,
-      limit,
-    );
-    return trimMessages(messages, {
-      maxTokens: limit,
-      strategy: 'last',
-      tokenCounter: approxTokenCounter,
-      includeSystem: true,
-    });
+
+  debug('Original messages: %d', messages.length);
+
+  if (tokenCount <= limit) {
+    return messages;
   }
-  return messages;
+
+  debug(
+    'Compressing context before agent call: %d tokens > limit %d',
+    tokenCount,
+    limit,
+  );
+
+  // Always keep the system message, then fill remaining budget with the most
+  // recent messages (reverse iteration = newest first).
+  const systemMessages = messages.filter(m => m.role === 'system');
+  const nonSystemMessages = messages.filter(m => m.role !== 'system');
+
+  const systemTokens = systemMessages.reduce(
+    (acc, m) => acc + approxTokenCounter(m.content),
+    0,
+  );
+  let remaining = limit - systemTokens;
+  const kept: MastraAgentMessage[] = [];
+
+  for (let i = nonSystemMessages.length - 1; i >= 0; i--) {
+    const msg = nonSystemMessages[i];
+    const tokens = approxTokenCounter(msg.content);
+    if (tokens > remaining) break;
+    kept.unshift(msg);
+    remaining -= tokens;
+  }
+
+  const trimmed = [...systemMessages, ...kept];
+
+  debug('Trimmed messages: %d', trimmed.length);
+  debug('Token count: %d', limit - remaining);
+
+  return trimmed;
 }

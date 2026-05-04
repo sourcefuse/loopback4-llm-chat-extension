@@ -1,13 +1,7 @@
-import {BedrockEmbeddings} from '@langchain/aws';
-import {GoogleGenerativeAIEmbeddings} from '@langchain/google-genai';
-import {OllamaEmbeddings} from '@langchain/ollama';
-import {OpenAIEmbeddings} from '@langchain/openai';
-import {LanguageModel} from 'ai';
+import {EmbeddingModel, LanguageModel} from 'ai';
 import {Provider} from '@loopback/core';
 import {AnyObject} from '@loopback/repository';
-import {AIMessage} from '@langchain/core/messages';
-import {RunnableConfig, RunnableInterface} from '@langchain/core/runnables';
-import {IGraphTool} from './graphs/types';
+import {IGraphTool} from './types/tool';
 
 export enum SupportedDBs {
   PostgreSQL = 'PostgreSQL',
@@ -18,7 +12,6 @@ export enum SupportedDBs {
  * Global component configuration consumed by the LoopBack integration component.
  */
 export type AIIntegrationConfig = {
-  runtime?: RuntimeEngine;
   useCustomSequence?: boolean;
   mountCore?: boolean;
   mountFileUtils?: boolean;
@@ -34,11 +27,6 @@ export type AIIntegrationConfig = {
   };
 };
 
-/**
- * Runtime engine selector used for phased migration and rollbacks.
- */
-export type RuntimeEngine = 'langgraph' | 'mastra';
-
 export type FileMessageBuilder = (file: Express.Multer.File) => AnyObject;
 
 /**
@@ -47,61 +35,56 @@ export type FileMessageBuilder = (file: Express.Multer.File) => AnyObject;
 export type LLMProvider = LanguageModel;
 
 /**
- * Legacy LangGraph-compatible LLM contract used by existing graph implementations.
+ * @deprecated Use `AiSdkEmbeddingModel` instead. Kept for backward compatibility.
+ */
+export type EmbeddingProvider = EmbeddingModel;
+
+/**
+ * AI SDK embedding model type for the Mastra execution path.
+ * Zero LangChain dependency — use with `embed()` / `embedMany()` from `'ai'`.
+ * Bind an instance to `AiIntegrationBindings.AiSdkEmbeddingModel`.
+ */
+export type AiSdkEmbeddingModel = EmbeddingModel;
+
+/**
+ * Mastra-path vector store document.
  *
- * The structure intentionally mirrors the methods used by current nodes so concrete
- * LangChain chat models remain assignable without direct class dependencies.
+ * Property names mirror `DocumentInterface` from `@langchain/core/documents` so that
+ * existing Mastra step callers (`doc.pageContent`, `doc.metadata`) need no changes.
  */
-export type LegacyLLMProvider = {
-  bindTools(
-    tools: unknown[],
-  ): RunnableInterface<
-    unknown,
-    AIMessage,
-    RunnableConfig<Record<string, unknown>>
-  >;
-  invoke(input: unknown): Promise<AIMessage>;
-  withStructuredOutput<T extends AnyObject>(
-    schema: unknown,
-  ): RunnableInterface<unknown, T, RunnableConfig<Record<string, unknown>>>;
-  getFile?: FileMessageBuilder;
-} & RunnableInterface<
-  unknown,
-  AIMessage,
-  RunnableConfig<Record<string, unknown>>
->;
-
-/**
- * Adapter contract for converting an AI SDK model into the legacy tool-calling interface
- * while LangGraph execution remains active.
- */
-export interface ILegacyLLMProviderAdapter {
-  toLegacyLLMProvider(): LegacyLLMProvider;
+export interface IVectorStoreDocument<T = Record<string, unknown>> {
+  /** The textual content of the document. */
+  pageContent: string;
+  /** Arbitrary key-value metadata attached to the document. */
+  metadata: T;
 }
 
 /**
- * Runtime-compatible union used by existing LangGraph execution paths during migration.
+ * Mastra-compatible vector store contract — zero LangChain dependency.
+ *
+ * Implemented by `PgVectorSdkStore` for the Mastra execution path.
+ * The LangGraph path continues to use `VectorStore` from `@langchain/core/vectorstores`.
  */
-export type RuntimeLLMProvider = LegacyLLMProvider &
-  Partial<ILegacyLLMProviderAdapter>;
-
-/**
- * Resolves a runtime-compatible provider into a legacy execution contract.
- */
-export function resolveLegacyLLMProvider(
-  provider: RuntimeLLMProvider,
-): LegacyLLMProvider {
-  if (provider.toLegacyLLMProvider) {
-    return provider.toLegacyLLMProvider();
-  }
-  return provider;
+export interface IVectorStore {
+  /**
+   * Persist documents (text + metadata) to the underlying store.
+   * Embeddings are computed internally via the configured AI SDK embedding model.
+   */
+  addDocuments(docs: IVectorStoreDocument[]): Promise<void>;
+  /**
+   * Return the `k` most semantically similar documents to `query`,
+   * optionally filtered by `filter` (matched against document metadata via JSON containment).
+   */
+  similaritySearch<T = Record<string, unknown>>(
+    query: string,
+    k: number,
+    filter?: Record<string, unknown>,
+  ): Promise<IVectorStoreDocument<T>[]>;
+  /**
+   * Delete all documents whose metadata contains every key-value pair in `params.filter`.
+   */
+  delete(params: {filter: Record<string, unknown>}): Promise<void>;
 }
-
-export type EmbeddingProvider =
-  | OpenAIEmbeddings
-  | OllamaEmbeddings
-  | BedrockEmbeddings
-  | GoogleGenerativeAIEmbeddings;
 
 /**
  * Runtime persistence contract used by workflow/checkpoint adapters.

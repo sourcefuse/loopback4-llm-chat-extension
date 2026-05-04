@@ -1,6 +1,6 @@
-import {AIMessage} from '@langchain/core/messages';
-import {LLMResult} from '@langchain/core/outputs';
 import {BindingScope, injectable} from '@loopback/core';
+
+const debug = require('debug')('ai-integration:mastra:token-counter');
 
 @injectable({scope: BindingScope.REQUEST})
 export class TokenCounter {
@@ -13,41 +13,35 @@ export class TokenCounter {
       outputTokens: number;
     }
   > = new Map();
-  private runMap: Map<string, string> = new Map();
 
   clear() {
     this.inputs = 0;
     this.outputs = 0;
     this.countMap.clear();
-    this.runMap.clear();
   }
 
-  handleLlmStart(runId: string, modelName: string): void {
-    this.runMap.set(runId, modelName);
+  // ── Mastra path (AI SDK usage field) ────────────────────────────────────
+
+  /**
+   * Accumulate token counts directly from an AI SDK `usage` object.
+   *
+   * Called by Mastra step functions after every `generateText()` /
+   * `generateObject()` call — no LangChain callback required.
+   *
+   * @param inputTokens  - `usage.promptTokens` from the AI SDK response.
+   * @param outputTokens - `usage.completionTokens` from the AI SDK response.
+   * @param model        - Model identifier (e.g. `deps.llm.modelId`).
+   */
+  accumulate(inputTokens: number, outputTokens: number, model: string): void {
+    const prev = this.countMap.get(model) ?? {inputTokens: 0, outputTokens: 0};
+    this.inputs += inputTokens;
+    this.outputs += outputTokens;
+    prev.inputTokens += inputTokens;
+    prev.outputTokens += outputTokens;
+    this.countMap.set(model, prev);
+    debug('token usage captured', {inputTokens, outputTokens, model});
   }
 
-  handleLlmEnd(runId: string, message: LLMResult) {
-    const llmName = this.runMap.get(runId) ?? 'unknown';
-    this.runMap.delete(runId);
-    const usageMetadata = (
-      message.generations[0][0] as unknown as {message: AIMessage}
-    ).message.usage_metadata;
-    const prev = this.countMap.get(llmName) ?? {
-      inputTokens: 0,
-      outputTokens: 0,
-    };
-    if (usageMetadata) {
-      this.inputs += usageMetadata.input_tokens ?? 0;
-      this.outputs += usageMetadata.output_tokens ?? 0;
-      prev.inputTokens += usageMetadata.input_tokens ?? 0;
-      prev.outputTokens += usageMetadata.output_tokens ?? 0;
-      this.countMap.set(llmName, prev);
-    }
-    return {
-      inputTokens: this.inputs,
-      outputTokens: this.outputs,
-    };
-  }
   getCounts() {
     return {
       inputs: this.inputs,

@@ -1,6 +1,5 @@
 import {BindingScope, inject, injectable, service} from '@loopback/core';
 import {MastraChatAgent} from '../mastra';
-import {ChatGraph} from '../graphs/chat/chat.graph';
 import {AiIntegrationBindings} from '../keys';
 import {ITransport} from '../transports/types';
 import {AIIntegrationConfig} from '../types';
@@ -9,8 +8,6 @@ import {ILimitStrategy} from './limit-strategies/types';
 @injectable({scope: BindingScope.REQUEST})
 export class GenerationService {
   constructor(
-    @service(ChatGraph)
-    private readonly chatGraph: ChatGraph,
     @service(MastraChatAgent)
     private readonly mastraChatAgent: MastraChatAgent,
     @inject(AiIntegrationBindings.Transport)
@@ -29,29 +26,7 @@ export class GenerationService {
       abortController.abort();
     });
 
-    if (this.aiConfig?.runtime === 'mastra') {
-      await this._runMastraFlow(prompt, files, abortController.signal, id);
-    } else {
-      await this._runLangGraphFlow(prompt, files, abortController.signal, id);
-    }
-  }
-
-  private async _runLangGraphFlow(
-    prompt: string,
-    files: Express.Multer.File[],
-    abort: AbortSignal,
-    id?: string,
-  ) {
-    const stream = await this.chatGraph.execute(prompt, files, abort, id);
-    try {
-      for await (const chunk of stream) {
-        await this.transport.send(chunk);
-      }
-      await this.transport.end();
-    } catch (error) {
-      await this.transport.end(error);
-      throw error;
-    }
+    await this._runMastraFlow(prompt, files, abortController.signal, id);
   }
 
   private async _runMastraFlow(

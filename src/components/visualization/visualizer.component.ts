@@ -8,15 +8,13 @@ import {
   ServiceOrProviderClass,
 } from '@loopback/core';
 import {AnyObject} from '@loopback/repository';
-import {VisualizationGraph} from './visualization.graph';
-import {
-  CallQueryGenerationNode,
-  GetDatasetDataNode,
-  RenderVisualizationNode,
-  SelectVisualizationNode,
-} from './nodes';
 import {GenerateVisualizationTool} from './tools/generate-visualization.tool';
-import {PieVisualizer, BarVisualizer, LineVisualizer} from './visualizers';
+import {
+  MastraVisualizationWorkflow,
+  MastraBarVisualizerService,
+  MastraLineVisualizerService,
+  MastraPieVisualizerService,
+} from '../../mastra/visualization';
 
 export class VisualizerComponent implements Component {
   services: ServiceOrProviderClass[] | undefined;
@@ -32,19 +30,16 @@ export class VisualizerComponent implements Component {
     this.bindings = [];
     this.lifeCycleObservers = [];
     this.services = [
-      // graph
-      VisualizationGraph,
       // tools
       GenerateVisualizationTool,
-      // nodes
-      GetDatasetDataNode,
-      SelectVisualizationNode,
-      RenderVisualizationNode,
-      CallQueryGenerationNode,
-      // visualizers
-      PieVisualizer,
-      BarVisualizer,
-      LineVisualizer,
+
+      // ── Mastra path ──────────────────────────────────────────────────────
+      // Workflow orchestrator
+      MastraVisualizationWorkflow,
+      // Visualizer services (use AI SDK generateObject())
+      MastraBarVisualizerService,
+      MastraLineVisualizerService,
+      MastraPieVisualizerService,
     ];
     this.components = [];
   }

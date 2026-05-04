@@ -15,7 +15,7 @@ import {
   LLMStreamTokenCountEvent,
   LLMStreamToolStatusEvent,
   ToolStatus,
-} from '../../../graphs';
+} from '../../../types/events';
 import {generateMarkdownTable, getModelNameFromEnv} from './utils';
 import {writeFileSync} from 'fs';
 import {AnyObject} from '@loopback/repository';

@@ -1,7 +1,7 @@
 import {BindingScope} from '@loopback/core';
 import {Client, expect} from '@loopback/testlab';
 import {DbQueryAIExtensionBindings, IDataSetStore} from '../../components';
-import {LLMStreamEvent, LLMStreamEventType} from '../../graphs';
+import {LLMStreamEvent, LLMStreamEventType} from '../../types/events';
 import {AiIntegrationBindings} from '../../keys';
 import {PermissionKey} from '../../permissions';
 import {HttpTransport} from '../../transports';

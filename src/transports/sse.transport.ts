@@ -1,7 +1,7 @@
 import {BindingScope, inject, injectable} from '@loopback/core';
 import {HttpErrors, Request, Response, RestBindings} from '@loopback/rest';
 import {STATUS_CODE} from '@sourceloop/core';
-import {LLMStreamEvent, LLMStreamEventType} from '../graphs/event.types';
+import {LLMStreamEvent, LLMStreamEventType} from '../types/events';
 import {ITransport} from './types';
 
 const debug = require('debug')('ai-integration:log-events');

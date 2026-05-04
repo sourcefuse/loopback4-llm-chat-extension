@@ -1,17 +1,15 @@
-import {
-  BaseMessage,
-  HumanMessage,
-  SystemMessage,
-} from '@langchain/core/messages';
-import {ChatStore} from '../../../graphs/chat/chat.store';
+import {ChatStore, SavedMessage} from '../../../services/chat.store';
 import {Message} from '../../../models';
+import {MastraAgentMessage} from '../../types';
+
+const debug = require('debug')('ai-integration:mastra:chat:init-session');
 
 /**
  * Result returned by `initSession`.
  */
 export interface InitSessionResult {
   chatId: string;
-  baseMessages: BaseMessage[];
+  baseMessages: MastraAgentMessage[];
   userMessage: Message;
 }
 
@@ -30,13 +28,16 @@ export async function initSession(
   chatStore: ChatStore,
   systemPrompt: string,
 ): Promise<InitSessionResult> {
+  debug('step start', {id, promptLength: prompt.length});
   const chat = await chatStore.init(prompt, id);
-  const savedUserMessage = await chatStore.addHumanMessage(
-    chat.id,
-    new HumanMessage({content: prompt}),
-  );
+  debug('chat initialised: %s (new=%s)', chat.id, !id);
+  const savedUserMessage = await chatStore.addHumanMessage(chat.id, prompt);
   const history = await formatHistory(chat.messages ?? [], chatStore);
-  const systemMessage = new SystemMessage({content: systemPrompt});
+  const systemMessage: MastraAgentMessage = {
+    role: 'system',
+    content: systemPrompt,
+  };
+  debug('history loaded: %d messages', history.length);
   return {
     chatId: chat.id,
     baseMessages: [systemMessage, ...history],
@@ -45,15 +46,15 @@ export async function initSession(
 }
 
 /**
- * Converts DB `Message` rows back to LangChain `BaseMessage` instances.
+ * Converts DB `Message` rows back to `MastraAgentMessage` instances.
  * Undefined entries (unsupported message roles) are filtered out.
  */
 async function formatHistory(
   dbMessages: Message[],
   chatStore: ChatStore,
-): Promise<BaseMessage[]> {
+): Promise<SavedMessage[]> {
   const converted = await Promise.all(
     dbMessages.map(m => chatStore.toMessage(m)),
   );
-  return converted.filter((m): m is BaseMessage => m !== undefined);
+  return converted.filter((m): m is SavedMessage => m !== undefined);
 }
