@@ -72,6 +72,7 @@ export interface IMastraVisualizer {
    * Generate and return a chart configuration object for the given state.
    * Implementations use AI SDK `generateObject()` with a Zod schema.
    * @param onUsage Optional callback to report token usage for rate limiting.
+   * @param langfuse Optional Langfuse SDK client for generation observability.
    */
   getConfig(
     state: MastraVisualizationState,
@@ -80,6 +81,8 @@ export interface IMastraVisualizer {
       outputTokens: number,
       model: string,
     ) => void,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    langfuse?: any,
   ): Promise<AnyObject>;
 }
 
@@ -110,6 +113,13 @@ export interface MastraVisualizationContext {
    * @param model        - Model identifier string.
    */
   onUsage?: (inputTokens: number, outputTokens: number, model: string) => void;
+  /**
+   * Optional Langfuse SDK client (`LangfuseCore` from `@langfuse/core`).
+   * When present, step functions record each LLM call as a Langfuse generation.
+   * Injected by `MastraVisualizationWorkflow`.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  langfuse?: any;
 }
 
 // ── Workflow input ───────────────────────────────────────────────────────────

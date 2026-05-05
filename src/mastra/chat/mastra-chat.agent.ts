@@ -61,6 +61,7 @@ export class MastraChatAgent {
     files: Express.Multer.File[] | undefined,
     abort: AbortSignal,
     id?: string,
+    directWriter?: (event: LLMStreamEvent) => void,
   ): AsyncGenerator<LLMStreamEvent> {
     files = files ?? [];
     // ── Step 1: InitSession ──────────────────────────────────────────────────
@@ -200,6 +201,7 @@ export class MastraChatAgent {
         chatId,
         chatStore: this.chatStore,
         tokens,
+        directWriter,
       })) {
         yield event;
       }

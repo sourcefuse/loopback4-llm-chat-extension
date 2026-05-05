@@ -1,8 +1,4 @@
 import {BindingKey} from '@loopback/context';
-import {
-  IMastraBridge,
-  MastraRuntimeFactory as MastraRuntimeFactoryType,
-} from './services/mastra-bridge.service';
 import {ITransport} from './transports/types';
 import {
   AIIntegrationConfig,
@@ -135,13 +131,6 @@ export namespace AiIntegrationBindings {
   export const LangfuseMastraClient = BindingKey.create<any>(
     'services.ai-reporting.langfuse-mastra-client',
   );
-  export const MastraBridge = BindingKey.create<IMastraBridge>(
-    'services.ai-reporting.mastra-bridge',
-  );
-  export const MastraRuntimeFactory =
-    BindingKey.create<MastraRuntimeFactoryType>(
-      'services.ai-reporting.mastra-runtime-factory',
-    );
   export const SystemContext = BindingKey.create<string[]>(
     `services.ai-reporting.system-context`,
   );

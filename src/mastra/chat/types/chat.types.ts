@@ -1,4 +1,3 @@
-import {LLMStreamEvent} from '../../../types/events';
 import {TokenMetadata} from '../../../types';
 
 /**
@@ -18,6 +17,4 @@ export interface StepBuffer {
   textChunks: string[];
   toolCalls: Array<{id: string; name: string; args: Record<string, unknown>}>;
   toolResults: Map<string, {result: unknown; toolName: string}>;
-  /** Buffered `Tool` SSE events — emitted at step-finish after the text bubble. */
-  pendingToolEvents: LLMStreamEvent[];
 }

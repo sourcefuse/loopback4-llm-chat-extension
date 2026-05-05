@@ -1,4 +1,6 @@
 import {LLMStreamEvent} from '../../../types/events';
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type LangfuseClient = any;
 
 /**
  * SSE event writer passed from the Mastra chat agent into the DbQuery workflow.
@@ -33,6 +35,13 @@ export interface MastraDbQueryContext {
    * @param model        - Model identifier string (e.g. `llm.modelId`).
    */
   onUsage?: (inputTokens: number, outputTokens: number, model: string) => void;
+  /**
+   * Optional Langfuse SDK client (`LangfuseCore` from `@langfuse/core`).
+   * When present, step functions wrap each `generateText()` / `generateObject()`
+   * call with a Langfuse generation record for observability.
+   * Injected by `MastraDbQueryWorkflow` from `AiIntegrationBindings.LangfuseMastraClient`.
+   */
+  langfuse?: LangfuseClient;
 }
 
 /**

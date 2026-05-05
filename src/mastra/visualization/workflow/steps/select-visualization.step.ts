@@ -118,11 +118,25 @@ export async function selectVisualizationStep(
     .replace('{visualizations}', vizList);
 
   debug('Calling LLM for visualization selection');
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const modelId = (deps.llm as any).modelId ?? 'unknown';
+  const gen = context.langfuse?.generation({
+    name: 'select-visualization',
+    model: modelId,
+    input: prompt,
+  });
   const {text: rawOutput, usage} = await generateText({
     model: deps.llm,
     prompt,
+  }).catch((e: unknown) => {
+    gen?.end({level: 'ERROR', statusMessage: String(e)});
+    throw e;
   });
-  context.onUsage?.(usage.inputTokens ?? 0, usage.outputTokens ?? 0, 'unknown');
+  gen?.end({
+    output: rawOutput,
+    usage: {input: usage.inputTokens ?? 0, output: usage.outputTokens ?? 0},
+  });
+  context.onUsage?.(usage.inputTokens ?? 0, usage.outputTokens ?? 0, modelId);
   debug('token usage captured', {
     promptTokens: usage.inputTokens ?? 0,
     completionTokens: usage.outputTokens ?? 0,

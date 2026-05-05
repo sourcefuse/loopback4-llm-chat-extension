@@ -87,6 +87,13 @@ export async function generateDescriptionStep(
   });
 
   debug('streaming description');
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const modelId = (deps.llm as any).modelId ?? 'unknown';
+  const gen = context.langfuse?.generation({
+    name: 'generate-description',
+    model: modelId,
+    input: [{role: 'user', content}],
+  });
   const result = streamText({
     model: deps.llm,
     messages: [{role: 'user', content}],
@@ -104,7 +111,11 @@ export async function generateDescriptionStep(
   }
 
   const usage = await result.usage;
-  context.onUsage?.(usage.inputTokens ?? 0, usage.outputTokens ?? 0, 'unknown');
+  gen?.end({
+    output: accumulated,
+    usage: {input: usage.inputTokens ?? 0, output: usage.outputTokens ?? 0},
+  });
+  context.onUsage?.(usage.inputTokens ?? 0, usage.outputTokens ?? 0, modelId);
   debug('token usage captured', {
     promptTokens: usage.inputTokens ?? 0,
     completionTokens: usage.outputTokens ?? 0,

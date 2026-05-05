@@ -65,6 +65,8 @@ export class MastraPieVisualizerService implements IMastraVisualizer {
       outputTokens: number,
       model: string,
     ) => void,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    langfuse?: any,
   ): Promise<AnyObject> {
     if (!state.sql || !state.queryDescription || !state.prompt) {
       throw new Error(
@@ -93,28 +95,37 @@ ${state.queryDescription}
 ${state.prompt}
 </user-prompt>`;
 
-    // Cast to avoid TS2589 (deep overload inference in AI SDK v6)
+    // (generateObject as any) avoids TS2589 deep-overload-inference with Zod schemas.
+    // Return type is narrowed immediately to keep downstream types safe.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const result = (await (generateObject as any)({
+    const modelId = (this.llm as any).modelId ?? 'unknown';
+    const gen = langfuse?.generation({
+      name: 'pie-visualizer',
+      model: modelId,
+      input: userPrompt,
+    });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const {object, usage} = (await (generateObject as any)({
       model: this.llm,
+      output: 'object',
       schema: PIE_CONFIG_SCHEMA,
       system: systemPrompt,
       prompt: userPrompt,
     })) as {
-      object: {labelColumn: string; valueColumn: string};
-      usage: {inputTokens: number; outputTokens: number};
+      object: AnyObject;
+      usage: {inputTokens?: number; outputTokens?: number};
     };
-
-    onUsage?.(
-      result.usage.inputTokens ?? 0,
-      result.usage.outputTokens ?? 0,
-      'unknown',
-    );
-    debug('token usage captured', {
-      promptTokens: result.usage.inputTokens ?? 0,
-      completionTokens: result.usage.outputTokens ?? 0,
+    gen?.end({
+      output: object,
+      usage: {input: usage.inputTokens ?? 0, output: usage.outputTokens ?? 0},
     });
-    debug('Pie chart config generated: %o', result.object);
-    return result.object as AnyObject;
+
+    onUsage?.(usage.inputTokens ?? 0, usage.outputTokens ?? 0, modelId);
+    debug('token usage captured', {
+      promptTokens: usage.inputTokens ?? 0,
+      completionTokens: usage.outputTokens ?? 0,
+    });
+    debug('Pie chart config generated: %o', object);
+    return object as AnyObject;
   }
 }

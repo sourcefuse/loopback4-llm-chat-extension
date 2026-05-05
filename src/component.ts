@@ -44,8 +44,6 @@ import {MastraChatAgent} from './mastra';
 import {
   ChatCountStrategy,
   GenerationService,
-  MastraBridgeObserver,
-  MastraBridgeService,
   TokenCountPerUserStrategy,
   TokenCountStrategy,
 } from './services';
@@ -72,10 +70,6 @@ export class AiIntegrationsComponent implements Component {
       createBindingFromClass(RedisCache, {
         key: AiIntegrationBindings.Cache.key,
       }),
-      createBindingFromClass(MastraBridgeService, {
-        key: AiIntegrationBindings.MastraBridge.key,
-        defaultScope: BindingScope.SINGLETON,
-      }),
     ];
 
     this.providers = {
@@ -93,7 +87,7 @@ export class AiIntegrationsComponent implements Component {
     ];
 
     this.controllers = [GenerationController, ChatController];
-    this.lifeCycleObservers = [MastraBridgeObserver];
+    this.lifeCycleObservers = [];
     this.models = [Chat, Message, CacheModel];
     this.repositories = [
       ChatRepository,

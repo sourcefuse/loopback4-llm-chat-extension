@@ -51,7 +51,11 @@ export async function renderVisualizationStep(
   });
 
   debug('Calling visualizer.getConfig() for %s', visualizer.name);
-  const settings = await visualizer.getConfig(state, context.onUsage);
+  const settings = await visualizer.getConfig(
+    state,
+    context.onUsage,
+    context.langfuse,
+  );
   debug('Visualizer config generated: %o', settings);
 
   context.writer?.({

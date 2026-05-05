@@ -5,12 +5,12 @@ import {Provider, ValueOrPromise} from '@loopback/core';
  * Mastra-path Langfuse provider.
  *
  * Returns a `LangfuseAPIClient` from `@langfuse/core` — zero LangChain dependency.
- * This is the Mastra-path equivalent of the LangGraph `LangfuseObfProvider` which
- * returns a `CallbackHandler` from `@langfuse/langchain`.
+ * This client is injected into workflow contexts as `context.langfuse` (typed `any`)
+ * so host apps can override the binding with a full Langfuse SDK client (e.g. `Langfuse`
+ * from the `langfuse` npm package) to enable trace/generation observability.
  *
- * The client exposes the full Langfuse REST API (traces, generations, spans,
- * scores, datasets, etc.) and can be used inside Mastra step functions for
- * structured observability via `client.ingestion.ingest({batch: [...]})`.
+ * Step functions call `context.langfuse?.generation()` / `gen?.end()` which are safe
+ * no-ops on `LangfuseAPIClient` (optional chaining handles absent methods).
  *
  * Reads configuration from the standard Langfuse environment variables:
  * - `LANGFUSE_PUBLIC_KEY`  — project public key (required)

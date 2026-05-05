@@ -30,6 +30,16 @@ export interface HandleStreamParams {
    * Mutated in place as usage events arrive.
    */
   tokens: TokenAccumulator;
+  /**
+   * Optional synchronous writer that bypasses the generator and writes
+   * tool-internal `ToolStatus` events directly to the SSE transport while the
+   * tool is still executing.  When provided, events are written in real time
+   * rather than being buffered until `tool-result` fires.
+   *
+   * The caller is responsible for ensuring the writer is safe to call
+   * synchronously (e.g. wrapping `transport.send()` with `void`).
+   */
+  directWriter?: (event: LLMStreamEvent) => void;
 }
 
 function emptyStep(): StepBuffer {
@@ -37,7 +47,6 @@ function emptyStep(): StepBuffer {
     textChunks: [],
     toolCalls: [],
     toolResults: new Map(),
-    pendingToolEvents: [],
   };
 }
 
@@ -56,8 +65,12 @@ function emptyStep(): StepBuffer {
  *
  * `ToolStatus` events emitted by internal tool graphs (e.g. VisualizationGraph)
  * via `config.writer` are captured through `mastraRequestWriterStore` and
- * drained at `tool-result` time so they arrive in the SSE stream in the correct
- * order: text → tool indicator → tool status (visualisation config, dataset id…).
+ * drained + yielded immediately at `tool-result` time so they arrive in the SSE
+ * stream as soon as the tool finishes, not delayed until `step-finish`.
+ *
+ * `Tool` (running indicator) events are yielded immediately at `tool-call` time
+ * (after any preamble text bubble) so the frontend sees the indicator before the
+ * tool even starts executing.
  *
  * The generator terminates when:
  *  - the full stream is exhausted, OR
@@ -66,7 +79,8 @@ function emptyStep(): StepBuffer {
 export async function* handleStream(
   params: HandleStreamParams,
 ): AsyncGenerator<LLMStreamEvent> {
-  const {agentStream, abort, tools, chatId, chatStore, tokens} = params;
+  const {agentStream, abort, tools, chatId, chatStore, tokens, directWriter} =
+    params;
 
   // Reverse-map: Mastra class name (e.g. 'GetDataAsDatasetTool') → kebab key
   // (e.g. 'get-data-as-dataset') so the `tool` SSE event matches what the
@@ -77,18 +91,37 @@ export async function* handleStream(
     if (cn && cn !== t.key) toolClassToKey.set(cn, t.key);
   }
 
-  // ── Writer queue: captures ToolStatus events from internal tool graphs ────
-  // Tools are built with a lazy writer that pushes here.  We drain it at
-  // tool-result time (tools have finished executing by then) and re-emit the
-  // events in the correct position: after the Tool(Running) indicator.
+  // ── Tool-internal event routing ───────────────────────────────────────────
+  // When `directWriter` is provided, tool-internal ToolStatus events are written
+  // directly to the SSE transport during tool execution (real-time).  The
+  // writer callback is updated at each `tool-call` to patch in the toolCallId.
+  //
+  // Without `directWriter`, events fall back to `writerQueue` and are yielded
+  // via the generator at `tool-result` time (all at once, after the tool finishes).
   const writerQueue: LLMStreamEvent[] = [];
-  mastraRequestWriterStore.set(chatId, (event: LLMStreamEvent) =>
-    writerQueue.push(event),
-  );
+  // Mutable ref: set to the active toolCallId just before the tool runs so the
+  // direct writer can patch events that don't carry an `id`.
+  let currentToolCallId: string | undefined;
 
-  // Holds ToolStatus events captured from the writerQueue until step-finish
-  // so they are emitted after the preamble text and Tool(Running) indicators.
-  let pendingToolStatusEvents: LLMStreamEvent[] = [];
+  mastraRequestWriterStore.set(chatId, (event: LLMStreamEvent) => {
+    if (directWriter) {
+      // Patch toolCallId into ToolStatus events that don't carry one.
+      let ev = event;
+      if (
+        ev.type === LLMStreamEventType.ToolStatus &&
+        !(ev.data as {id?: string}).id &&
+        currentToolCallId
+      ) {
+        ev = {
+          ...ev,
+          data: {...(ev.data as object), id: currentToolCallId},
+        } as LLMStreamEvent;
+      }
+      directWriter(ev);
+    } else {
+      writerQueue.push(event);
+    }
+  });
 
   let step: StepBuffer = emptyStep();
 
@@ -123,9 +156,24 @@ export async function* handleStream(
           step.toolCalls.push({id: toolCallId, name: toolName, args});
           debug('Tool call: %s (%s)', toolName, toolCallId);
 
-          // Buffer the Tool(Running) SSE event — emit at step-finish so it
-          // appears after the preamble text bubble.
-          step.pendingToolEvents.push({
+          // Track current toolCallId so the direct writer can patch events.
+          currentToolCallId = toolCallId;
+
+          // Flush any preamble text first so the Message bubble precedes the
+          // Tool(Running) indicator.  Clear textChunks so step-finish doesn't
+          // re-emit them.
+          const preamble = step.textChunks.join('');
+          step.textChunks = [];
+          if (preamble.trim()) {
+            yield {
+              type: LLMStreamEventType.Message,
+              data: {message: preamble},
+            };
+          }
+
+          // Emit Tool(Running) immediately — the tool has not started yet, so
+          // the frontend receives the indicator before any ToolStatus events.
+          yield {
             type: LLMStreamEventType.Tool,
             data: {
               id: toolCallId,
@@ -133,11 +181,11 @@ export async function* handleStream(
               data: args,
               status: ToolStatus.Running,
             },
-          } as LLMStreamEvent);
-          step.pendingToolEvents.push({
+          } as LLMStreamEvent;
+          yield {
             type: LLMStreamEventType.Log,
             data: `Running tool: ${toolKey} with args: ${safeStringify(args)}`,
-          });
+          };
           break;
         }
 
@@ -146,25 +194,27 @@ export async function* handleStream(
           const toolName = String(p.toolName ?? '');
           const result = p.result;
           step.toolResults.set(toolCallId, {result, toolName});
+          currentToolCallId = undefined;
 
-          // The tool graph has finished executing by this point.  Drain the
-          // writer queue so ToolStatus events (e.g. visualisation config,
-          // dataset ID) are captured and held for emission at step-finish.
-          // Patch the toolCallId as `id` into any ToolStatus events that lack
-          // it — the graph nodes (SaveDataSetNode, etc.) don't know the call ID.
-          const drained = writerQueue.splice(0).map(ev => {
-            if (
-              ev.type === LLMStreamEventType.ToolStatus &&
-              !(ev.data as {id?: string}).id
-            ) {
-              return {
-                ...ev,
-                data: {...(ev.data as object), id: toolCallId},
-              } as LLMStreamEvent;
+          // If directWriter was NOT used, drain the queue and yield events now.
+          // (With directWriter, events were already written to the transport.)
+          if (!directWriter) {
+            const drained = writerQueue.splice(0).map(ev => {
+              if (
+                ev.type === LLMStreamEventType.ToolStatus &&
+                !(ev.data as {id?: string}).id
+              ) {
+                return {
+                  ...ev,
+                  data: {...(ev.data as object), id: toolCallId},
+                } as LLMStreamEvent;
+              }
+              return ev;
+            });
+            for (const ev of drained) {
+              yield ev;
             }
-            return ev;
-          });
-          pendingToolStatusEvents.push(...drained);
+          }
 
           const toolDef = tools.map[toolName];
           if (!toolDef) {
@@ -173,18 +223,17 @@ export async function* handleStream(
           const output = toolDef?.getValue?.(result) ?? result;
           debug('Tool result for %s: %j', toolName, output);
           // Log is filtered by SSE transport — no bubble created.
-          step.pendingToolEvents.push({
+          yield {
             type: LLMStreamEventType.Log,
             data: `Tool output: ${safeStringify(output)}`,
-          });
+          };
           break;
         }
 
         case 'step-finish': {
           // 1. Emit text as a single Message bubble, but ONLY when this step
-          //    has no tool calls — preamble text before a tool call (e.g. "I"
-          //    before calling GetDataAsDatasetTool) is suppressed to avoid
-          //    creating a separate empty-looking bubble.
+          //    has no tool calls — preamble text before a tool call was already
+          //    flushed at `tool-call` time and textChunks was cleared there.
           const text = step.textChunks.join('');
           if (text.trim() && step.toolCalls.length === 0) {
             yield {
@@ -192,17 +241,10 @@ export async function* handleStream(
               data: {message: text},
             };
           }
+          // Tool(Running) and ToolStatus events were already yielded eagerly
+          // at tool-call / tool-result time respectively.
 
-          // 2. Emit buffered Tool(Running) + Log + ToolStatus events.
-          for (const ev of step.pendingToolEvents) {
-            yield ev;
-          }
-          for (const ev of pendingToolStatusEvents) {
-            yield ev;
-          }
-          pendingToolStatusEvents = [];
-
-          // 3. Persist to DB.
+          // 2. Persist to DB.
           await saveStep(chatId, step, tools, chatStore);
 
           // 4. Collect per-step token usage.
@@ -251,12 +293,8 @@ export async function* handleStream(
     if (remainingText.trim()) {
       yield {type: LLMStreamEventType.Message, data: {message: remainingText}};
     }
-    for (const ev of step.pendingToolEvents) {
-      yield ev;
-    }
-    for (const ev of pendingToolStatusEvents) {
-      yield ev;
-    }
+    // Tool(Running) / ToolStatus events were already yielded eagerly —
+    // nothing left to flush here.
     if (step.textChunks.length || step.toolCalls.length) {
       await saveStep(chatId, step, tools, chatStore);
     }

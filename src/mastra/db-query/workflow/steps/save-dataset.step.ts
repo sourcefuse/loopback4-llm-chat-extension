@@ -85,7 +85,8 @@ export async function saveDatasetStep(
     context.onUsage?.(
       usage.inputTokens ?? 0,
       usage.outputTokens ?? 0,
-      'unknown',
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (deps.llm as any).modelId ?? 'unknown',
     );
     debug('token usage captured', {
       promptTokens: usage.inputTokens ?? 0,

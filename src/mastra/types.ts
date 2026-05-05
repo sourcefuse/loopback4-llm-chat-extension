@@ -1,9 +1,6 @@
 /**
- * A single message in the format accepted by Mastra (compatible with AI SDK `CoreMessage`).
- *
- * The host application's `MastraRuntimeFactory` must return an adapter whose
- * `getAgent('chat-agent')` call yields an object implementing `IMastraChatAgentRunnable`.
- * That object's `stream()` input is typed against these message shapes.
+ * A single message in the format accepted by the AI SDK (`CoreMessage`).
+ * Used by `MastraChatAgent` which calls `streamText()` directly.
  */
 export type MastraAgentMessage =
   | {role: 'system'; content: string}
@@ -107,7 +104,7 @@ export type MastraStreamEvent =
   | {type: string; payload?: unknown; [key: string]: unknown};
 
 /**
- * The async stream object returned by `IMastraChatAgentRunnable.stream()`.
+ * The async stream object returned by `MastraChatAgent`'s internal streaming call.
  */
 export interface MastraAgentStreamOutput {
   /**
@@ -121,24 +118,4 @@ export interface MastraAgentStreamOutput {
    * May resolve to `undefined` if the agent does not report usage.
    */
   usage: Promise<{inputTokens?: number; outputTokens?: number} | undefined>;
-}
-
-/**
- * Minimal contract for a Mastra agent capable of multi-step chat with tool calling.
- *
- * The library depends only on this interface — it does NOT import `@mastra/core`
- * directly.  The host application's `MastraRuntimeFactory` is responsible for
- * creating and returning an object that satisfies this contract.
- *
- * A real `@mastra/core` `Agent` instance is directly assignable to this interface.
- */
-export interface IMastraChatAgentRunnable {
-  /**
-   * Matches the real `@mastra/core` `Agent.stream(messages, options)` signature.
-   * Messages are passed as the first argument; options (threadId, signal, etc.) as second.
-   */
-  stream(
-    messages: MastraAgentMessage[],
-    options?: MastraAgentInput,
-  ): Promise<MastraAgentStreamOutput>;
 }

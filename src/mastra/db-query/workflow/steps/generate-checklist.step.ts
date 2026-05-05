@@ -139,6 +139,8 @@ async function runParallelChecklist(
     indexedChecks,
   });
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const modelId = (deps.llm as any).modelId ?? 'unknown';
   const results = await Promise.all(
     Array.from({length: parallelism}, () =>
       generateText({model: deps.llm, messages: [{role: 'user', content}]}),
@@ -147,11 +149,16 @@ async function runParallelChecklist(
 
   const mergedIndexes = new Set<number>();
   for (const {text, usage} of results) {
-    context.onUsage?.(
-      usage.inputTokens ?? 0,
-      usage.outputTokens ?? 0,
-      'unknown',
-    );
+    const gen = context.langfuse?.generation({
+      name: 'generate-checklist',
+      model: modelId,
+      input: [{role: 'user', content}],
+    });
+    gen?.end({
+      output: text,
+      usage: {input: usage.inputTokens ?? 0, output: usage.outputTokens ?? 0},
+    });
+    context.onUsage?.(usage.inputTokens ?? 0, usage.outputTokens ?? 0, modelId);
     debug('token usage captured', {
       promptTokens: usage.inputTokens ?? 0,
       completionTokens: usage.outputTokens ?? 0,

@@ -35,12 +35,23 @@ export class GenerationService {
     abort: AbortSignal,
     id?: string,
   ) {
+    // Write tool-internal ToolStatus events directly to the transport as they
+    // are emitted during tool execution, so the frontend receives them in real
+    // time instead of all at once after the tool finishes.
+    const directWriter = (event: Parameters<typeof this.transport.send>[0]) => {
+      // Fire-and-forget: SSETransport.send() calls response.write() which is
+      // synchronous; the Promise wrapper completes immediately.
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
+      this.transport.send(event);
+    };
+
     try {
       for await (const chunk of this.mastraChatAgent.execute(
         prompt,
         files,
         abort,
         id,
+        directWriter,
       )) {
         await this.transport.send(chunk);
       }

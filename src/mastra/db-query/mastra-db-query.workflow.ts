@@ -109,6 +109,9 @@ export class MastraDbQueryWorkflow {
     private readonly schemaHelper: DbSchemaHelperService,
     @service(TokenCounter)
     private readonly tokenCounter: TokenCounter,
+    @inject(AiIntegrationBindings.LangfuseMastraClient, {optional: true})
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    private readonly langfuse: any | undefined,
   ) {}
 
   /**
@@ -127,6 +130,7 @@ export class MastraDbQueryWorkflow {
         this.tokenCounter.accumulate(i, o, m);
         if (ctx?.onUsage) ctx.onUsage(i, o, m);
       },
+      langfuse: this.langfuse,
     };
 
     debug(
