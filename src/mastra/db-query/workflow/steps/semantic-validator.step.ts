@@ -1,4 +1,6 @@
 import {generateText} from 'ai';
+import {createStep} from '@mastra/core/workflows';
+import {z} from 'zod';
 import {
   DbSchemaHelperService,
   PermissionHelper,
@@ -89,23 +91,23 @@ export type SemanticValidatorStepDeps = {
 };
 
 /**
- * Validates the generated SQL against the validation checklist using the LLM.
- * Selects cheap vs. smart LLM based on config.
+ * Plain async function containing the business logic — callable without
+ * the Mastra workflow runtime. Used by the workflow DSL directly.
  */
-export async function semanticValidatorStep(
+export async function runSemanticValidator(
   state: DbQueryState,
   context: MastraDbQueryContext,
   deps: SemanticValidatorStepDeps,
 ): Promise<Partial<DbQueryState>> {
   debug('step start', {sql: state.sql});
 
-  context.writer?.({
+  context.emit?.({
     type: LLMStreamEventType.ToolStatus,
     data: {
       status: `Verifying if the query fully satisfies the user's requirement`,
     },
   });
-  context.writer?.({
+  context.emit?.({
     type: LLMStreamEventType.Log,
     data: 'Validating the query semantically.',
   });
@@ -179,7 +181,7 @@ export async function semanticValidatorStep(
     : [];
 
   debug('semantic validation failed: %s', reason);
-  context.writer?.({
+  context.emit?.({
     type: LLMStreamEventType.Log,
     data: `Query Validation Failed by LLM: ${reason}`,
   });
@@ -192,6 +194,28 @@ export async function semanticValidatorStep(
   debug('step result', result);
   return result;
 }
+
+/**
+ * Validates the generated SQL against the validation checklist using the LLM.
+ * Selects cheap vs. smart LLM based on config.
+ */
+export const semanticValidatorStep = createStep({
+  id: 'db-query-semantic-validator',
+  inputSchema: z.any(),
+  outputSchema: z.any(),
+  execute: async ({
+    inputData,
+  }: {
+    inputData: {
+      state: DbQueryState;
+      context: MastraDbQueryContext;
+      deps: SemanticValidatorStepDeps;
+    };
+  }): Promise<Partial<DbQueryState>> => {
+    const {state, context, deps} = inputData;
+    return runSemanticValidator(state, context, deps);
+  },
+});
 
 function filterByPermissions(
   tables: string[],

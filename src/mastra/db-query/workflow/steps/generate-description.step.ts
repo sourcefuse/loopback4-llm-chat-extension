@@ -1,4 +1,6 @@
 import {streamText} from 'ai';
+import {createStep} from '@mastra/core/workflows';
+import {z} from 'zod';
 import {DbSchemaHelperService} from '../../../../components/db-query/services';
 import {DbQueryState} from '../../../../components/db-query/state';
 import {DbQueryConfig} from '../../../../components/db-query/types';
@@ -49,16 +51,16 @@ export type GenerateDescriptionStepDeps = {
 };
 
 /**
- * Streams a plain-English description of the generated SQL query and forwards
- * each text chunk as a `ToolStatus` SSE event. Uses `streamText()` from the
- * Vercel AI SDK. Runs concurrently with the syntactic and semantic validators
- * in the workflow's `Promise.all()` fan-out.
+ * Plain async function containing the business logic — callable without
+ * the Mastra workflow runtime. Used by the workflow DSL directly.
  */
-export async function generateDescriptionStep(
+export async function runGenerateDescription(
   state: DbQueryState,
   context: MastraDbQueryContext,
   deps: GenerateDescriptionStepDeps,
 ): Promise<Partial<DbQueryState>> {
+  const emit = context.emit;
+
   debug('step start', {sql: state.sql});
 
   const generateDesc =
@@ -69,7 +71,7 @@ export async function generateDescriptionStep(
     return {};
   }
 
-  context.writer?.({
+  emit?.({
     type: LLMStreamEventType.Log,
     data: 'Generating query description.',
   });
@@ -103,7 +105,7 @@ export async function generateDescriptionStep(
   for await (const chunk of result.textStream) {
     if (chunk) {
       accumulated += chunk;
-      context.writer?.({
+      emit?.({
         type: LLMStreamEventType.ToolStatus,
         data: {thinkingToken: chunk},
       });
@@ -123,7 +125,7 @@ export async function generateDescriptionStep(
 
   const description = stripThinkingFromText(accumulated);
 
-  context.writer?.({
+  emit?.({
     type: LLMStreamEventType.Log,
     data: `Query description: ${description}`,
   });
@@ -131,3 +133,27 @@ export async function generateDescriptionStep(
   debug('step result description length=%d', description.length);
   return {description};
 }
+
+/**
+ * Streams a plain-English description of the generated SQL query and forwards
+ * each text chunk as a `ToolStatus` SSE event. Uses `streamText()` from the
+ * Vercel AI SDK. Runs concurrently with the syntactic and semantic validators
+ * in the workflow's `Promise.all()` fan-out.
+ */
+export const generateDescriptionStep = createStep({
+  id: 'db-query-generate-description',
+  inputSchema: z.any(),
+  outputSchema: z.any(),
+  execute: async ({
+    inputData,
+  }: {
+    inputData: {
+      state: DbQueryState;
+      context: MastraDbQueryContext;
+      deps: GenerateDescriptionStepDeps;
+    };
+  }): Promise<Partial<DbQueryState>> => {
+    const {state, context, deps} = inputData;
+    return runGenerateDescription(state, context, deps);
+  },
+});

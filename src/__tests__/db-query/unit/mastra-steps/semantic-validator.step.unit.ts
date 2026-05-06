@@ -3,6 +3,7 @@ import {DbQueryState} from '../../../../components/db-query/state';
 import {EvaluationResult} from '../../../../components/db-query/types';
 import {LLMProvider} from '../../../../types';
 import {semanticValidatorStep} from '../../../../mastra/db-query/workflow/steps/semantic-validator.step';
+import {runStep} from '../../../fixtures/step-runner';
 import {MastraDbQueryContext} from '../../../../mastra/db-query/types/db-query.types';
 import {createFakeLanguageModel} from '../../../fixtures/fake-ai-models';
 
@@ -37,12 +38,16 @@ describe('semanticValidatorStep (Mastra)', function () {
   });
 
   it('returns Pass when LLM returns <valid/>', async () => {
-    const result = await semanticValidatorStep(baseState, context, {
-      smartLlm: createFakeLanguageModel('<valid/>') as unknown as LLMProvider,
-      cheapLlm: createFakeLanguageModel('<valid/>') as unknown as LLMProvider,
-      config: {} as never,
-      tableSearchService: tableSearchServiceStub as never,
-      schemaHelper: fakeSchemaHelper as never,
+    const result = await runStep(semanticValidatorStep, {
+      state: baseState,
+      context,
+      deps: {
+        smartLlm: createFakeLanguageModel('<valid/>') as unknown as LLMProvider,
+        cheapLlm: createFakeLanguageModel('<valid/>') as unknown as LLMProvider,
+        config: {} as never,
+        tableSearchService: tableSearchServiceStub as never,
+        schemaHelper: fakeSchemaHelper as never,
+      },
     });
 
     expect(result.semanticStatus).to.equal(EvaluationResult.Pass);
@@ -54,12 +59,20 @@ describe('semanticValidatorStep (Mastra)', function () {
   });
 
   it('returns Pass when LLM returns <valid /> (with space)', async () => {
-    const result = await semanticValidatorStep(baseState, context, {
-      smartLlm: createFakeLanguageModel('<valid />') as unknown as LLMProvider,
-      cheapLlm: createFakeLanguageModel('<valid />') as unknown as LLMProvider,
-      config: {} as never,
-      tableSearchService: tableSearchServiceStub as never,
-      schemaHelper: fakeSchemaHelper as never,
+    const result = await runStep(semanticValidatorStep, {
+      state: baseState,
+      context,
+      deps: {
+        smartLlm: createFakeLanguageModel(
+          '<valid />',
+        ) as unknown as LLMProvider,
+        cheapLlm: createFakeLanguageModel(
+          '<valid />',
+        ) as unknown as LLMProvider,
+        config: {} as never,
+        tableSearchService: tableSearchServiceStub as never,
+        schemaHelper: fakeSchemaHelper as never,
+      },
     });
 
     expect(result.semanticStatus).to.equal(EvaluationResult.Pass);
@@ -67,12 +80,20 @@ describe('semanticValidatorStep (Mastra)', function () {
 
   it('returns Fail with reason when LLM returns <invalid> block', async () => {
     const llmResponse = '<invalid>Missing salary filter for tenant</invalid>';
-    const result = await semanticValidatorStep(baseState, context, {
-      smartLlm: createFakeLanguageModel(llmResponse) as unknown as LLMProvider,
-      cheapLlm: createFakeLanguageModel(llmResponse) as unknown as LLMProvider,
-      config: {} as never,
-      tableSearchService: tableSearchServiceStub as never,
-      schemaHelper: fakeSchemaHelper as never,
+    const result = await runStep(semanticValidatorStep, {
+      state: baseState,
+      context,
+      deps: {
+        smartLlm: createFakeLanguageModel(
+          llmResponse,
+        ) as unknown as LLMProvider,
+        cheapLlm: createFakeLanguageModel(
+          llmResponse,
+        ) as unknown as LLMProvider,
+        config: {} as never,
+        tableSearchService: tableSearchServiceStub as never,
+        schemaHelper: fakeSchemaHelper as never,
+      },
     });
 
     expect(result.semanticStatus).to.equal(EvaluationResult.QueryError);
@@ -84,12 +105,16 @@ describe('semanticValidatorStep (Mastra)', function () {
     const cheapModel = createFakeLanguageModel('<valid/>');
     const smartModel = createFakeLanguageModel('<valid/>');
 
-    await semanticValidatorStep(baseState, context, {
-      smartLlm: smartModel as unknown as LLMProvider,
-      cheapLlm: cheapModel as unknown as LLMProvider,
-      config: {nodes: {semanticValidatorNode: {useSmartLLM: true}}} as never,
-      tableSearchService: tableSearchServiceStub as never,
-      schemaHelper: fakeSchemaHelper as never,
+    await runStep(semanticValidatorStep, {
+      state: baseState,
+      context,
+      deps: {
+        smartLlm: smartModel as unknown as LLMProvider,
+        cheapLlm: cheapModel as unknown as LLMProvider,
+        config: {nodes: {semanticValidatorNode: {useSmartLLM: true}}} as never,
+        tableSearchService: tableSearchServiceStub as never,
+        schemaHelper: fakeSchemaHelper as never,
+      },
     });
 
     sinon.assert.calledOnce(onUsageSpy);

@@ -1,4 +1,6 @@
 import {generateText} from 'ai';
+import {createStep} from '@mastra/core/workflows';
+import {z} from 'zod';
 import {DataSetHelper} from '../../../../components/db-query/services';
 import {DatasetActionType} from '../../../../components/db-query/constant';
 import {DbQueryState} from '../../../../components/db-query/state';
@@ -50,15 +52,18 @@ export type CheckCacheStepDeps = {
 };
 
 /**
- * Searches the dataset vector index for semantically similar past queries and
- * uses the LLM to classify the relevance.
+ * Plain async function containing the business logic — callable without
+ * the Mastra workflow runtime. Used by the workflow DSL directly.
  */
-export async function checkCacheStep(
+export async function runCheckCache(
   state: DbQueryState,
   context: MastraDbQueryContext,
   deps: CheckCacheStepDeps,
 ): Promise<Partial<DbQueryState>> {
-  debug('step start', {prompt: state.prompt, hasSampleSql: !!state.sampleSql});
+  debug('step start', {
+    prompt: state.prompt,
+    hasSampleSql: !!state.sampleSql,
+  });
 
   if (state.sampleSql) {
     debug('sampleSql already set — skipping cache check');
@@ -113,7 +118,7 @@ export async function checkCacheStep(
   const indexNum = parseInt(index, 10) - 1;
 
   if (relevance === CacheResults.NotRelevant) {
-    context.writer?.({
+    context.emit?.({
       type: LLMStreamEventType.Log,
       data: 'No relevant queries found in cache for this prompt',
     });
@@ -121,7 +126,7 @@ export async function checkCacheStep(
   }
 
   if (indexNum >= relevantDocs.length || indexNum < 0 || isNaN(indexNum)) {
-    context.writer?.({
+    context.emit?.({
       type: LLMStreamEventType.Log,
       data: `Index ${index} is out of bounds for the list of relevant queries.`,
     });
@@ -133,7 +138,7 @@ export async function checkCacheStep(
       relevantDocs[indexNum].metadata.datasetId,
     );
     if (missingPermissions.length > 0) {
-      context.writer?.({
+      context.emit?.({
         type: LLMStreamEventType.Log,
         data: `Found relevant query in cache, but missing permissions: ${missingPermissions.join(', ')} so generating new query`,
       });
@@ -150,7 +155,7 @@ export async function checkCacheStep(
       (dataset.actions?.length &&
         dataset.actions?.some(a => a.action === DatasetActionType.Disliked))
     ) {
-      context.writer?.({
+      context.emit?.({
         type: LLMStreamEventType.Log,
         data: 'Found relevant query in cache, but the dataset was not found or was disliked by the user, so generating new query',
       });
@@ -158,17 +163,17 @@ export async function checkCacheStep(
     }
 
     const datasetId = relevantDocs[indexNum].metadata.datasetId;
-    context.writer?.({
+    context.emit?.({
       type: LLMStreamEventType.Log,
       data: 'Found relevant query in cache, using it as is',
     });
-    context.writer?.({
+    context.emit?.({
       type: LLMStreamEventType.ToolStatus,
       data: {status: 'Found relevant query in cache'},
     });
 
     if (!state.directCall) {
-      context.writer?.({
+      context.emit?.({
         type: LLMStreamEventType.ToolStatus,
         data: {
           status: ToolStatus.Completed,
@@ -187,15 +192,15 @@ export async function checkCacheStep(
   }
 
   if (relevance === CacheResults.Similar) {
-    context.writer?.({
+    context.emit?.({
       type: LLMStreamEventType.Log,
       data: 'Found similar query in cache, using it as example',
     });
-    context.writer?.({
+    context.emit?.({
       type: LLMStreamEventType.ToolStatus,
       data: {status: 'Found similar query in cache, using it as example'},
     });
-    context.writer?.({
+    context.emit?.({
       type: LLMStreamEventType.ToolStatus,
       data: {status: 'Found relevant query in cache'},
     });
@@ -210,3 +215,25 @@ export async function checkCacheStep(
 
   return {};
 }
+
+/**
+ * Searches the dataset vector index for semantically similar past queries and
+ * uses the LLM to classify the relevance.
+ */
+export const checkCacheStep = createStep({
+  id: 'db-query-check-cache',
+  inputSchema: z.any(),
+  outputSchema: z.any(),
+  execute: async ({
+    inputData,
+  }: {
+    inputData: {
+      state: DbQueryState;
+      context: MastraDbQueryContext;
+      deps: CheckCacheStepDeps;
+    };
+  }): Promise<Partial<DbQueryState>> => {
+    const {state, context, deps} = inputData;
+    return runCheckCache(state, context, deps);
+  },
+});

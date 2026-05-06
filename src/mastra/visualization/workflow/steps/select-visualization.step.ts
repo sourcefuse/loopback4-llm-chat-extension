@@ -1,4 +1,6 @@
 import {generateText} from 'ai';
+import {createStep} from '@mastra/core/workflows';
+import {z} from 'zod';
 import {LLMStreamEventType} from '../../../../types/events';
 import {LLMProvider} from '../../../../types';
 import {stripThinkingFromText} from '../../../db-query/utils/thinking.util';
@@ -64,23 +66,10 @@ export type SelectVisualizationStepDeps = {
 };
 
 /**
- * Selects the most appropriate chart type for the user's data.
- *
- * Two code paths:
- * 1. **Explicit type** (`state.type`): short-circuit — skip the LLM call and
- *    resolve the named visualizer directly (mirrors LangGraph `SelectVisualizationNode`).
- * 2. **LLM selection**: invokes `generateText()` from the AI SDK with a
- *    formatted prompt that lists all registered visualizers.
- *
- * Returns `Partial<MastraVisualizationState>` with either:
- *  - `{ visualizer, visualizerName }` on success, OR
- *  - `{ error }` when no matching visualizer is found.
- *
- * Mirrors `SelectVisualizationNode.execute()` in the LangGraph path.
- * LangGraph coupling removed: `PromptTemplate` / `RunnableSequence` →
- * plain `generateText()` + string interpolation.
+ * Plain async function containing the business logic — callable without
+ * the Mastra workflow runtime. Used by the workflow DSL directly.
  */
-export async function selectVisualizationStep(
+export async function runSelectVisualization(
   state: MastraVisualizationState,
   context: MastraVisualizationContext,
   deps: SelectVisualizationStepDeps,
@@ -89,7 +78,7 @@ export async function selectVisualizationStep(
 
   const {visualizers} = deps;
 
-  // ── Fast-path: caller specified an exact visualizer type ─────────────────
+  // ── Fast-path: caller specified an exact visualizer type ───────────────────────
   if (state.type) {
     const selected = visualizers.find(v => v.name === state.type);
     if (!selected) {
@@ -102,8 +91,8 @@ export async function selectVisualizationStep(
     return {visualizer: selected, visualizerName: selected.name};
   }
 
-  // ── LLM-selection path ───────────────────────────────────────────────────
-  context.writer?.({
+  // ── LLM-selection path ───────────────────────────────────────────────────────
+  context.emit?.({
     type: LLMStreamEventType.ToolStatus,
     data: {status: 'Selecting best visualization for the data'},
   });
@@ -160,3 +149,38 @@ export async function selectVisualizationStep(
   debug('Selected visualizer: %s', selected.name);
   return {visualizer: selected, visualizerName: selected.name};
 }
+
+/**
+ * Selects the most appropriate chart type for the user's data.
+ *
+ * Two code paths:
+ * 1. **Explicit type** (`state.type`): short-circuit — skip the LLM call and
+ *    resolve the named visualizer directly (mirrors LangGraph `SelectVisualizationNode`).
+ * 2. **LLM selection**: invokes `generateText()` from the AI SDK with a
+ *    formatted prompt that lists all registered visualizers.
+ *
+ * Returns `Partial<MastraVisualizationState>` with either:
+ *  - `{ visualizer, visualizerName }` on success, OR
+ *  - `{ error }` when no matching visualizer is found.
+ *
+ * Mirrors `SelectVisualizationNode.execute()` in the LangGraph path.
+ * LangGraph coupling removed: `PromptTemplate` / `RunnableSequence` →
+ * plain `generateText()` + string interpolation.
+ */
+export const selectVisualizationStep = createStep({
+  id: 'visualization-select-type',
+  inputSchema: z.any(),
+  outputSchema: z.any(),
+  execute: async ({
+    inputData,
+  }: {
+    inputData: {
+      state: MastraVisualizationState;
+      context: MastraVisualizationContext;
+      deps: SelectVisualizationStepDeps;
+    };
+  }): Promise<Partial<MastraVisualizationState>> => {
+    const {state, context, deps} = inputData;
+    return runSelectVisualization(state, context, deps);
+  },
+});

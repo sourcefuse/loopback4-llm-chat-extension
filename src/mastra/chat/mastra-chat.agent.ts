@@ -1,5 +1,6 @@
 import {inject, injectable, BindingScope, service} from '@loopback/core';
-import {streamText, tool, ToolSet, stepCountIs} from 'ai';
+import {tool, ToolSet, stepCountIs} from 'ai';
+import {Agent} from '@mastra/core/agent';
 import {LLMStreamEvent, LLMStreamEventType} from '../../types/events';
 import {ChatStore} from '../../services/chat.store';
 import {AiIntegrationBindings} from '../../keys';
@@ -10,9 +11,9 @@ import {z} from 'zod';
 import {normalizeMessages} from './utils/normalize-messages.util';
 import {adaptStreamResult} from './utils/adapt-stream.util';
 import {mastraRequestWriterStore} from '../request-tool-store';
-import {compressContextIfNeeded} from './steps/context-compression.step';
-import {initSession} from './steps/init-session.step';
-import {summariseOneFile} from './steps/summarise-file.step';
+import {runCompressContext} from './steps/context-compression.step';
+import {runInitSession} from './steps/init-session.step';
+import {runSummariseFile} from './steps/summarise-file.step';
 import {handleStream} from './steps/stream-handler.step';
 import {accumulateUsage} from './utils/token-accumulator.util';
 import {TokenAccumulator} from './types/chat.types';
@@ -27,7 +28,7 @@ const debug = require('debug')('ai-integration:mastra:chat-agent');
  *  1. `initSession`            — load/create chat, persist human message, build history
  *  2. `summariseOneFile`*      — pre-process uploaded files before the agent sees them
  *  3. `compressContextIfNeeded`— trim history if it exceeds the token budget
- *  4. `streamText` execution   — library calls AI SDK directly, owns the LLM ↔ tool loop
+ *  4. `Agent.stream` execution — @mastra/core Agent owns the LLM ↔ tool loop
  *  5. `handleStream`           — adapt AI SDK events → LLMStreamEvent, persist steps
  *  6. EndSession               — emit TokenCount, update DB
  */
@@ -65,12 +66,12 @@ export class MastraChatAgent {
   ): AsyncGenerator<LLMStreamEvent> {
     files = files ?? [];
     // ── Step 1: InitSession ──────────────────────────────────────────────────
-    const {chatId, baseMessages, userMessage} = await initSession(
+    const {chatId, baseMessages, userMessage} = await runInitSession({
       prompt,
       id,
-      this.chatStore,
-      this._buildSystemPrompt(),
-    );
+      chatStore: this.chatStore,
+      systemPrompt: this._buildSystemPrompt(),
+    });
     if (!id) {
       yield {type: LLMStreamEventType.Init, data: {sessionId: chatId}};
     }
@@ -88,7 +89,7 @@ export class MastraChatAgent {
         type: LLMStreamEventType.Status,
         data: `Reading file: ${file.originalname}`,
       };
-      finalPrompt = await summariseOneFile({
+      finalPrompt = await runSummariseFile({
         file,
         currentPrompt: finalPrompt,
         chatId,
@@ -104,10 +105,10 @@ export class MastraChatAgent {
       ...baseMessages,
       {role: 'user', content: finalPrompt},
     ];
-    const compressedMessages = await compressContextIfNeeded(
-      rawMessages,
-      this.aiConfig.maxTokenCount,
-    );
+    const compressedMessages = await runCompressContext({
+      messages: rawMessages,
+      maxTokenCount: this.aiConfig.maxTokenCount,
+    });
 
     // ── Step 4: Build per-request tool map ──────────────────────────────────
     const requestToolMap = new Map<string, IRuntimeTool>();
@@ -157,7 +158,7 @@ export class MastraChatAgent {
       [...requestToolMap.keys()].join(', '),
     );
 
-    // ── Step 5: Build AI SDK tool set and call streamText() directly ──────────
+    // ── Step 5: Build AI SDK tool set and call @mastra/core Agent.stream() ─────
     const aiTools: ToolSet = {};
     for (const [toolName, rt] of requestToolMap) {
       if (aiTools[toolName]) continue;
@@ -180,18 +181,28 @@ export class MastraChatAgent {
     }
 
     debug(
-      'Calling streamText() directly — %d messages, %d tools',
+      'Calling Agent.stream() — %d messages, %d tools',
       compressedMessages.length,
       Object.keys(aiTools).length,
     );
     try {
-      const streamResult = streamText({
-        model: this.chatLLM,
-        messages: normalizeMessages(compressedMessages),
-        tools: aiTools,
-        stopWhen: stepCountIs(10),
-        abortSignal: abort,
+      const chatAgent = new Agent({
+        id: `chat-${chatId}`,
+        name: 'chat-agent',
+        instructions: this._buildSystemPrompt(),
+        // Runtime model provider from existing AI SDK integration.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        model: this.chatLLM as any,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        tools: aiTools as any,
       });
+      const streamResult = await chatAgent.stream(
+        normalizeMessages(compressedMessages),
+        {
+          abortSignal: abort,
+          stopWhen: stepCountIs(10),
+        },
+      );
       const agentStream = adaptStreamResult(streamResult);
 
       for await (const event of handleStream({

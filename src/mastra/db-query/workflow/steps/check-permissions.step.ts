@@ -1,4 +1,6 @@
 import {generateText} from 'ai';
+import {createStep} from '@mastra/core/workflows';
+import {z} from 'zod';
 import {PermissionHelper} from '../../../../components/db-query/services';
 import {DbQueryState} from '../../../../components/db-query/state';
 import {Errors} from '../../../../components/db-query/types';
@@ -31,13 +33,12 @@ export type CheckPermissionsStepDeps = {
 };
 
 /**
- * Verifies the current user's RBAC permissions against the tables in the
- * resolved schema. If any permissions are missing, uses the LLM to compose
- * a plain-language error message and sets `state.status = Errors.PermissionError`.
+ * Plain async function containing the business logic — callable without
+ * the Mastra workflow runtime. Used by the workflow DSL directly.
  */
-export async function checkPermissionsStep(
+export async function runCheckPermissions(
   state: DbQueryState,
-  _context: MastraDbQueryContext,
+  context: MastraDbQueryContext,
   deps: CheckPermissionsStepDeps,
 ): Promise<Partial<DbQueryState>> {
   debug('step start', {schema: Object.keys(state.schema?.tables ?? {})});
@@ -61,7 +62,7 @@ export async function checkPermissionsStep(
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const modelId = (deps.llm as any).modelId ?? 'unknown';
-  const gen = _context.langfuse?.generation({
+  const gen = context.langfuse?.generation({
     name: 'check-permissions',
     model: modelId,
     input: [{role: 'user', content}],
@@ -77,7 +78,7 @@ export async function checkPermissionsStep(
     output: text,
     usage: {input: usage.inputTokens ?? 0, output: usage.outputTokens ?? 0},
   });
-  _context.onUsage?.(usage.inputTokens ?? 0, usage.outputTokens ?? 0, modelId);
+  context.onUsage?.(usage.inputTokens ?? 0, usage.outputTokens ?? 0, modelId);
   debug('token usage captured', {
     promptTokens: usage.inputTokens ?? 0,
     completionTokens: usage.outputTokens ?? 0,
@@ -92,6 +93,29 @@ export async function checkPermissionsStep(
   debug('step result', result);
   return result;
 }
+
+/**
+ * Verifies the current user's RBAC permissions against the tables in the
+ * resolved schema. If any permissions are missing, uses the LLM to compose
+ * a plain-language error message and sets `state.status = Errors.PermissionError`.
+ */
+export const checkPermissionsStep = createStep({
+  id: 'db-query-check-permissions',
+  inputSchema: z.any(),
+  outputSchema: z.any(),
+  execute: async ({
+    inputData,
+  }: {
+    inputData: {
+      state: DbQueryState;
+      context: MastraDbQueryContext;
+      deps: CheckPermissionsStepDeps;
+    };
+  }): Promise<Partial<DbQueryState>> => {
+    const {state, context, deps} = inputData;
+    return runCheckPermissions(state, context, deps);
+  },
+});
 
 function getTableNames(state: DbQueryState): string[] {
   return Object.keys(state.schema?.tables ?? {}).map(table =>

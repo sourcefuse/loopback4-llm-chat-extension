@@ -1,4 +1,6 @@
 import {generateText} from 'ai';
+import {createStep} from '@mastra/core/workflows';
+import {z} from 'zod';
 import {DbSchemaHelperService} from '../../../../components/db-query/services';
 import {DbQueryState} from '../../../../components/db-query/state';
 import {DbQueryConfig} from '../../../../components/db-query/types';
@@ -78,11 +80,10 @@ export type VerifyChecklistStepDeps = {
 };
 
 /**
- * A second-pass checklist filter that runs only for schemas with more than two
- * tables. Supports an optional chain-of-thought "evaluation" mode. Merges
- * verified indexes with any checklist already in state.
+ * Plain async function containing the business logic — callable without
+ * the Mastra workflow runtime. Used by the workflow DSL directly.
  */
-export async function verifyChecklistStep(
+export async function runVerifyChecklist(
   state: DbQueryState,
   context: MastraDbQueryContext,
   deps: VerifyChecklistStepDeps,
@@ -111,7 +112,7 @@ export async function verifyChecklistStep(
     return {};
   }
 
-  context.writer?.({
+  context.emit?.({
     type: LLMStreamEventType.Log,
     data: 'Verifying validation checklist with chain-of-thought.',
   });
@@ -177,6 +178,29 @@ export async function verifyChecklistStep(
   debug('step result checklist rules=%d', verifiedIndexes.length);
   return {validationChecklist};
 }
+
+/**
+ * A second-pass checklist filter that runs only for schemas with more than two
+ * tables. Supports an optional chain-of-thought "evaluation" mode. Merges
+ * verified indexes with any checklist already in state.
+ */
+export const verifyChecklistStep = createStep({
+  id: 'db-query-verify-checklist',
+  inputSchema: z.any(),
+  outputSchema: z.any(),
+  execute: async ({
+    inputData,
+  }: {
+    inputData: {
+      state: DbQueryState;
+      context: MastraDbQueryContext;
+      deps: VerifyChecklistStepDeps;
+    };
+  }): Promise<Partial<DbQueryState>> => {
+    const {state, context, deps} = inputData;
+    return runVerifyChecklist(state, context, deps);
+  },
+});
 
 function parseVerifiedIndexes(response: string, maxIndex: number): number[] {
   const resultMatch = /<result>(.*?)<\/result>/s.exec(response);

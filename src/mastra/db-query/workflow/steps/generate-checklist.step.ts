@@ -1,4 +1,6 @@
 import {generateText} from 'ai';
+import {createStep} from '@mastra/core/workflows';
+import {z} from 'zod';
 import {DbSchemaHelperService} from '../../../../components/db-query/services';
 import {DbQueryState} from '../../../../components/db-query/state';
 import {DbQueryConfig} from '../../../../components/db-query/types';
@@ -58,11 +60,10 @@ export type GenerateChecklistStepDeps = {
 };
 
 /**
- * Filters the global validation checklist down to rules that are relevant to
- * the current query context. Runs the LLM `parallelism` times concurrently
- * with `Promise.all()` and merges the result sets by union.
+ * Plain async function containing the business logic — callable without
+ * the Mastra workflow runtime. Used by the workflow DSL directly.
  */
-export async function generateChecklistStep(
+export async function runGenerateChecklist(
   state: DbQueryState,
   context: MastraDbQueryContext,
   deps: GenerateChecklistStepDeps,
@@ -95,7 +96,7 @@ export async function generateChecklistStep(
     return {};
   }
 
-  context.writer?.({
+  context.emit?.({
     type: LLMStreamEventType.Log,
     data: 'Filtering validation checklist for semantic validation.',
   });
@@ -119,6 +120,29 @@ export async function generateChecklistStep(
   debug('generated checklist with %d rules', mergedIndexes.size);
   return {validationChecklist};
 }
+
+/**
+ * Filters the global validation checklist down to rules that are relevant to
+ * the current query context. Runs the LLM `parallelism` times concurrently
+ * with `Promise.all()` and merges the result sets by union.
+ */
+export const generateChecklistStep = createStep({
+  id: 'db-query-generate-checklist',
+  inputSchema: z.any(),
+  outputSchema: z.any(),
+  execute: async ({
+    inputData,
+  }: {
+    inputData: {
+      state: DbQueryState;
+      context: MastraDbQueryContext;
+      deps: GenerateChecklistStepDeps;
+    };
+  }): Promise<Partial<DbQueryState>> => {
+    const {state, context, deps} = inputData;
+    return runGenerateChecklist(state, context, deps);
+  },
+});
 
 async function runParallelChecklist(
   state: DbQueryState,

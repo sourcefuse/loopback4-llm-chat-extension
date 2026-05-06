@@ -1,4 +1,6 @@
 import {generateText} from 'ai';
+import {createStep} from '@mastra/core/workflows';
+import {z} from 'zod';
 import {ChatStore} from '../../../services/chat.store';
 import {Message} from '../../../models';
 import {LLMProvider} from '../../../types';
@@ -10,7 +12,7 @@ import {accumulateUsage} from '../utils/token-accumulator.util';
 const debug = require('debug')('mastra:chat:summarise-file');
 
 /**
- * Parameters for `summariseOneFile`.
+ * Input for `summariseFileStep`.
  */
 export interface SummariseFileParams {
   file: Express.Multer.File;
@@ -24,13 +26,10 @@ export interface SummariseFileParams {
 }
 
 /**
- * Mirrors `SummariseFileNode` for a single file.
- *
- * Uses `generateText()` from the Vercel AI SDK instead of the LangChain
- * `BaseChatModel.invoke()` path. Persists the attachment message and returns
- * an updated prompt that embeds the summary.
+ * Plain async function containing the business logic — callable without
+ * the Mastra workflow runtime. Used by the workflow DSL directly.
  */
-export async function summariseOneFile(
+export async function runSummariseFile(
   params: SummariseFileParams,
 ): Promise<string> {
   const {file, currentPrompt, chatId, userMessage, tokens, fileLLM, chatStore} =
@@ -73,6 +72,26 @@ export async function summariseOneFile(
   await chatStore.addAttachmentMessage(chatId, userMessage, file, summary);
   return mergeAttachments(currentPrompt, file.originalname, summary);
 }
+
+/**
+ * Mirrors `SummariseFileNode` for a single file.
+ *
+ * Uses `generateText()` from the Vercel AI SDK instead of the LangChain
+ * `BaseChatModel.invoke()` path. Persists the attachment message and returns
+ * an updated prompt that embeds the summary.
+ */
+export const summariseFileStep = createStep({
+  id: 'chat-summarise-file',
+  inputSchema: z.any(),
+  outputSchema: z.any(),
+  execute: async ({
+    inputData,
+  }: {
+    inputData: SummariseFileParams;
+  }): Promise<string> => {
+    return runSummariseFile(inputData);
+  },
+});
 
 // ---------------------------------------------------------------------------
 // Private helpers

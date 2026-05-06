@@ -9,6 +9,7 @@ import {
 import {IVectorStoreDocument, LLMProvider} from '../../../../types';
 import {DatasetSearchService} from '../../../../mastra/db-query/services/dataset-search.service';
 import {checkCacheStep} from '../../../../mastra/db-query/workflow/steps/check-cache.step';
+import {runStep} from '../../../fixtures/step-runner';
 import {MastraDbQueryContext} from '../../../../mastra/db-query/types/db-query.types';
 import {createFakeLanguageModel} from '../../../fixtures/fake-ai-models';
 
@@ -39,12 +40,16 @@ describe('checkCacheStep (Mastra)', function () {
       sampleSql: 'SELECT 1',
     } as unknown as DbQueryState;
 
-    const result = await checkCacheStep(state, context, {
-      datasetSearch: datasetSearchStub as unknown as DatasetSearchService,
-      llm: createFakeLanguageModel(
-        CacheResults.NotRelevant,
-      ) as unknown as LLMProvider,
-      dataSetHelper: dataSetHelperStub as unknown as DataSetHelper,
+    const result = await runStep(checkCacheStep, {
+      state,
+      context,
+      deps: {
+        datasetSearch: datasetSearchStub as unknown as DatasetSearchService,
+        llm: createFakeLanguageModel(
+          CacheResults.NotRelevant,
+        ) as unknown as LLMProvider,
+        dataSetHelper: dataSetHelperStub as unknown as DataSetHelper,
+      },
     });
 
     expect(result).to.deepEqual({});
@@ -54,12 +59,16 @@ describe('checkCacheStep (Mastra)', function () {
   it('returns {} when no documents found in cache', async () => {
     datasetSearchStub.search.resolves([]);
 
-    const result = await checkCacheStep(baseState, context, {
-      datasetSearch: datasetSearchStub as unknown as DatasetSearchService,
-      llm: createFakeLanguageModel(
-        CacheResults.NotRelevant,
-      ) as unknown as LLMProvider,
-      dataSetHelper: dataSetHelperStub as unknown as DataSetHelper,
+    const result = await runStep(checkCacheStep, {
+      state: baseState,
+      context,
+      deps: {
+        datasetSearch: datasetSearchStub as unknown as DatasetSearchService,
+        llm: createFakeLanguageModel(
+          CacheResults.NotRelevant,
+        ) as unknown as LLMProvider,
+        dataSetHelper: dataSetHelperStub as unknown as DataSetHelper,
+      },
     });
 
     expect(result).to.deepEqual({});
@@ -73,14 +82,18 @@ describe('checkCacheStep (Mastra)', function () {
       } as IVectorStoreDocument<QueryCacheMetadata>,
     ]);
 
-    const result = await checkCacheStep(baseState, context, {
-      datasetSearch: datasetSearchStub as unknown as DatasetSearchService,
-      llm: createFakeLanguageModel(
-        CacheResults.NotRelevant,
-        5,
-        2,
-      ) as unknown as LLMProvider,
-      dataSetHelper: dataSetHelperStub as unknown as DataSetHelper,
+    const result = await runStep(checkCacheStep, {
+      state: baseState,
+      context,
+      deps: {
+        datasetSearch: datasetSearchStub as unknown as DatasetSearchService,
+        llm: createFakeLanguageModel(
+          CacheResults.NotRelevant,
+          5,
+          2,
+        ) as unknown as LLMProvider,
+        dataSetHelper: dataSetHelperStub as unknown as DataSetHelper,
+      },
     });
 
     expect(result).to.deepEqual({});
@@ -99,12 +112,16 @@ describe('checkCacheStep (Mastra)', function () {
       } as unknown as IVectorStoreDocument<QueryCacheMetadata>,
     ]);
 
-    const result = await checkCacheStep(baseState, context, {
-      datasetSearch: datasetSearchStub as unknown as DatasetSearchService,
-      llm: createFakeLanguageModel(
-        `${CacheResults.Similar} 1`,
-      ) as unknown as LLMProvider,
-      dataSetHelper: dataSetHelperStub as unknown as DataSetHelper,
+    const result = await runStep(checkCacheStep, {
+      state: baseState,
+      context,
+      deps: {
+        datasetSearch: datasetSearchStub as unknown as DatasetSearchService,
+        llm: createFakeLanguageModel(
+          `${CacheResults.Similar} 1`,
+        ) as unknown as LLMProvider,
+        dataSetHelper: dataSetHelperStub as unknown as DataSetHelper,
+      },
     });
 
     expect(result.sampleSql).to.equal(sql);
@@ -128,12 +145,16 @@ describe('checkCacheStep (Mastra)', function () {
       },
     ]);
 
-    const result = await checkCacheStep(baseState, context, {
-      datasetSearch: datasetSearchStub as unknown as DatasetSearchService,
-      llm: createFakeLanguageModel(
-        `${CacheResults.AsIs} 1`,
-      ) as unknown as LLMProvider,
-      dataSetHelper: dataSetHelperStub as unknown as DataSetHelper,
+    const result = await runStep(checkCacheStep, {
+      state: baseState,
+      context,
+      deps: {
+        datasetSearch: datasetSearchStub as unknown as DatasetSearchService,
+        llm: createFakeLanguageModel(
+          `${CacheResults.AsIs} 1`,
+        ) as unknown as LLMProvider,
+        dataSetHelper: dataSetHelperStub as unknown as DataSetHelper,
+      },
     });
 
     expect(result.fromCache).to.be.true();

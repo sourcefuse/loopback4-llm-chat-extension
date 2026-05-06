@@ -7,6 +7,7 @@ import {
 } from '../../../../components/db-query/types';
 import {LLMProvider} from '../../../../types';
 import {sqlGenerationStep} from '../../../../mastra/db-query/workflow/steps/sql-generation.step';
+import {runStep} from '../../../fixtures/step-runner';
 import {MastraDbQueryContext} from '../../../../mastra/db-query/types/db-query.types';
 import {createFakeLanguageModel} from '../../../fixtures/fake-ai-models';
 
@@ -35,15 +36,19 @@ describe('sqlGenerationStep (Mastra)', function () {
       schema: {tables: {employees: {}, departments: {}}, relations: []},
     } as unknown as DbQueryState;
 
-    const result = await sqlGenerationStep(state, context, {
-      sqlLLM: createFakeLanguageModel(
-        'SELECT name FROM employees',
-      ) as unknown as LLMProvider,
-      cheapLLM: createFakeLanguageModel(
-        'SELECT name FROM employees',
-      ) as unknown as LLMProvider,
-      config: {db: {dialect: 'pg'}} as never,
-      schemaHelper: fakeSchemaHelper as never,
+    const result = await runStep(sqlGenerationStep, {
+      state,
+      context,
+      deps: {
+        sqlLLM: createFakeLanguageModel(
+          'SELECT name FROM employees',
+        ) as unknown as LLMProvider,
+        cheapLLM: createFakeLanguageModel(
+          'SELECT name FROM employees',
+        ) as unknown as LLMProvider,
+        config: {db: {dialect: 'pg'}} as never,
+        schemaHelper: fakeSchemaHelper as never,
+      },
     });
 
     expect(result.sql).to.equal('SELECT name FROM employees');
@@ -61,11 +66,15 @@ describe('sqlGenerationStep (Mastra)', function () {
     const cheapSpy = sinon.spy(cheapModel, 'doGenerate');
     const smartSpy = sinon.spy(smartModel, 'doGenerate');
 
-    await sqlGenerationStep(baseState, context, {
-      sqlLLM: smartModel as unknown as LLMProvider,
-      cheapLLM: cheapModel as unknown as LLMProvider,
-      config: {db: {dialect: 'pg'}} as never,
-      schemaHelper: fakeSchemaHelper as never,
+    await runStep(sqlGenerationStep, {
+      state: baseState,
+      context,
+      deps: {
+        sqlLLM: smartModel as unknown as LLMProvider,
+        cheapLLM: cheapModel as unknown as LLMProvider,
+        config: {db: {dialect: 'pg'}} as never,
+        schemaHelper: fakeSchemaHelper as never,
+      },
     });
 
     expect(cheapSpy.calledOnce).to.be.true();
@@ -83,11 +92,15 @@ describe('sqlGenerationStep (Mastra)', function () {
     const cheapSpy = sinon.spy(cheapModel, 'doGenerate');
     const smartSpy = sinon.spy(smartModel, 'doGenerate');
 
-    await sqlGenerationStep(state, context, {
-      sqlLLM: smartModel as unknown as LLMProvider,
-      cheapLLM: cheapModel as unknown as LLMProvider,
-      config: {db: {dialect: 'pg'}} as never,
-      schemaHelper: fakeSchemaHelper as never,
+    await runStep(sqlGenerationStep, {
+      state,
+      context,
+      deps: {
+        sqlLLM: smartModel as unknown as LLMProvider,
+        cheapLLM: cheapModel as unknown as LLMProvider,
+        config: {db: {dialect: 'pg'}} as never,
+        schemaHelper: fakeSchemaHelper as never,
+      },
     });
 
     expect(cheapSpy.calledOnce).to.be.true();
@@ -95,11 +108,15 @@ describe('sqlGenerationStep (Mastra)', function () {
   });
 
   it('returns Failed status when LLM returns empty SQL', async () => {
-    const result = await sqlGenerationStep(baseState, context, {
-      sqlLLM: createFakeLanguageModel('   ') as unknown as LLMProvider,
-      cheapLLM: createFakeLanguageModel('   ') as unknown as LLMProvider,
-      config: {db: {dialect: 'pg'}} as never,
-      schemaHelper: fakeSchemaHelper as never,
+    const result = await runStep(sqlGenerationStep, {
+      state: baseState,
+      context,
+      deps: {
+        sqlLLM: createFakeLanguageModel('   ') as unknown as LLMProvider,
+        cheapLLM: createFakeLanguageModel('   ') as unknown as LLMProvider,
+        config: {db: {dialect: 'pg'}} as never,
+        schemaHelper: fakeSchemaHelper as never,
+      },
     });
 
     expect(result.status).to.equal(GenerationError.Failed);
@@ -107,15 +124,19 @@ describe('sqlGenerationStep (Mastra)', function () {
   });
 
   it('strips markdown code fences from SQL output', async () => {
-    const result = await sqlGenerationStep(baseState, context, {
-      sqlLLM: createFakeLanguageModel(
-        '```sql\nSELECT name FROM employees\n```',
-      ) as unknown as LLMProvider,
-      cheapLLM: createFakeLanguageModel(
-        '```sql\nSELECT name FROM employees\n```',
-      ) as unknown as LLMProvider,
-      config: {db: {dialect: 'pg'}} as never,
-      schemaHelper: fakeSchemaHelper as never,
+    const result = await runStep(sqlGenerationStep, {
+      state: baseState,
+      context,
+      deps: {
+        sqlLLM: createFakeLanguageModel(
+          '```sql\nSELECT name FROM employees\n```',
+        ) as unknown as LLMProvider,
+        cheapLLM: createFakeLanguageModel(
+          '```sql\nSELECT name FROM employees\n```',
+        ) as unknown as LLMProvider,
+        config: {db: {dialect: 'pg'}} as never,
+        schemaHelper: fakeSchemaHelper as never,
+      },
     });
 
     expect(result.sql).to.equal('SELECT name FROM employees');

@@ -1,4 +1,6 @@
 import {generateText} from 'ai';
+import {createStep} from '@mastra/core/workflows';
+import {z} from 'zod';
 import {
   DbSchemaHelperService,
   PermissionHelper,
@@ -81,11 +83,10 @@ export type GetTablesStepDeps = {
 };
 
 /**
- * Selects relevant tables from the schema using a vector similarity pre-filter
- * followed by an LLM classification call. Handles the two-attempt retry loop
- * to validate that returned table names exist in the schema.
+ * Plain async function containing the business logic — callable without
+ * the Mastra workflow runtime. Used by the workflow DSL directly.
  */
-export async function getTablesStep(
+export async function runGetTables(
   state: DbQueryState,
   context: MastraDbQueryContext,
   deps: GetTablesStepDeps,
@@ -98,7 +99,7 @@ export async function getTablesStep(
     deps.permissionHelper,
   );
 
-  context.writer?.({
+  context.emit?.({
     type: LLMStreamEventType.Log,
     data: `Selecting from tables: ${accessibleTables}`,
   });
@@ -115,7 +116,7 @@ export async function getTablesStep(
   const useSmartLLM = deps.config.nodes?.getTablesNode?.useSmartLLM ?? false;
   const llm = useSmartLLM ? deps.llmSmart : deps.llmCheap;
 
-  context.writer?.({
+  context.emit?.({
     type: LLMStreamEventType.ToolStatus,
     data: {status: 'Extracting relevant tables from the schema'},
   });
@@ -169,7 +170,7 @@ export async function getTablesStep(
     const output = stripThinkingFromText(text);
 
     if (output.startsWith('failed attempt:')) {
-      context.writer?.({
+      context.emit?.({
         type: LLMStreamEventType.Log,
         data: `Table selection failed: ${output}`,
       });
@@ -194,13 +195,13 @@ export async function getTablesStep(
       };
     }
 
-    context.writer?.({
+    context.emit?.({
       type: LLMStreamEventType.Log,
       data: `LLM returned invalid tables: ${lastLine}, trying again`,
     });
   }
 
-  context.writer?.({
+  context.emit?.({
     type: LLMStreamEventType.Log,
     data: `Picked tables - ${requiredTables.join(', ')}`,
   });
@@ -215,6 +216,29 @@ export async function getTablesStep(
   debug('step result tables=%o', requiredTables);
   return result;
 }
+
+/**
+ * Selects relevant tables from the schema using a vector similarity pre-filter
+ * followed by an LLM classification call. Handles the two-attempt retry loop
+ * to validate that returned table names exist in the schema.
+ */
+export const getTablesStep = createStep({
+  id: 'db-query-get-tables',
+  inputSchema: z.any(),
+  outputSchema: z.any(),
+  execute: async ({
+    inputData,
+  }: {
+    inputData: {
+      state: DbQueryState;
+      context: MastraDbQueryContext;
+      deps: GetTablesStepDeps;
+    };
+  }): Promise<Partial<DbQueryState>> => {
+    const {state, context, deps} = inputData;
+    return runGetTables(state, context, deps);
+  },
+});
 
 async function buildFeedbacks(
   state: DbQueryState,

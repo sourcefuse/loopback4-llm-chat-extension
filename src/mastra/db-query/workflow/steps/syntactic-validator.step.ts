@@ -1,4 +1,6 @@
 import {generateText} from 'ai';
+import {createStep} from '@mastra/core/workflows';
+import {z} from 'zod';
 import {DbQueryState} from '../../../../components/db-query/state';
 import {
   EvaluationResult,
@@ -42,22 +44,21 @@ export type SyntacticValidatorStepDeps = {
 };
 
 /**
- * Executes the SQL against the configured connector to catch database-level
- * syntax and schema errors. On failure, uses the LLM to categorize the error
- * and identify affected tables for the retry loop.
+ * Plain async function containing the business logic — callable without
+ * the Mastra workflow runtime. Used by the workflow DSL directly.
  */
-export async function syntacticValidatorStep(
+export async function runSyntacticValidator(
   state: DbQueryState,
   context: MastraDbQueryContext,
   deps: SyntacticValidatorStepDeps,
 ): Promise<Partial<DbQueryState>> {
   debug('step start', {sql: state.sql});
 
-  context.writer?.({
+  context.emit?.({
     type: LLMStreamEventType.ToolStatus,
     data: {status: 'Validating generated SQL query'},
   });
-  context.writer?.({
+  context.emit?.({
     type: LLMStreamEventType.Log,
     data: 'Validating the query syntactically.',
   });
@@ -116,7 +117,7 @@ export async function syntacticValidatorStep(
           .filter(t => t.length > 0)
       : [];
 
-    context.writer?.({
+    context.emit?.({
       type: LLMStreamEventType.Log,
       data: `Query Validation Failed by DB: ${category} with error ${(error as Error).message}`,
     });
@@ -130,3 +131,26 @@ export async function syntacticValidatorStep(
     return stepResult;
   }
 }
+
+/**
+ * Executes the SQL against the configured connector to catch database-level
+ * syntax and schema errors. On failure, uses the LLM to categorize the error
+ * and identify affected tables for the retry loop.
+ */
+export const syntacticValidatorStep = createStep({
+  id: 'db-query-syntactic-validator',
+  inputSchema: z.any(),
+  outputSchema: z.any(),
+  execute: async ({
+    inputData,
+  }: {
+    inputData: {
+      state: DbQueryState;
+      context: MastraDbQueryContext;
+      deps: SyntacticValidatorStepDeps;
+    };
+  }): Promise<Partial<DbQueryState>> => {
+    const {state, context, deps} = inputData;
+    return runSyntacticValidator(state, context, deps);
+  },
+});

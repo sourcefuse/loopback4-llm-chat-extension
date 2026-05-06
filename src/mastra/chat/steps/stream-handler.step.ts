@@ -60,17 +60,13 @@ function emptyStep(): StepBuffer {
  * LLM generation) so the frontend renders one bubble per step rather than one
  * bubble per SSE chunk.
  *
- * `Tool` (running indicator) events are also buffered until `step-finish` so
- * they appear *after* the preamble text bubble rather than interspersed.
- *
  * `ToolStatus` events emitted by internal tool graphs (e.g. VisualizationGraph)
  * via `config.writer` are captured through `mastraRequestWriterStore` and
  * drained + yielded immediately at `tool-result` time so they arrive in the SSE
  * stream as soon as the tool finishes, not delayed until `step-finish`.
  *
  * `Tool` (running indicator) events are yielded immediately at `tool-call` time
- * (after any preamble text bubble) so the frontend sees the indicator before the
- * tool even starts executing.
+ * so the frontend sees the indicator before the tool starts executing.
  *
  * The generator terminates when:
  *  - the full stream is exhausted, OR
@@ -102,6 +98,7 @@ export async function* handleStream(
   // Mutable ref: set to the active toolCallId just before the tool runs so the
   // direct writer can patch events that don't carry an `id`.
   let currentToolCallId: string | undefined;
+  const seenToolStatusByCallId = new Map<string, boolean>();
 
   mastraRequestWriterStore.set(chatId, (event: LLMStreamEvent) => {
     if (directWriter) {
@@ -116,6 +113,10 @@ export async function* handleStream(
           ...ev,
           data: {...(ev.data as object), id: currentToolCallId},
         } as LLMStreamEvent;
+      }
+      if (ev.type === LLMStreamEventType.ToolStatus) {
+        const id = (ev.data as {id?: string}).id;
+        if (id) seenToolStatusByCallId.set(id, true);
       }
       directWriter(ev);
     } else {
@@ -159,18 +160,6 @@ export async function* handleStream(
           // Track current toolCallId so the direct writer can patch events.
           currentToolCallId = toolCallId;
 
-          // Flush any preamble text first so the Message bubble precedes the
-          // Tool(Running) indicator.  Clear textChunks so step-finish doesn't
-          // re-emit them.
-          const preamble = step.textChunks.join('');
-          step.textChunks = [];
-          if (preamble.trim()) {
-            yield {
-              type: LLMStreamEventType.Message,
-              data: {message: preamble},
-            };
-          }
-
           // Emit Tool(Running) immediately — the tool has not started yet, so
           // the frontend receives the indicator before any ToolStatus events.
           yield {
@@ -212,8 +201,29 @@ export async function* handleStream(
               return ev;
             });
             for (const ev of drained) {
+              if (ev.type === LLMStreamEventType.ToolStatus) {
+                const id = (ev.data as {id?: string}).id;
+                if (id) seenToolStatusByCallId.set(id, true);
+              }
               yield ev;
             }
+          }
+
+          // Guarantee tool-result -> ToolStatus mapping even when the tool did
+          // not emit any internal ToolStatus chunks.
+          if (!seenToolStatusByCallId.get(toolCallId)) {
+            const resultObj =
+              typeof result === 'object' && result !== null
+                ? (result as {done?: boolean; error?: boolean})
+                : {};
+            const status =
+              resultObj.done === false || resultObj.error === true
+                ? ToolStatus.Failed
+                : ToolStatus.Completed;
+            yield {
+              type: LLMStreamEventType.ToolStatus,
+              data: {id: toolCallId, status},
+            };
           }
 
           const toolDef = tools.map[toolName];
@@ -231,11 +241,9 @@ export async function* handleStream(
         }
 
         case 'step-finish': {
-          // 1. Emit text as a single Message bubble, but ONLY when this step
-          //    has no tool calls — preamble text before a tool call was already
-          //    flushed at `tool-call` time and textChunks was cleared there.
+          // 1. Emit text as a single Message bubble for this step.
           const text = step.textChunks.join('');
-          if (text.trim() && step.toolCalls.length === 0) {
+          if (text.trim()) {
             yield {
               type: LLMStreamEventType.Message,
               data: {message: text},

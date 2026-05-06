@@ -2,6 +2,7 @@ import {expect, sinon} from '@loopback/testlab';
 import {DbQueryState} from '../../../../components/db-query/state';
 import {LLMProvider} from '../../../../types';
 import {verifyChecklistStep} from '../../../../mastra/db-query/workflow/steps/verify-checklist.step';
+import {runStep} from '../../../fixtures/step-runner';
 import {MastraDbQueryContext} from '../../../../mastra/db-query/types/db-query.types';
 import {createFakeLanguageModel} from '../../../fixtures/fake-ai-models';
 
@@ -36,10 +37,14 @@ describe('verifyChecklistStep (Mastra)', function () {
   });
 
   it('returns {} when verifyChecklistNode is disabled', async () => {
-    const result = await verifyChecklistStep(baseState, context, {
-      smartLlm: createFakeLanguageModel('1, 2') as unknown as LLMProvider,
-      config: {nodes: {verifyChecklistNode: {enabled: false}}} as never,
-      schemaHelper: fakeSchemaHelper as never,
+    const result = await runStep(verifyChecklistStep, {
+      state: baseState,
+      context,
+      deps: {
+        smartLlm: createFakeLanguageModel('1, 2') as unknown as LLMProvider,
+        config: {nodes: {verifyChecklistNode: {enabled: false}}} as never,
+        schemaHelper: fakeSchemaHelper as never,
+      },
     });
 
     expect(result).to.deepEqual({});
@@ -52,10 +57,14 @@ describe('verifyChecklistStep (Mastra)', function () {
       feedbacks: ['Previous attempt failed'],
     } as unknown as DbQueryState;
 
-    const result = await verifyChecklistStep(stateWithFeedbacks, context, {
-      smartLlm: createFakeLanguageModel('1, 2') as unknown as LLMProvider,
-      config: {} as never,
-      schemaHelper: fakeSchemaHelper as never,
+    const result = await runStep(verifyChecklistStep, {
+      state: stateWithFeedbacks,
+      context,
+      deps: {
+        smartLlm: createFakeLanguageModel('1, 2') as unknown as LLMProvider,
+        config: {} as never,
+        schemaHelper: fakeSchemaHelper as never,
+      },
     });
 
     expect(result).to.deepEqual({});
@@ -68,10 +77,14 @@ describe('verifyChecklistStep (Mastra)', function () {
       schema: {tables: {employees: {}, departments: {}}, relations: []},
     } as unknown as DbQueryState;
 
-    const result = await verifyChecklistStep(smallState, context, {
-      smartLlm: createFakeLanguageModel('1') as unknown as LLMProvider,
-      config: {} as never,
-      schemaHelper: fakeSchemaHelper as never,
+    const result = await runStep(verifyChecklistStep, {
+      state: smallState,
+      context,
+      deps: {
+        smartLlm: createFakeLanguageModel('1') as unknown as LLMProvider,
+        config: {} as never,
+        schemaHelper: fakeSchemaHelper as never,
+      },
     });
 
     expect(result).to.deepEqual({});
@@ -79,11 +92,15 @@ describe('verifyChecklistStep (Mastra)', function () {
   });
 
   it('returns validationChecklist when LLM identifies relevant checks and calls onUsage', async () => {
-    await verifyChecklistStep(baseState, context, {
-      smartLlm: createFakeLanguageModel('1, 2') as unknown as LLMProvider,
-      config: {} as never,
-      schemaHelper: fakeSchemaHelper as never,
-      checks: ['Rule A', 'Rule B'],
+    await runStep(verifyChecklistStep, {
+      state: baseState,
+      context,
+      deps: {
+        smartLlm: createFakeLanguageModel('1, 2') as unknown as LLMProvider,
+        config: {} as never,
+        schemaHelper: fakeSchemaHelper as never,
+        checks: ['Rule A', 'Rule B'],
+      },
     });
 
     sinon.assert.calledOnce(onUsageSpy);
@@ -97,12 +114,16 @@ describe('verifyChecklistStep (Mastra)', function () {
     const smartLlm = createFakeLanguageModel('1');
     const smartNonThinkingLlm = createFakeLanguageModel('1, 2');
 
-    await verifyChecklistStep(baseState, context, {
-      smartLlm: smartLlm as unknown as LLMProvider,
-      smartNonThinkingLlm: smartNonThinkingLlm as unknown as LLMProvider,
-      config: {} as never,
-      schemaHelper: fakeSchemaHelper as never,
-      checks: ['Rule A'],
+    await runStep(verifyChecklistStep, {
+      state: baseState,
+      context,
+      deps: {
+        smartLlm: smartLlm as unknown as LLMProvider,
+        smartNonThinkingLlm: smartNonThinkingLlm as unknown as LLMProvider,
+        config: {} as never,
+        schemaHelper: fakeSchemaHelper as never,
+        checks: ['Rule A'],
+      },
     });
 
     // smartNonThinkingLlm is preferred over smartLlm

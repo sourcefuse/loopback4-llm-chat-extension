@@ -1,4 +1,6 @@
 import {generateText} from 'ai';
+import {createStep} from '@mastra/core/workflows';
+import {z} from 'zod';
 import {PermissionHelper} from '../../../../components/db-query/services';
 import {SchemaStore} from '../../../../components/db-query/services/schema.store';
 import {DbQueryState} from '../../../../components/db-query/state';
@@ -53,11 +55,10 @@ export type CheckTemplatesStepDeps = {
 };
 
 /**
- * Performs a vector similarity search for matching SQL templates, then uses
- * the LLM to confirm an exact semantic match. If a match is found, resolves
- * all placeholders via `MastraTemplateHelperService`.
+ * Plain async function containing the business logic — callable without
+ * the Mastra workflow runtime. Used by the workflow DSL directly.
  */
-export async function checkTemplatesStep(
+export async function runCheckTemplates(
   state: DbQueryState,
   context: MastraDbQueryContext,
   deps: CheckTemplatesStepDeps,
@@ -67,7 +68,7 @@ export async function checkTemplatesStep(
   const relevantDocs = await deps.templateSearch.search(state.prompt);
 
   if (relevantDocs.length === 0) {
-    context.writer?.({
+    context.emit?.({
       type: LLMStreamEventType.Log,
       data: 'No templates found for this prompt',
     });
@@ -126,7 +127,7 @@ ${placeholderText}
   const trimmed = stripThinkingFromText(text).trim();
 
   if (trimmed === 'no_match') {
-    context.writer?.({
+    context.emit?.({
       type: LLMStreamEventType.Log,
       data: 'No matching template found for this prompt',
     });
@@ -135,7 +136,7 @@ ${placeholderText}
 
   const matchResult = trimmed.match(/^match\s+(\d+)$/);
   if (!matchResult) {
-    context.writer?.({
+    context.emit?.({
       type: LLMStreamEventType.Log,
       data: `Unexpected template match response: ${trimmed}`,
     });
@@ -144,7 +145,7 @@ ${placeholderText}
 
   const matchIndex = Number.parseInt(matchResult[1], 10) - 1;
   if (matchIndex < 0 || matchIndex >= relevantDocs.length) {
-    context.writer?.({
+    context.emit?.({
       type: LLMStreamEventType.Log,
       data: `Template match index ${matchResult[1]} out of bounds`,
     });
@@ -160,7 +161,7 @@ ${placeholderText}
     template.tables,
   );
   if (missingPermissions.length > 0) {
-    context.writer?.({
+    context.emit?.({
       type: LLMStreamEventType.Log,
       data: `Template matched but missing permissions: ${missingPermissions.join(', ')}`,
     });
@@ -179,11 +180,11 @@ ${placeholderText}
     );
 
     debug('template matched: %s', template.description);
-    context.writer?.({
+    context.emit?.({
       type: LLMStreamEventType.Log,
       data: `Template matched: ${template.description}`,
     });
-    context.writer?.({
+    context.emit?.({
       type: LLMStreamEventType.ToolStatus,
       data: {status: 'Matched query template'},
     });
@@ -198,10 +199,33 @@ ${placeholderText}
     return result;
   } catch (error) {
     debug('error', error);
-    context.writer?.({
+    context.emit?.({
       type: LLMStreamEventType.Log,
       data: `Template resolution failed: ${(error as Error).message}`,
     });
     return {};
   }
 }
+
+/**
+ * Performs a vector similarity search for matching SQL templates, then uses
+ * the LLM to confirm an exact semantic match. If a match is found, resolves
+ * all placeholders via `MastraTemplateHelperService`.
+ */
+export const checkTemplatesStep = createStep({
+  id: 'db-query-check-templates',
+  inputSchema: z.any(),
+  outputSchema: z.any(),
+  execute: async ({
+    inputData,
+  }: {
+    inputData: {
+      state: DbQueryState;
+      context: MastraDbQueryContext;
+      deps: CheckTemplatesStepDeps;
+    };
+  }): Promise<Partial<DbQueryState>> => {
+    const {state, context, deps} = inputData;
+    return runCheckTemplates(state, context, deps);
+  },
+});

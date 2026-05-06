@@ -1,4 +1,6 @@
 import {generateText} from 'ai';
+import {createStep} from '@mastra/core/workflows';
+import {z} from 'zod';
 import {DbQueryState} from '../../../../components/db-query/state';
 import {ChangeType} from '../../../../components/db-query/types';
 import {LLMStreamEventType} from '../../../../types/events';
@@ -40,11 +42,10 @@ export type ClassifyChangeStepDeps = {
 };
 
 /**
- * Classifies the magnitude of change between a cached SQL query and the
- * user's new request. The classification guides downstream step selection
- * (e.g. cheap vs. smart LLM in `sqlGenerationStep`).
+ * Plain async function containing the business logic — callable without
+ * the Mastra workflow runtime. Used by the workflow DSL directly.
  */
-export async function classifyChangeStep(
+export async function runClassifyChange(
   state: DbQueryState,
   context: MastraDbQueryContext,
   deps: ClassifyChangeStepDeps,
@@ -56,7 +57,7 @@ export async function classifyChangeStep(
     return {};
   }
 
-  context.writer?.({
+  context.emit?.({
     type: LLMStreamEventType.Log,
     data: 'Classifying the level of change required for the query.',
   });
@@ -95,7 +96,7 @@ export async function classifyChangeStep(
   const changeType = parseChangeType(response);
 
   debug('change classified as: %s', changeType);
-  context.writer?.({
+  context.emit?.({
     type: LLMStreamEventType.Log,
     data: `Change classified as: ${changeType}`,
   });
@@ -104,6 +105,29 @@ export async function classifyChangeStep(
   debug('step result', result);
   return result;
 }
+
+/**
+ * Classifies the magnitude of change between a cached SQL query and the
+ * user's new request. The classification guides downstream step selection
+ * (e.g. cheap vs. smart LLM in `sqlGenerationStep`).
+ */
+export const classifyChangeStep = createStep({
+  id: 'db-query-classify-change',
+  inputSchema: z.any(),
+  outputSchema: z.any(),
+  execute: async ({
+    inputData,
+  }: {
+    inputData: {
+      state: DbQueryState;
+      context: MastraDbQueryContext;
+      deps: ClassifyChangeStepDeps;
+    };
+  }): Promise<Partial<DbQueryState>> => {
+    const {state, context, deps} = inputData;
+    return runClassifyChange(state, context, deps);
+  },
+});
 
 function parseChangeType(response: string): ChangeType {
   if (response.includes(ChangeType.Minor)) return ChangeType.Minor;

@@ -1,4 +1,6 @@
 import {generateText} from 'ai';
+import {createStep} from '@mastra/core/workflows';
+import {z} from 'zod';
 import {DbSchemaHelperService} from '../../../../components/db-query/services';
 import {DbQueryState} from '../../../../components/db-query/state';
 import {
@@ -78,11 +80,10 @@ export type SqlGenerationStepDeps = {
 };
 
 /**
- * Selects cheap vs. smart LLM based on query complexity (minor change, single
- * table, or validation-fix retry → cheap LLM; otherwise → smart LLM).
- * Generates a SQL query from the filtered schema and state context.
+ * Plain async function containing the business logic — callable without
+ * the Mastra workflow runtime. Used by the workflow DSL directly.
  */
-export async function sqlGenerationStep(
+export async function runSqlGeneration(
   state: DbQueryState,
   context: MastraDbQueryContext,
   deps: SqlGenerationStepDeps,
@@ -107,11 +108,11 @@ export async function sqlGenerationStep(
       ? deps.cheapLLM
       : deps.sqlLLM;
 
-  context.writer?.({
+  context.emit?.({
     type: LLMStreamEventType.Log,
     data: `Generating SQL query from the prompt - ${state.prompt}`,
   });
-  context.writer?.({
+  context.emit?.({
     type: LLMStreamEventType.ToolStatus,
     data: {status: 'Generating SQL query from the prompt'},
   });
@@ -159,7 +160,7 @@ export async function sqlGenerationStep(
       .trim() || undefined;
 
   if (!sql) {
-    context.writer?.({
+    context.emit?.({
       type: LLMStreamEventType.Log,
       data: `SQL generation failed: ${response}`,
     });
@@ -170,7 +171,7 @@ export async function sqlGenerationStep(
     };
   }
 
-  context.writer?.({
+  context.emit?.({
     type: LLMStreamEventType.Log,
     data: `Generated SQL query: ${sql}`,
   });
@@ -179,6 +180,29 @@ export async function sqlGenerationStep(
   debug('step result', {sql});
   return result;
 }
+
+/**
+ * Selects cheap vs. smart LLM based on query complexity (minor change, single
+ * table, or validation-fix retry → cheap LLM; otherwise → smart LLM).
+ * Generates a SQL query from the filtered schema and state context.
+ */
+export const sqlGenerationStep = createStep({
+  id: 'db-query-sql-generation',
+  inputSchema: z.any(),
+  outputSchema: z.any(),
+  execute: async ({
+    inputData,
+  }: {
+    inputData: {
+      state: DbQueryState;
+      context: MastraDbQueryContext;
+      deps: SqlGenerationStepDeps;
+    };
+  }): Promise<Partial<DbQueryState>> => {
+    const {state, context, deps} = inputData;
+    return runSqlGeneration(state, context, deps);
+  },
+});
 
 function buildFeedbacks(state: DbQueryState): string {
   if (!state.feedbacks?.length) return '';

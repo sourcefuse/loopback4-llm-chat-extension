@@ -1,26 +1,24 @@
+import {createStep} from '@mastra/core/workflows';
+import {z} from 'zod';
 import {DEFAULT_MAX_TOKEN_COUNT} from '../../../constant';
 import {approxTokenCounter} from '../../../utils';
 import {MastraAgentMessage} from '../../types';
 
 const debug = require('debug')('mastra:chat:context-compression');
 
+export type ContextCompressionInput = {
+  messages: MastraAgentMessage[];
+  maxTokenCount: number | undefined;
+};
+
 /**
- * Mirrors `ContextCompressionNode`: trims the message list to `maxTokenCount`
- * using a `last` strategy (keeps the most recent messages and always retains
- * the system message).
- *
- * This is a pre-call guard applied once before the agent call.  The Mastra
- * Agent may apply its own internal compression; this prevents oversized
- * initial prompts from being sent at all.
- *
- * @param messages      Full message list including the new human message.
- * @param maxTokenCount Token budget from `AIIntegrationConfig`; falls back to
- *                      `MAX_TOKEN_COUNT` env var or the package default.
+ * Plain async function containing the business logic — callable without
+ * the Mastra workflow runtime. Used by the workflow DSL directly.
  */
-export async function compressContextIfNeeded(
-  messages: MastraAgentMessage[],
-  maxTokenCount: number | undefined,
+export async function runCompressContext(
+  params: ContextCompressionInput,
 ): Promise<MastraAgentMessage[]> {
+  const {messages, maxTokenCount} = params;
   const limit = +(
     maxTokenCount ??
     process.env.MAX_TOKEN_COUNT ??
@@ -70,3 +68,25 @@ export async function compressContextIfNeeded(
 
   return trimmed;
 }
+
+/**
+ * Mirrors `ContextCompressionNode`: trims the message list to `maxTokenCount`
+ * using a `last` strategy (keeps the most recent messages and always retains
+ * the system message).
+ *
+ * This is a pre-call guard applied once before the agent call.  The Mastra
+ * Agent may apply its own internal compression; this prevents oversized
+ * initial prompts from being sent at all.
+ */
+export const compressContextStep = createStep({
+  id: 'chat-context-compression',
+  inputSchema: z.any(),
+  outputSchema: z.any(),
+  execute: async ({
+    inputData,
+  }: {
+    inputData: ContextCompressionInput;
+  }): Promise<MastraAgentMessage[]> => {
+    return runCompressContext(inputData);
+  },
+});

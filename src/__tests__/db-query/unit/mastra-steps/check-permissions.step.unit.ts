@@ -2,6 +2,7 @@ import {expect, sinon} from '@loopback/testlab';
 import {DbQueryState} from '../../../../components/db-query/state';
 import {Errors} from '../../../../components/db-query/types';
 import {checkPermissionsStep} from '../../../../mastra/db-query/workflow/steps/check-permissions.step';
+import {runStep} from '../../../fixtures/step-runner';
 import {MastraDbQueryContext} from '../../../../mastra/db-query/types/db-query.types';
 import {LLMProvider} from '../../../../types';
 import {createFakeLanguageModel} from '../../../fixtures/fake-ai-models';
@@ -29,9 +30,13 @@ describe('checkPermissionsStep (Mastra)', function () {
   it('returns empty when all permissions are granted', async () => {
     const permissions = {findMissingPermissions: sinon.stub().returns([])};
 
-    const result = await checkPermissionsStep(baseState, context, {
-      llm: createFakeLanguageModel('unused') as unknown as LLMProvider,
-      permissions: permissions as never,
+    const result = await runStep(checkPermissionsStep, {
+      state: baseState,
+      context,
+      deps: {
+        llm: createFakeLanguageModel('unused') as unknown as LLMProvider,
+        permissions: permissions as never,
+      },
     });
 
     expect(result).to.deepEqual({});
@@ -43,11 +48,15 @@ describe('checkPermissionsStep (Mastra)', function () {
       findMissingPermissions: sinon.stub().returns(['salaries_read']),
     };
 
-    const result = await checkPermissionsStep(baseState, context, {
-      llm: createFakeLanguageModel(
-        'You do not have access to salary data',
-      ) as unknown as LLMProvider,
-      permissions: permissions as never,
+    const result = await runStep(checkPermissionsStep, {
+      state: baseState,
+      context,
+      deps: {
+        llm: createFakeLanguageModel(
+          'You do not have access to salary data',
+        ) as unknown as LLMProvider,
+        permissions: permissions as never,
+      },
     });
 
     expect(result.status).to.equal(Errors.PermissionError);
@@ -60,9 +69,13 @@ describe('checkPermissionsStep (Mastra)', function () {
   it('calls findMissingPermissions with lowercase table names (without schema prefix)', async () => {
     const permissions = {findMissingPermissions: sinon.stub().returns([])};
 
-    await checkPermissionsStep(baseState, context, {
-      llm: createFakeLanguageModel('unused') as unknown as LLMProvider,
-      permissions: permissions as never,
+    await runStep(checkPermissionsStep, {
+      state: baseState,
+      context,
+      deps: {
+        llm: createFakeLanguageModel('unused') as unknown as LLMProvider,
+        permissions: permissions as never,
+      },
     });
 
     const tableNames: string[] =

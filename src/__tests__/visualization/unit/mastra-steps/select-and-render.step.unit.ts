@@ -7,6 +7,7 @@ import {
 } from '../../../../mastra/visualization/types/visualization.types';
 import {selectVisualizationStep} from '../../../../mastra/visualization/workflow/steps/select-visualization.step';
 import {renderVisualizationStep} from '../../../../mastra/visualization/workflow/steps/render-visualization.step';
+import {runStep} from '../../../fixtures/step-runner';
 import {createFakeLanguageModel} from '../../../fixtures/fake-ai-models';
 
 function makeVisualizer(name: string): IMastraVisualizer {
@@ -45,9 +46,13 @@ describe('selectVisualizationStep (Mastra)', function () {
         type: 'bar',
       } as unknown as MastraVisualizationState;
 
-      const result = await selectVisualizationStep(state, context, {
-        llm: createFakeLanguageModel('bar') as unknown as LLMProvider,
-        visualizers: [barViz, lineViz, pieViz],
+      const result = await runStep(selectVisualizationStep, {
+        state,
+        context,
+        deps: {
+          llm: createFakeLanguageModel('bar') as unknown as LLMProvider,
+          visualizers: [barViz, lineViz, pieViz],
+        },
       });
 
       expect(result.visualizer).to.equal(barViz);
@@ -62,9 +67,13 @@ describe('selectVisualizationStep (Mastra)', function () {
       } as unknown as MastraVisualizationState;
 
       await expect(
-        selectVisualizationStep(state, context, {
-          llm: createFakeLanguageModel('bar') as unknown as LLMProvider,
-          visualizers: [barViz],
+        runStep(selectVisualizationStep, {
+          state,
+          context,
+          deps: {
+            llm: createFakeLanguageModel('bar') as unknown as LLMProvider,
+            visualizers: [barViz],
+          },
         }),
       ).to.be.rejectedWith(/No visualizer found with name "heatmap"/);
     });
@@ -72,9 +81,13 @@ describe('selectVisualizationStep (Mastra)', function () {
 
   describe('LLM-selection path', function () {
     it('returns visualizer matching LLM output', async () => {
-      const result = await selectVisualizationStep(baseState, context, {
-        llm: createFakeLanguageModel('bar') as unknown as LLMProvider,
-        visualizers: [barViz, lineViz, pieViz],
+      const result = await runStep(selectVisualizationStep, {
+        state: baseState,
+        context,
+        deps: {
+          llm: createFakeLanguageModel('bar') as unknown as LLMProvider,
+          visualizers: [barViz, lineViz, pieViz],
+        },
       });
 
       expect(result.visualizer).to.equal(barViz);
@@ -83,11 +96,15 @@ describe('selectVisualizationStep (Mastra)', function () {
     });
 
     it('returns error object when LLM says none', async () => {
-      const result = await selectVisualizationStep(baseState, context, {
-        llm: createFakeLanguageModel(
-          'none: data has too many dimensions',
-        ) as unknown as LLMProvider,
-        visualizers: [barViz, lineViz, pieViz],
+      const result = await runStep(selectVisualizationStep, {
+        state: baseState,
+        context,
+        deps: {
+          llm: createFakeLanguageModel(
+            'none: data has too many dimensions',
+          ) as unknown as LLMProvider,
+          visualizers: [barViz, lineViz, pieViz],
+        },
       });
 
       expect(result.error).to.match(/data has too many dimensions/);
@@ -96,9 +113,13 @@ describe('selectVisualizationStep (Mastra)', function () {
 
     it('throws when LLM returns unknown visualizer name', async () => {
       await expect(
-        selectVisualizationStep(baseState, context, {
-          llm: createFakeLanguageModel('scatter') as unknown as LLMProvider,
-          visualizers: [barViz],
+        runStep(selectVisualizationStep, {
+          state: baseState,
+          context,
+          deps: {
+            llm: createFakeLanguageModel('scatter') as unknown as LLMProvider,
+            visualizers: [barViz],
+          },
         }),
       ).to.be.rejectedWith(/LLM returned unknown visualizer "scatter"/);
     });
@@ -130,7 +151,11 @@ describe('renderVisualizationStep (Mastra)', function () {
       visualizer: barViz,
     } as unknown as MastraVisualizationState;
 
-    const result = await renderVisualizationStep(state, context, {});
+    const result = await runStep(renderVisualizationStep, {
+      state,
+      context,
+      deps: {},
+    });
 
     expect(result.done).to.be.true();
     expect(result.visualizerConfig).to.deepEqual({key: 'bar-config'});
@@ -143,7 +168,11 @@ describe('renderVisualizationStep (Mastra)', function () {
       visualizer: barViz,
     } as unknown as MastraVisualizationState;
 
-    await renderVisualizationStep(state, context, {});
+    await runStep(renderVisualizationStep, {
+      state,
+      context,
+      deps: {},
+    });
 
     const call = (barViz.getConfig as sinon.SinonStub).firstCall;
     expect(call.args[1]).to.equal(onUsageSpy);
@@ -156,7 +185,11 @@ describe('renderVisualizationStep (Mastra)', function () {
     } as unknown as MastraVisualizationState;
 
     await expect(
-      renderVisualizationStep(state, context, {}),
+      runStep(renderVisualizationStep, {
+        state,
+        context,
+        deps: {},
+      }),
     ).to.be.rejectedWith(
       /visualizer, sql, and queryDescription are all required/,
     );
@@ -170,7 +203,11 @@ describe('renderVisualizationStep (Mastra)', function () {
     } as unknown as MastraVisualizationState;
 
     await expect(
-      renderVisualizationStep(state, context, {}),
+      runStep(renderVisualizationStep, {
+        state,
+        context,
+        deps: {},
+      }),
     ).to.be.rejectedWith(
       /visualizer, sql, and queryDescription are all required/,
     );

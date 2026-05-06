@@ -2,6 +2,7 @@ import {expect, sinon} from '@loopback/testlab';
 import {DbQueryState} from '../../../../components/db-query/state';
 import {LLMProvider} from '../../../../types';
 import {checkTemplatesStep} from '../../../../mastra/db-query/workflow/steps/check-templates.step';
+import {runStep} from '../../../fixtures/step-runner';
 import {MastraDbQueryContext} from '../../../../mastra/db-query/types/db-query.types';
 import {createFakeLanguageModel} from '../../../fixtures/fake-ai-models';
 
@@ -46,12 +47,16 @@ describe('checkTemplatesStep (Mastra)', function () {
   it('returns {} when no templates found', async () => {
     templateSearchStub.search.resolves([]);
 
-    const result = await checkTemplatesStep(baseState, context, {
-      templateSearch: templateSearchStub as never,
-      llm: createFakeLanguageModel('no match') as unknown as LLMProvider,
-      permissionHelper: permissionHelperStub as never,
-      templateHelper: templateHelperStub as never,
-      schemaStore: schemaStoreStub as never,
+    const result = await runStep(checkTemplatesStep, {
+      state: baseState,
+      context,
+      deps: {
+        templateSearch: templateSearchStub as never,
+        llm: createFakeLanguageModel('no match') as unknown as LLMProvider,
+        permissionHelper: permissionHelperStub as never,
+        templateHelper: templateHelperStub as never,
+        schemaStore: schemaStoreStub as never,
+      },
     });
 
     expect(result).to.deepEqual({});
@@ -69,12 +74,16 @@ describe('checkTemplatesStep (Mastra)', function () {
       },
     ]);
 
-    const result = await checkTemplatesStep(baseState, context, {
-      templateSearch: templateSearchStub as never,
-      llm: createFakeLanguageModel('no match') as unknown as LLMProvider,
-      permissionHelper: permissionHelperStub as never,
-      templateHelper: templateHelperStub as never,
-      schemaStore: schemaStoreStub as never,
+    const result = await runStep(checkTemplatesStep, {
+      state: baseState,
+      context,
+      deps: {
+        templateSearch: templateSearchStub as never,
+        llm: createFakeLanguageModel('no match') as unknown as LLMProvider,
+        permissionHelper: permissionHelperStub as never,
+        templateHelper: templateHelperStub as never,
+        schemaStore: schemaStoreStub as never,
+      },
     });
 
     expect(result).to.deepEqual({});
@@ -107,12 +116,16 @@ describe('checkTemplatesStep (Mastra)', function () {
       fromTemplate: true,
     });
 
-    await checkTemplatesStep(baseState, context, {
-      templateSearch: templateSearchStub as never,
-      llm: createFakeLanguageModel('match 1') as unknown as LLMProvider,
-      permissionHelper: permissionHelperStub as never,
-      templateHelper: templateHelperStub as never,
-      schemaStore: schemaStoreStub as never,
+    await runStep(checkTemplatesStep, {
+      state: baseState,
+      context,
+      deps: {
+        templateSearch: templateSearchStub as never,
+        llm: createFakeLanguageModel('match 1') as unknown as LLMProvider,
+        permissionHelper: permissionHelperStub as never,
+        templateHelper: templateHelperStub as never,
+        schemaStore: schemaStoreStub as never,
+      },
     });
 
     // Either resolves template or returns {} — both are valid paths

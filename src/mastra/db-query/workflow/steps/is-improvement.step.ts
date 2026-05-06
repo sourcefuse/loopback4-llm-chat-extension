@@ -1,3 +1,5 @@
+import {createStep} from '@mastra/core/workflows';
+import {z} from 'zod';
 import {DbQueryState} from '../../../../components/db-query/state';
 import {IDataSetStore} from '../../../../components/db-query/types';
 import {MastraDbQueryContext} from '../../types/db-query.types';
@@ -9,16 +11,12 @@ export type IsImprovementStepDeps = {
 };
 
 /**
- * Detects whether the incoming request is an improvement on an existing
- * dataset query. If `state.datasetId` is set, loads the original query from
- * the dataset store and enriches the state so that subsequent steps treat
- * this run as a modification (not a fresh generation).
- *
- * No LLM call is made — this is a pure data-retrieval step.
+ * Plain async function containing the business logic — callable without
+ * the Mastra workflow runtime. Used by the workflow DSL directly.
  */
-export async function isImprovementStep(
+export async function runIsImprovement(
   state: DbQueryState,
-  _context: MastraDbQueryContext,
+  context: MastraDbQueryContext,
   deps: IsImprovementStepDeps,
 ): Promise<Partial<DbQueryState>> {
   debug('step start', {datasetId: state.datasetId});
@@ -40,3 +38,29 @@ export async function isImprovementStep(
   debug('step result', result);
   return result;
 }
+
+/**
+ * Detects whether the incoming request is an improvement on an existing
+ * dataset query. If `state.datasetId` is set, loads the original query from
+ * the dataset store and enriches the state so that subsequent steps treat
+ * this run as a modification (not a fresh generation).
+ *
+ * No LLM call is made — this is a pure data-retrieval step.
+ */
+export const isImprovementStep = createStep({
+  id: 'db-query-is-improvement',
+  inputSchema: z.any(),
+  outputSchema: z.any(),
+  execute: async ({
+    inputData,
+  }: {
+    inputData: {
+      state: DbQueryState;
+      context: MastraDbQueryContext;
+      deps: IsImprovementStepDeps;
+    };
+  }): Promise<Partial<DbQueryState>> => {
+    const {state, context, deps} = inputData;
+    return runIsImprovement(state, context, deps);
+  },
+});

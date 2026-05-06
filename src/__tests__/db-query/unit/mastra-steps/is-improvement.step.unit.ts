@@ -2,6 +2,7 @@ import {expect, sinon} from '@loopback/testlab';
 import {DbQueryState} from '../../../../components/db-query/state';
 import {IDataSetStore} from '../../../../components/db-query/types';
 import {isImprovementStep} from '../../../../mastra/db-query/workflow/steps/is-improvement.step';
+import {runStep} from '../../../fixtures/step-runner';
 import {MastraDbQueryContext} from '../../../../mastra/db-query/types/db-query.types';
 
 describe('isImprovementStep (Mastra)', function () {
@@ -11,7 +12,11 @@ describe('isImprovementStep (Mastra)', function () {
     const state = {prompt: 'Show employees'} as unknown as DbQueryState;
     const store = {findById: sinon.stub()} as unknown as IDataSetStore;
 
-    const result = await isImprovementStep(state, context, {store});
+    const result = await runStep(isImprovementStep, {
+      state,
+      context,
+      deps: {store},
+    });
 
     expect(result).to.deepEqual({});
     sinon.assert.notCalled(store.findById as sinon.SinonStub);
@@ -31,7 +36,11 @@ describe('isImprovementStep (Mastra)', function () {
       }),
     } as unknown as IDataSetStore;
 
-    const result = await isImprovementStep(state, context, {store});
+    const result = await runStep(isImprovementStep, {
+      state,
+      context,
+      deps: {store},
+    });
 
     expect(result.sampleSql).to.equal('SELECT * FROM employees');
     expect(result.sampleSqlPrompt).to.equal('Show all employees');

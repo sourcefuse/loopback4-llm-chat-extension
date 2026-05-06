@@ -3,6 +3,7 @@ import {DbQueryState} from '../../../../components/db-query/state';
 import {GenerationError} from '../../../../components/db-query/types';
 import {LLMProvider} from '../../../../types';
 import {getColumnsStep} from '../../../../mastra/db-query/workflow/steps/get-columns.step';
+import {runStep} from '../../../fixtures/step-runner';
 import {MastraDbQueryContext} from '../../../../mastra/db-query/types/db-query.types';
 import {createFakeLanguageModel} from '../../../fixtures/fake-ai-models';
 
@@ -40,12 +41,16 @@ describe('getColumnsStep (Mastra)', function () {
   });
 
   it('returns {} when columnSelection is disabled', async () => {
-    const result = await getColumnsStep(baseState, context, {
-      llm: createFakeLanguageModel(
-        'employees: name, salary',
-      ) as unknown as LLMProvider,
-      schemaHelper: fakeSchemaHelper as never,
-      config: {columnSelection: false} as never,
+    const result = await runStep(getColumnsStep, {
+      state: baseState,
+      context,
+      deps: {
+        llm: createFakeLanguageModel(
+          'employees: name, salary',
+        ) as unknown as LLMProvider,
+        schemaHelper: fakeSchemaHelper as never,
+        config: {columnSelection: false} as never,
+      },
     });
 
     expect(result).to.deepEqual({});
@@ -59,12 +64,16 @@ describe('getColumnsStep (Mastra)', function () {
     } as unknown as DbQueryState;
 
     await expect(
-      getColumnsStep(emptyState, context, {
-        llm: createFakeLanguageModel(
-          'employees: name',
-        ) as unknown as LLMProvider,
-        schemaHelper: fakeSchemaHelper as never,
-        config: {columnSelection: true} as never,
+      runStep(getColumnsStep, {
+        state: emptyState,
+        context,
+        deps: {
+          llm: createFakeLanguageModel(
+            'employees: name',
+          ) as unknown as LLMProvider,
+          schemaHelper: fakeSchemaHelper as never,
+          config: {columnSelection: true} as never,
+        },
       }),
     ).to.be.rejectedWith(/No tables found/);
   });
@@ -72,10 +81,14 @@ describe('getColumnsStep (Mastra)', function () {
   it('returns selected columns on valid LLM response and calls onUsage', async () => {
     // LLM returns JSON-like mapping: {"employees": ["name", "salary"]}
     const llmResponse = JSON.stringify({employees: ['name', 'salary']});
-    await getColumnsStep(baseState, context, {
-      llm: createFakeLanguageModel(llmResponse) as unknown as LLMProvider,
-      schemaHelper: fakeSchemaHelper as never,
-      config: {columnSelection: true} as never,
+    await runStep(getColumnsStep, {
+      state: baseState,
+      context,
+      deps: {
+        llm: createFakeLanguageModel(llmResponse) as unknown as LLMProvider,
+        schemaHelper: fakeSchemaHelper as never,
+        config: {columnSelection: true} as never,
+      },
     });
 
     // May return selectedColumns or schema depending on parsing
@@ -87,12 +100,16 @@ describe('getColumnsStep (Mastra)', function () {
   });
 
   it('returns Failed status when LLM returns failed attempt', async () => {
-    const result = await getColumnsStep(baseState, context, {
-      llm: createFakeLanguageModel(
-        'failed attempt: could not determine columns',
-      ) as unknown as LLMProvider,
-      schemaHelper: fakeSchemaHelper as never,
-      config: {columnSelection: true} as never,
+    const result = await runStep(getColumnsStep, {
+      state: baseState,
+      context,
+      deps: {
+        llm: createFakeLanguageModel(
+          'failed attempt: could not determine columns',
+        ) as unknown as LLMProvider,
+        schemaHelper: fakeSchemaHelper as never,
+        config: {columnSelection: true} as never,
+      },
     });
 
     expect(result.status).to.equal(GenerationError.Failed);

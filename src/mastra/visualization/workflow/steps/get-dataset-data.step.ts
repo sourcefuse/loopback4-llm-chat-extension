@@ -1,3 +1,5 @@
+import {createStep} from '@mastra/core/workflows';
+import {z} from 'zod';
 import {LLMStreamEventType} from '../../../../types/events';
 import {IDataSetStore} from '../../../../components/db-query/types';
 import {
@@ -16,6 +18,32 @@ export type GetDatasetDataStepDeps = {
 };
 
 /**
+ * Plain async function containing the business logic — callable without
+ * the Mastra workflow runtime. Used by the workflow DSL directly.
+ */
+export async function runGetDatasetData(
+  state: MastraVisualizationState,
+  context: MastraVisualizationContext,
+  deps: GetDatasetDataStepDeps,
+): Promise<Partial<MastraVisualizationState>> {
+  debug('step start datasetId=%s', state.datasetId);
+
+  const dataset = await deps.store.findById(state.datasetId!);
+
+  debug('Dataset fetched sql=%s', dataset.query?.substring(0, 80));
+
+  context.emit?.({
+    type: LLMStreamEventType.ToolStatus,
+    data: {status: 'Preparing visualization'},
+  });
+
+  return {
+    sql: dataset.query,
+    queryDescription: dataset.description,
+  };
+}
+
+/**
  * Fetches the SQL query and human-readable description from the dataset store
  * using `state.datasetId`.
  *
@@ -28,24 +56,20 @@ export type GetDatasetDataStepDeps = {
  * LangGraph coupling removed: `@inject(DbQueryAIExtensionBindings.DatasetStore)` →
  * explicit `deps.store` parameter.
  */
-export async function getDatasetDataStep(
-  state: MastraVisualizationState,
-  context: MastraVisualizationContext,
-  deps: GetDatasetDataStepDeps,
-): Promise<Partial<MastraVisualizationState>> {
-  debug('step start datasetId=%s', state.datasetId);
-
-  const dataset = await deps.store.findById(state.datasetId!);
-
-  debug('Dataset fetched sql=%s', dataset.query?.substring(0, 80));
-
-  context.writer?.({
-    type: LLMStreamEventType.ToolStatus,
-    data: {status: 'Preparing visualization'},
-  });
-
-  return {
-    sql: dataset.query,
-    queryDescription: dataset.description,
-  };
-}
+export const getDatasetDataStep = createStep({
+  id: 'visualization-get-dataset-data',
+  inputSchema: z.any(),
+  outputSchema: z.any(),
+  execute: async ({
+    inputData,
+  }: {
+    inputData: {
+      state: MastraVisualizationState;
+      context: MastraVisualizationContext;
+      deps: GetDatasetDataStepDeps;
+    };
+  }): Promise<Partial<MastraVisualizationState>> => {
+    const {state, context, deps} = inputData;
+    return runGetDatasetData(state, context, deps);
+  },
+});

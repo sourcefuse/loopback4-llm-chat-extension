@@ -1,4 +1,6 @@
 import {generateText} from 'ai';
+import {createStep} from '@mastra/core/workflows';
+import {z} from 'zod';
 import {DbSchemaHelperService} from '../../../../components/db-query/services';
 import {DbQueryState} from '../../../../components/db-query/state';
 import {
@@ -83,11 +85,10 @@ export type GetColumnsStepDeps = {
 };
 
 /**
- * Selects the minimal set of columns needed to answer the user's query.
- * Implements the same three-attempt retry loop as the LangGraph version,
- * validating that all returned column names exist in the schema.
+ * Plain async function containing the business logic — callable without
+ * the Mastra workflow runtime. Used by the workflow DSL directly.
  */
-export async function getColumnsStep(
+export async function runGetColumns(
   state: DbQueryState,
   context: MastraDbQueryContext,
   deps: GetColumnsStepDeps,
@@ -95,7 +96,7 @@ export async function getColumnsStep(
   debug('step start', {tables: Object.keys(state.schema?.tables ?? {})});
 
   if (!deps.config.columnSelection) {
-    context.writer?.({
+    context.emit?.({
       type: LLMStreamEventType.Log,
       data: 'Skipping column selection as per configuration',
     });
@@ -110,11 +111,11 @@ export async function getColumnsStep(
 
   const tablesWithColumns = getTablesWithColumns(state.schema);
 
-  context.writer?.({
+  context.emit?.({
     type: LLMStreamEventType.Log,
     data: `Selecting relevant columns from ${Object.keys(state.schema.tables).length} tables`,
   });
-  context.writer?.({
+  context.emit?.({
     type: LLMStreamEventType.ToolStatus,
     data: {status: 'Extracting relevant columns from the schema'},
   });
@@ -166,7 +167,7 @@ export async function getColumnsStep(
     const output = stripThinkingFromText(text);
 
     if (output.startsWith('failed attempt:')) {
-      context.writer?.({
+      context.emit?.({
         type: LLMStreamEventType.Log,
         data: `Column selection failed: ${output}`,
       });
@@ -179,7 +180,7 @@ export async function getColumnsStep(
     try {
       const jsonMatch = output.match(/\{[\s\S]*\}/);
       if (!jsonMatch) {
-        context.writer?.({
+        context.emit?.({
           type: LLMStreamEventType.Log,
           data: `Failed to find JSON in LLM response, trying again (attempt ${attempts})`,
         });
@@ -191,13 +192,13 @@ export async function getColumnsStep(
       if (validateColumns(selectedColumns, state.schema)) {
         break;
       } else {
-        context.writer?.({
+        context.emit?.({
           type: LLMStreamEventType.Log,
           data: `LLM returned invalid columns (attempt ${attempts})`,
         });
       }
     } catch {
-      context.writer?.({
+      context.emit?.({
         type: LLMStreamEventType.Log,
         data: `Failed to parse JSON response (attempt ${attempts})`,
       });
@@ -216,6 +217,29 @@ export async function getColumnsStep(
   debug('step result columns=%o', selectedColumns);
   return {schema: filteredSchema};
 }
+
+/**
+ * Selects the minimal set of columns needed to answer the user's query.
+ * Implements the same three-attempt retry loop as the LangGraph version,
+ * validating that all returned column names exist in the schema.
+ */
+export const getColumnsStep = createStep({
+  id: 'db-query-get-columns',
+  inputSchema: z.any(),
+  outputSchema: z.any(),
+  execute: async ({
+    inputData,
+  }: {
+    inputData: {
+      state: DbQueryState;
+      context: MastraDbQueryContext;
+      deps: GetColumnsStepDeps;
+    };
+  }): Promise<Partial<DbQueryState>> => {
+    const {state, context, deps} = inputData;
+    return runGetColumns(state, context, deps);
+  },
+});
 
 function buildFeedbacks(state: DbQueryState): string {
   if (!state.feedbacks) return '';

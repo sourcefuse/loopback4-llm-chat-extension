@@ -2,6 +2,7 @@ import {expect, sinon} from '@loopback/testlab';
 import {DbQueryState} from '../../../../components/db-query/state';
 import {LLMProvider} from '../../../../types';
 import {fixQueryStep} from '../../../../mastra/db-query/workflow/steps/fix-query.step';
+import {runStep} from '../../../fixtures/step-runner';
 import {MastraDbQueryContext} from '../../../../mastra/db-query/types/db-query.types';
 import {createFakeLanguageModel} from '../../../fixtures/fake-ai-models';
 
@@ -41,12 +42,16 @@ describe('fixQueryStep (Mastra)', function () {
   });
 
   it('returns fixed SQL from LLM and calls onUsage', async () => {
-    const result = await fixQueryStep(baseState, context, {
-      llm: createFakeLanguageModel(
-        'SELECT salary FROM employees',
-      ) as unknown as LLMProvider,
-      config: {} as never,
-      schemaHelper: fakeSchemaHelper as never,
+    const result = await runStep(fixQueryStep, {
+      state: baseState,
+      context,
+      deps: {
+        llm: createFakeLanguageModel(
+          'SELECT salary FROM employees',
+        ) as unknown as LLMProvider,
+        config: {} as never,
+        schemaHelper: fakeSchemaHelper as never,
+      },
     });
 
     expect(result.sql).to.equal('SELECT salary FROM employees');
@@ -58,12 +63,16 @@ describe('fixQueryStep (Mastra)', function () {
   });
 
   it('strips markdown code fences from SQL response', async () => {
-    const result = await fixQueryStep(baseState, context, {
-      llm: createFakeLanguageModel(
-        '```sql\nSELECT salary FROM employees\n```',
-      ) as unknown as LLMProvider,
-      config: {} as never,
-      schemaHelper: fakeSchemaHelper as never,
+    const result = await runStep(fixQueryStep, {
+      state: baseState,
+      context,
+      deps: {
+        llm: createFakeLanguageModel(
+          '```sql\nSELECT salary FROM employees\n```',
+        ) as unknown as LLMProvider,
+        config: {} as never,
+        schemaHelper: fakeSchemaHelper as never,
+      },
     });
 
     expect(result.sql).to.equal('SELECT salary FROM employees');
@@ -76,12 +85,16 @@ describe('fixQueryStep (Mastra)', function () {
       semanticErrorTables: [],
     } as unknown as DbQueryState;
 
-    const result = await fixQueryStep(stateWithErrorTables, context, {
-      llm: createFakeLanguageModel(
-        'SELECT id FROM employees',
-      ) as unknown as LLMProvider,
-      config: {} as never,
-      schemaHelper: fakeSchemaHelper as never,
+    const result = await runStep(fixQueryStep, {
+      state: stateWithErrorTables,
+      context,
+      deps: {
+        llm: createFakeLanguageModel(
+          'SELECT id FROM employees',
+        ) as unknown as LLMProvider,
+        config: {} as never,
+        schemaHelper: fakeSchemaHelper as never,
+      },
     });
 
     expect(result.sql).to.be.a.String();
@@ -89,10 +102,14 @@ describe('fixQueryStep (Mastra)', function () {
   });
 
   it('sets sql to undefined when LLM returns empty string', async () => {
-    const result = await fixQueryStep(baseState, context, {
-      llm: createFakeLanguageModel('   ') as unknown as LLMProvider,
-      config: {} as never,
-      schemaHelper: fakeSchemaHelper as never,
+    const result = await runStep(fixQueryStep, {
+      state: baseState,
+      context,
+      deps: {
+        llm: createFakeLanguageModel('   ') as unknown as LLMProvider,
+        config: {} as never,
+        schemaHelper: fakeSchemaHelper as never,
+      },
     });
 
     expect(result.sql).to.be.undefined();

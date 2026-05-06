@@ -35,6 +35,7 @@ import {semanticValidatorStep} from '../../../../mastra/db-query/workflow/steps/
 import {checkCacheStep} from '../../../../mastra/db-query/workflow/steps/check-cache.step';
 import {classifyChangeStep} from '../../../../mastra/db-query/workflow/steps/classify-change.step';
 import {failedStep} from '../../../../mastra/db-query/workflow/steps/failed.step';
+import {runStep} from '../../../fixtures/step-runner';
 import {createFakeLanguageModel} from '../../../fixtures/fake-ai-models';
 
 // ── Shared stub factories ────────────────────────────────────────────────────
@@ -113,11 +114,15 @@ describe('DbQuery Mastra Workflow — Integration', function () {
       ) as unknown as LLMProvider;
 
       // Step: SQL generation
-      const sqlResult = await sqlGenerationStep(state, context, {
-        sqlLLM: fakeLlm,
-        cheapLLM: fakeLlm,
-        config: {db: {dialect: 'pg'}} as never,
-        schemaHelper: makeSchemaHelper() as never,
+      const sqlResult = await runStep(sqlGenerationStep, {
+        state,
+        context,
+        deps: {
+          sqlLLM: fakeLlm,
+          cheapLLM: fakeLlm,
+          config: {db: {dialect: 'pg'}} as never,
+          schemaHelper: makeSchemaHelper() as never,
+        },
       });
       const stateAfterSql = Object.assign({}, state, sqlResult);
 
@@ -125,14 +130,14 @@ describe('DbQuery Mastra Workflow — Integration', function () {
       expect(stateAfterSql.status).to.equal(EvaluationResult.Pass);
 
       // Step: Syntactic validation — connector succeeds
-      const syntacticResult = await syntacticValidatorStep(
-        stateAfterSql,
+      const syntacticResult = await runStep(syntacticValidatorStep, {
+        state: stateAfterSql,
         context,
-        {
+        deps: {
           llm: fakeLlm,
           connector: makeConnector(false) as never,
         },
-      );
+      });
       const stateAfterSyntactic = Object.assign(
         {},
         stateAfterSql,
@@ -146,10 +151,10 @@ describe('DbQuery Mastra Workflow — Integration', function () {
       const semanticLlm = createFakeLanguageModel(
         '<valid/>',
       ) as unknown as LLMProvider;
-      const semanticResult = await semanticValidatorStep(
-        stateAfterSyntactic,
+      const semanticResult = await runStep(semanticValidatorStep, {
+        state: stateAfterSyntactic,
         context,
-        {
+        deps: {
           smartLlm: semanticLlm,
           cheapLlm: semanticLlm,
           config: {
@@ -159,7 +164,7 @@ describe('DbQuery Mastra Workflow — Integration', function () {
           tableSearchService: makeTableSearchService() as never,
           schemaHelper: makeSchemaHelper() as never,
         },
-      );
+      });
       const stateAfterSemantic = Object.assign(
         {},
         stateAfterSyntactic,
@@ -198,14 +203,14 @@ describe('DbQuery Mastra Workflow — Integration', function () {
         status: EvaluationResult.Pass,
       }) as unknown as DbQueryState;
 
-      const syntacticResult1 = await syntacticValidatorStep(
-        stateWithSql,
+      const syntacticResult1 = await runStep(syntacticValidatorStep, {
+        state: stateWithSql,
         context,
-        {
+        deps: {
           llm: syntacticErrorLlm,
           connector: makeConnector(true) as never,
         },
-      );
+      });
       const stateAfterSyntacticFail = Object.assign(
         {},
         stateWithSql,
@@ -230,25 +235,25 @@ describe('DbQuery Mastra Workflow — Integration', function () {
         sql: 'SELECT name FROM employees WHERE active = true',
       }) as unknown as DbQueryState;
 
-      const syntacticResult2 = await syntacticValidatorStep(
-        stateForRetry,
+      const syntacticResult2 = await runStep(syntacticValidatorStep, {
+        state: stateForRetry,
         context,
-        {
+        deps: {
           llm: syntacticErrorLlm,
           connector: makeConnector(false) as never, // now passes
         },
-      );
+      });
       const semanticPassLlm = createFakeLanguageModel(
         '<valid/>',
       ) as unknown as LLMProvider;
-      const semanticResult2 = await semanticValidatorStep(
-        Object.assign(
+      const semanticResult2 = await runStep(semanticValidatorStep, {
+        state: Object.assign(
           {},
           stateForRetry,
           syntacticResult2,
         ) as unknown as DbQueryState,
         context,
-        {
+        deps: {
           smartLlm: semanticPassLlm,
           cheapLlm: semanticPassLlm,
           config: {
@@ -258,7 +263,7 @@ describe('DbQuery Mastra Workflow — Integration', function () {
           tableSearchService: makeTableSearchService() as never,
           schemaHelper: makeSchemaHelper() as never,
         },
-      );
+      });
 
       const stateAfterRetry = Object.assign(
         {},
@@ -309,10 +314,14 @@ describe('DbQuery Mastra Workflow — Integration', function () {
       ]);
 
       const state = makeBaseState();
-      const cacheResult = await checkCacheStep(state, context, {
-        datasetSearch: datasetSearchStub as never,
-        llm: cacheLlm,
-        dataSetHelper: dataSetHelperStub as never,
+      const cacheResult = await runStep(checkCacheStep, {
+        state,
+        context,
+        deps: {
+          datasetSearch: datasetSearchStub as never,
+          llm: cacheLlm,
+          dataSetHelper: dataSetHelperStub as never,
+        },
       });
 
       const stateAfterCache = Object.assign({}, state, cacheResult);
@@ -343,7 +352,7 @@ describe('DbQuery Mastra Workflow — Integration', function () {
       const writerSpy = sinon.spy();
       const ctx: MastraDbQueryContext = {
         onUsage: onUsageSpy,
-        writer: writerSpy,
+        emit: writerSpy,
       };
 
       const feedbacks = Array.from(
@@ -360,7 +369,7 @@ describe('DbQuery Mastra Workflow — Integration', function () {
       const shouldFail = (state.feedbacks?.length ?? 0) >= MAX_ATTEMPTS;
       expect(shouldFail).to.be.true();
 
-      const result = await failedStep(state, ctx);
+      const result = await runStep(failedStep, {state, context: ctx});
       expect(result.replyToUser).to.be.a.String();
       expect(result.replyToUser).to.match(/not able to generate/i);
 
@@ -442,7 +451,11 @@ describe('DbQuery Mastra Workflow — Integration', function () {
         ChangeType.Minor,
       ) as unknown as LLMProvider;
 
-      const result = await classifyChangeStep(state, context, {llm: fakeLlm});
+      const result = await runStep(classifyChangeStep, {
+        state,
+        context,
+        deps: {llm: fakeLlm},
+      });
       expect(result.changeType).to.equal(ChangeType.Minor);
     });
 
@@ -452,7 +465,11 @@ describe('DbQuery Mastra Workflow — Integration', function () {
         'major',
       ) as unknown as LLMProvider;
 
-      const result = await classifyChangeStep(state, context, {llm: fakeLlm});
+      const result = await runStep(classifyChangeStep, {
+        state,
+        context,
+        deps: {llm: fakeLlm},
+      });
       // With no sampleSql the step skips the LLM call
       expect(result.changeType).to.be.undefined();
     });

@@ -6,6 +6,7 @@ import {
 } from '../../../../components/db-query/types';
 import {LLMProvider} from '../../../../types';
 import {syntacticValidatorStep} from '../../../../mastra/db-query/workflow/steps/syntactic-validator.step';
+import {runStep} from '../../../fixtures/step-runner';
 import {MastraDbQueryContext} from '../../../../mastra/db-query/types/db-query.types';
 import {createFakeLanguageModel} from '../../../fixtures/fake-ai-models';
 
@@ -28,9 +29,13 @@ describe('syntacticValidatorStep (Mastra)', function () {
   it('returns Pass when connector validates successfully', async () => {
     connectorStub.validate.resolves();
 
-    const result = await syntacticValidatorStep(baseState, context, {
-      llm: createFakeLanguageModel('') as unknown as LLMProvider,
-      connector: connectorStub as unknown as IDbConnector,
+    const result = await runStep(syntacticValidatorStep, {
+      state: baseState,
+      context,
+      deps: {
+        llm: createFakeLanguageModel('') as unknown as LLMProvider,
+        connector: connectorStub as unknown as IDbConnector,
+      },
     });
 
     expect(result.syntacticStatus).to.equal(EvaluationResult.Pass);
@@ -42,11 +47,15 @@ describe('syntacticValidatorStep (Mastra)', function () {
       new Error('relation "employees" does not exist'),
     );
 
-    const result = await syntacticValidatorStep(baseState, context, {
-      llm: createFakeLanguageModel(
-        '<category>table_not_found</category><tables>employees</tables>',
-      ) as unknown as LLMProvider,
-      connector: connectorStub as unknown as IDbConnector,
+    const result = await runStep(syntacticValidatorStep, {
+      state: baseState,
+      context,
+      deps: {
+        llm: createFakeLanguageModel(
+          '<category>table_not_found</category><tables>employees</tables>',
+        ) as unknown as LLMProvider,
+        connector: connectorStub as unknown as IDbConnector,
+      },
     });
 
     expect(result.syntacticStatus).to.equal('table_not_found');
@@ -62,11 +71,15 @@ describe('syntacticValidatorStep (Mastra)', function () {
       new Error('syntax error at or near "SELCT"'),
     );
 
-    const result = await syntacticValidatorStep(baseState, context, {
-      llm: createFakeLanguageModel(
-        '<category>query_error</category><tables>employees, departments</tables>',
-      ) as unknown as LLMProvider,
-      connector: connectorStub as unknown as IDbConnector,
+    const result = await runStep(syntacticValidatorStep, {
+      state: baseState,
+      context,
+      deps: {
+        llm: createFakeLanguageModel(
+          '<category>query_error</category><tables>employees, departments</tables>',
+        ) as unknown as LLMProvider,
+        connector: connectorStub as unknown as IDbConnector,
+      },
     });
 
     expect(result.syntacticStatus).to.equal('query_error');
@@ -79,11 +92,15 @@ describe('syntacticValidatorStep (Mastra)', function () {
   it('includes syntacticFeedback in the result on failure', async () => {
     connectorStub.validate.rejects(new Error('some db error'));
 
-    const result = await syntacticValidatorStep(baseState, context, {
-      llm: createFakeLanguageModel(
-        '<category>query_error</category><tables></tables>',
-      ) as unknown as LLMProvider,
-      connector: connectorStub as unknown as IDbConnector,
+    const result = await runStep(syntacticValidatorStep, {
+      state: baseState,
+      context,
+      deps: {
+        llm: createFakeLanguageModel(
+          '<category>query_error</category><tables></tables>',
+        ) as unknown as LLMProvider,
+        connector: connectorStub as unknown as IDbConnector,
+      },
     });
 
     expect(result.syntacticFeedback).to.match(/Query Validation Failed/);

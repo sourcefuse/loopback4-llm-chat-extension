@@ -2,6 +2,7 @@ import {expect, sinon} from '@loopback/testlab';
 import {DbQueryState} from '../../../../components/db-query/state';
 import {LLMStreamEventType} from '../../../../types/events';
 import {generateDescriptionStep} from '../../../../mastra/db-query/workflow/steps/generate-description.step';
+import {runStep} from '../../../fixtures/step-runner';
 import {MastraDbQueryContext} from '../../../../mastra/db-query/types/db-query.types';
 import {LLMProvider} from '../../../../types';
 import {createFakeStreamingLanguageModel} from '../../../fixtures/fake-ai-models';
@@ -28,7 +29,7 @@ describe('generateDescriptionStep (Mastra)', function () {
     writerSpy = sinon.spy();
     onUsageSpy = sinon.spy();
     context = {
-      writer: writerSpy,
+      emit: writerSpy,
       onUsage: onUsageSpy,
     } as unknown as MastraDbQueryContext;
     (fakeSchemaHelper.asString as sinon.SinonStub).resetHistory();
@@ -36,14 +37,18 @@ describe('generateDescriptionStep (Mastra)', function () {
   });
 
   it('returns empty when generateDescription is explicitly disabled', async () => {
-    const result = await generateDescriptionStep(baseState, context, {
-      llm: createFakeStreamingLanguageModel(
-        'ignored',
-      ) as unknown as LLMProvider,
-      config: {
-        nodes: {sqlGenerationNode: {generateDescription: false}},
-      } as never,
-      schemaHelper: fakeSchemaHelper as never,
+    const result = await runStep(generateDescriptionStep, {
+      state: baseState,
+      context,
+      deps: {
+        llm: createFakeStreamingLanguageModel(
+          'ignored',
+        ) as unknown as LLMProvider,
+        config: {
+          nodes: {sqlGenerationNode: {generateDescription: false}},
+        } as never,
+        schemaHelper: fakeSchemaHelper as never,
+      },
     });
 
     expect(result).to.deepEqual({});
@@ -56,12 +61,16 @@ describe('generateDescriptionStep (Mastra)', function () {
       sql: undefined,
     } as unknown as DbQueryState;
 
-    const result = await generateDescriptionStep(stateNoSql, context, {
-      llm: createFakeStreamingLanguageModel(
-        'ignored',
-      ) as unknown as LLMProvider,
-      config: {} as never,
-      schemaHelper: fakeSchemaHelper as never,
+    const result = await runStep(generateDescriptionStep, {
+      state: stateNoSql,
+      context,
+      deps: {
+        llm: createFakeStreamingLanguageModel(
+          'ignored',
+        ) as unknown as LLMProvider,
+        config: {} as never,
+        schemaHelper: fakeSchemaHelper as never,
+      },
     });
 
     expect(result).to.deepEqual({});
@@ -69,26 +78,34 @@ describe('generateDescriptionStep (Mastra)', function () {
   });
 
   it('streams description and returns it in state', async () => {
-    const result = await generateDescriptionStep(baseState, context, {
-      llm: createFakeStreamingLanguageModel(
-        'Retrieves all employees',
-      ) as unknown as LLMProvider,
-      config: {} as never,
-      schemaHelper: fakeSchemaHelper as never,
+    const result = await runStep(generateDescriptionStep, {
+      state: baseState,
+      context,
+      deps: {
+        llm: createFakeStreamingLanguageModel(
+          'Retrieves all employees',
+        ) as unknown as LLMProvider,
+        config: {} as never,
+        schemaHelper: fakeSchemaHelper as never,
+      },
     });
 
     expect(result.description).to.equal('Retrieves all employees');
   });
 
   it('calls onUsage with token counts from the stream', async () => {
-    await generateDescriptionStep(baseState, context, {
-      llm: createFakeStreamingLanguageModel(
-        'desc text',
-        20,
-        8,
-      ) as unknown as LLMProvider,
-      config: {} as never,
-      schemaHelper: fakeSchemaHelper as never,
+    await runStep(generateDescriptionStep, {
+      state: baseState,
+      context,
+      deps: {
+        llm: createFakeStreamingLanguageModel(
+          'desc text',
+          20,
+          8,
+        ) as unknown as LLMProvider,
+        config: {} as never,
+        schemaHelper: fakeSchemaHelper as never,
+      },
     });
 
     sinon.assert.calledOnce(onUsageSpy);
@@ -97,13 +114,17 @@ describe('generateDescriptionStep (Mastra)', function () {
     expect(outputTokens).to.equal(8);
   });
 
-  it('emits ToolStatus writer events for each streamed chunk', async () => {
-    await generateDescriptionStep(baseState, context, {
-      llm: createFakeStreamingLanguageModel(
-        'hello world',
-      ) as unknown as LLMProvider,
-      config: {} as never,
-      schemaHelper: fakeSchemaHelper as never,
+  it('emits ToolStatus events for each streamed chunk', async () => {
+    await runStep(generateDescriptionStep, {
+      state: baseState,
+      context,
+      deps: {
+        llm: createFakeStreamingLanguageModel(
+          'hello world',
+        ) as unknown as LLMProvider,
+        config: {} as never,
+        schemaHelper: fakeSchemaHelper as never,
+      },
     });
 
     const toolStatusCalls = writerSpy.args.filter(
@@ -115,10 +136,14 @@ describe('generateDescriptionStep (Mastra)', function () {
   });
 
   it('calls schemaHelper.asString and getTablesContext', async () => {
-    await generateDescriptionStep(baseState, context, {
-      llm: createFakeStreamingLanguageModel('desc') as unknown as LLMProvider,
-      config: {} as never,
-      schemaHelper: fakeSchemaHelper as never,
+    await runStep(generateDescriptionStep, {
+      state: baseState,
+      context,
+      deps: {
+        llm: createFakeStreamingLanguageModel('desc') as unknown as LLMProvider,
+        config: {} as never,
+        schemaHelper: fakeSchemaHelper as never,
+      },
     });
 
     sinon.assert.calledOnce(fakeSchemaHelper.asString as sinon.SinonStub);

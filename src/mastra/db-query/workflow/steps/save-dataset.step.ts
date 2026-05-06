@@ -1,4 +1,6 @@
 import {generateText} from 'ai';
+import {createStep} from '@mastra/core/workflows';
+import {z} from 'zod';
 import {HttpErrors} from '@loopback/rest';
 import {IAuthUserWithPermissions} from '@sourceloop/core';
 import {createHash} from 'crypto';
@@ -40,19 +42,17 @@ export type SaveDatasetStepDeps = {
 };
 
 /**
- * Persists the validated SQL query as a dataset record. If `state.description`
- * is already populated (by `generateDescriptionStep`), skips the fallback LLM
- * call. Emits a `ToolStatus.Completed` event so the frontend can render the
- * data grid.
+ * Plain async function containing the business logic — callable without
+ * the Mastra workflow runtime. Used by the workflow DSL directly.
  */
-export async function saveDatasetStep(
+export async function runSaveDataset(
   state: DbQueryState,
   context: MastraDbQueryContext,
   deps: SaveDatasetStepDeps,
 ): Promise<Partial<DbQueryState>> {
   debug('step start', {sql: state.sql, hasDescription: !!state.description});
 
-  context.writer?.({
+  context.emit?.({
     type: LLMStreamEventType.Log,
     data: 'Dataset generated',
   });
@@ -106,7 +106,7 @@ export async function saveDatasetStep(
   });
 
   if (!state.directCall) {
-    context.writer?.({
+    context.emit?.({
       type: LLMStreamEventType.ToolStatus,
       data: {
         status: ToolStatus.Completed,
@@ -132,6 +132,30 @@ export async function saveDatasetStep(
   debug('step result', {datasetId: dataset.id});
   return stepResult;
 }
+
+/**
+ * Persists the validated SQL query as a dataset record. If `state.description`
+ * is already populated (by `generateDescriptionStep`), skips the fallback LLM
+ * call. Emits a `ToolStatus.Completed` event so the frontend can render the
+ * data grid.
+ */
+export const saveDatasetStep = createStep({
+  id: 'db-query-save-dataset',
+  inputSchema: z.any(),
+  outputSchema: z.any(),
+  execute: async ({
+    inputData,
+  }: {
+    inputData: {
+      state: DbQueryState;
+      context: MastraDbQueryContext;
+      deps: SaveDatasetStepDeps;
+    };
+  }): Promise<Partial<DbQueryState>> => {
+    const {state, context, deps} = inputData;
+    return runSaveDataset(state, context, deps);
+  },
+});
 
 function hashSchema(schema: DatabaseSchema): string {
   const hash = createHash('sha256');

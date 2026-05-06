@@ -1,4 +1,6 @@
 import {generateText} from 'ai';
+import {createStep} from '@mastra/core/workflows';
+import {z} from 'zod';
 import {DbSchemaHelperService} from '../../../../components/db-query/services';
 import {DbQueryState} from '../../../../components/db-query/state';
 import {
@@ -65,18 +67,17 @@ export type FixQueryStepDeps = {
 };
 
 /**
- * Repairs the SQL query based on validation error feedback, targeting only the
- * tables identified as problematic. Uses a trimmed schema (error tables only)
- * to guide the fix.
+ * Plain async function containing the business logic — callable without
+ * the Mastra workflow runtime. Used by the workflow DSL directly.
  */
-export async function fixQueryStep(
+export async function runFixQuery(
   state: DbQueryState,
   context: MastraDbQueryContext,
   deps: FixQueryStepDeps,
 ): Promise<Partial<DbQueryState>> {
   debug('step start', {sql: state.sql, feedbacks: state.feedbacks?.length});
 
-  context.writer?.({
+  context.emit?.({
     type: LLMStreamEventType.ToolStatus,
     data: {status: 'Fixing SQL query based on validation errors'},
   });
@@ -147,7 +148,7 @@ export async function fixQueryStep(
       .trim() || undefined;
 
   if (!sql) {
-    context.writer?.({
+    context.emit?.({
       type: LLMStreamEventType.Log,
       data: `SQL fix failed: ${response}`,
     });
@@ -158,7 +159,7 @@ export async function fixQueryStep(
     };
   }
 
-  context.writer?.({
+  context.emit?.({
     type: LLMStreamEventType.Log,
     data: `Fixed SQL query: ${sql}`,
   });
@@ -167,6 +168,29 @@ export async function fixQueryStep(
   debug('step result', {sql});
   return result;
 }
+
+/**
+ * Repairs the SQL query based on validation error feedback, targeting only the
+ * tables identified as problematic. Uses a trimmed schema (error tables only)
+ * to guide the fix.
+ */
+export const fixQueryStep = createStep({
+  id: 'db-query-fix-query',
+  inputSchema: z.any(),
+  outputSchema: z.any(),
+  execute: async ({
+    inputData,
+  }: {
+    inputData: {
+      state: DbQueryState;
+      context: MastraDbQueryContext;
+      deps: FixQueryStepDeps;
+    };
+  }): Promise<Partial<DbQueryState>> => {
+    const {state, context, deps} = inputData;
+    return runFixQuery(state, context, deps);
+  },
+});
 
 function trimSchema(
   fullSchema: DatabaseSchema,

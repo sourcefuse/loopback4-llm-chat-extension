@@ -15,6 +15,11 @@ export type DbQueryWriterFn = (event: LLMStreamEvent) => void;
  */
 export interface MastraDbQueryContext {
   /**
+   * Primary event emitter used by `@mastra/core` workflows.
+   * Events are adapted to legacy SSE chunks by the workflow runner.
+   */
+  emit?: (chunk: unknown) => void;
+  /**
    * Callback to emit events back to the SSE transport.
    * Accepts `unknown` to allow arbitrary event shapes from step functions
    * (matches `RunnableConfig.writer` semantics).

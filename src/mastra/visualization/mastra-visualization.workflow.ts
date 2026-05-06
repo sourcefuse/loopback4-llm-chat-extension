@@ -1,4 +1,6 @@
 import {BindingScope, inject, injectable, service} from '@loopback/core';
+import {createStep, createWorkflow} from '@mastra/core/workflows';
+import {z} from 'zod';
 import {IDataSetStore} from '../../components/db-query/types';
 import {DbQueryAIExtensionBindings} from '../../components/db-query/keys';
 import {AiIntegrationBindings} from '../../keys';
@@ -16,13 +18,14 @@ import {
   MastraVisualizationState,
   VisualizationWorkflowInput,
 } from './types/visualization.types';
+import {adaptMastraEvent} from '../workflow-event-adapter';
 import {
-  callQueryGenerationStep,
-  checkPostQueryGenerationConditions,
+  runSelectVisualization,
+  runCallQueryGeneration,
+  runGetDatasetData,
+  runRenderVisualization,
   checkPostSelectConditions,
-  getDatasetDataStep,
-  renderVisualizationStep,
-  selectVisualizationStep,
+  checkPostQueryGenerationConditions,
 } from './workflow';
 
 const debug = require('debug')('mastra:visualization:workflow');
@@ -102,102 +105,171 @@ export class MastraVisualizationWorkflow {
     input: VisualizationWorkflowInput,
     ctx?: MastraVisualizationContext,
   ): Promise<MastraVisualizationState> {
-    const context: MastraVisualizationContext = {
+    const context = this.buildContext(ctx);
+    const initialState: MastraVisualizationState = {
+      prompt: input.prompt,
+      datasetId: input.datasetId,
+      type: input.type,
+    };
+
+    // ── Per-request bound steps (close over context + this.* deps) ──────────
+
+    const selectBound = createStep({
+      id: 'visualization-select-bound',
+      inputSchema: z.any(),
+      outputSchema: z.any(),
+      execute: async ({
+        inputData,
+      }: {
+        inputData: MastraVisualizationState & {workflowDone?: boolean};
+      }) => {
+        debug('Executing step: SelectVisualization');
+        const partial = await runSelectVisualization(inputData, context, {
+          llm: this.cheapLlm,
+          visualizers: this.mastraVisualizers,
+        });
+        const next = this.merge(inputData, partial);
+        debug(
+          'Completed step: SelectVisualization visualizer=%s',
+          next.visualizerName ?? next.error,
+        );
+
+        const selectCondition = checkPostSelectConditions(next);
+        debug('Branch decision (post-select): %s', selectCondition);
+        if (selectCondition === 'error') {
+          debug(
+            'Workflow END success=false (no matching visualizer: %s)',
+            next.error,
+          );
+          return {...next, workflowDone: true};
+        }
+        return next;
+      },
+    });
+
+    const callQueryGenBound = createStep({
+      id: 'visualization-call-query-gen-bound',
+      inputSchema: z.any(),
+      outputSchema: z.any(),
+      execute: async ({
+        inputData,
+      }: {
+        inputData: MastraVisualizationState & {workflowDone?: boolean};
+      }) => {
+        if (inputData.workflowDone) return inputData;
+        debug('Executing step: CallQueryGeneration');
+        const partial = await runCallQueryGeneration(inputData, context, {
+          dbQueryWorkflow: this.dbQueryWorkflow,
+        });
+        const next = this.merge(inputData, partial);
+        debug(
+          'Completed step: CallQueryGeneration datasetId=%s',
+          next.datasetId ?? next.error,
+        );
+
+        const queryCondition = checkPostQueryGenerationConditions(next);
+        debug('Branch decision (post-query-gen): %s', queryCondition);
+        if (queryCondition === 'error') {
+          debug(
+            'Workflow END success=false (dataset generation failed: %s)',
+            next.error,
+          );
+          return {...next, workflowDone: true};
+        }
+        return next;
+      },
+    });
+
+    const getDatasetDataBound = createStep({
+      id: 'visualization-get-dataset-data-bound',
+      inputSchema: z.any(),
+      outputSchema: z.any(),
+      execute: async ({
+        inputData,
+      }: {
+        inputData: MastraVisualizationState & {workflowDone?: boolean};
+      }) => {
+        if (inputData.workflowDone) return inputData;
+        debug('Executing step: GetDatasetData');
+        const partial = await runGetDatasetData(inputData, context, {
+          store: this.datasetStore,
+        });
+        const next = this.merge(inputData, partial);
+        debug(
+          'Completed step: GetDatasetData sql=%s',
+          next.sql?.substring(0, 60),
+        );
+        return next;
+      },
+    });
+
+    const renderBound = createStep({
+      id: 'visualization-render-bound',
+      inputSchema: z.any(),
+      outputSchema: z.any(),
+      execute: async ({
+        inputData,
+      }: {
+        inputData: MastraVisualizationState & {workflowDone?: boolean};
+      }) => {
+        if (inputData.workflowDone) return inputData;
+        debug('Executing step: RenderVisualization');
+        const partial = await runRenderVisualization(inputData, context);
+        const next = this.merge(inputData, partial);
+        debug('Completed step: RenderVisualization done=%s', next.done);
+        debug('Workflow END success=true visualizer=%s', next.visualizerName);
+        return {...next, workflowDone: true};
+      },
+    });
+
+    // ── Build and run Mastra workflow DSL ────────────────────────────────────
+    const workflow = createWorkflow({
+      id: 'visualization',
+      inputSchema: z.any(),
+      outputSchema: z.any(),
+    })
+      .then(selectBound)
+      .then(callQueryGenBound)
+      .then(getDatasetDataBound)
+      .then(renderBound)
+      .commit();
+
+    const run = await workflow.createRun();
+    const result = await run.start({inputData: initialState});
+    if (result.status === 'success') {
+      const finalState = result.result as MastraVisualizationState & {
+        workflowDone?: boolean;
+      };
+      delete finalState.workflowDone;
+      return finalState;
+    }
+    return initialState;
+  }
+
+  private buildContext(
+    ctx?: MastraVisualizationContext,
+  ): MastraVisualizationContext {
+    const emit = (chunk: unknown) => {
+      const adapted = adaptMastraEvent(chunk);
+      ctx?.emit?.(adapted);
+      ctx?.writer?.(adapted);
+    };
+
+    return {
       ...ctx,
+      emit,
+      writer: emit,
       onUsage: (i, o, m) => {
         this.tokenCounter.accumulate(i, o, m);
         if (ctx?.onUsage) ctx.onUsage(i, o, m);
       },
       langfuse: this.langfuse,
     };
-
-    debug(
-      'Workflow START prompt=%s datasetId=%s type=%s',
-      input.prompt,
-      input.datasetId ?? '(none)',
-      input.type ?? '(auto)',
-    );
-
-    // ── Initial state ───────────────────────────────────────────────────────
-    let state: MastraVisualizationState = {
-      prompt: input.prompt,
-      datasetId: input.datasetId,
-      type: input.type,
-    };
-
-    // ── Step 1: SelectVisualization ─────────────────────────────────────────
-    debug('Executing step: SelectVisualization');
-    state = this.merge(
-      state,
-      await selectVisualizationStep(state, context, {
-        llm: this.cheapLlm,
-        visualizers: this.mastraVisualizers,
-      }),
-    );
-    debug(
-      'Completed step: SelectVisualization visualizer=%s',
-      state.visualizerName ?? state.error,
-    );
-
-    // ── Branch: SelectVisualization error? ──────────────────────────────────
-    const selectCondition = checkPostSelectConditions(state);
-    debug('Branch decision (post-select): %s', selectCondition);
-
-    if (selectCondition === 'error') {
-      debug(
-        'Workflow END success=false (no matching visualizer: %s)',
-        state.error,
-      );
-      return state;
-    }
-
-    // ── Step 2: CallQueryGeneration ─────────────────────────────────────────
-    debug('Executing step: CallQueryGeneration');
-    state = this.merge(
-      state,
-      await callQueryGenerationStep(state, context, {
-        dbQueryWorkflow: this.dbQueryWorkflow,
-      }),
-    );
-    debug(
-      'Completed step: CallQueryGeneration datasetId=%s',
-      state.datasetId ?? state.error,
-    );
-
-    // ── Branch: CallQueryGeneration error? ──────────────────────────────────
-    const queryCondition = checkPostQueryGenerationConditions(state);
-    debug('Branch decision (post-query-gen): %s', queryCondition);
-
-    if (queryCondition === 'error') {
-      debug(
-        'Workflow END success=false (dataset generation failed: %s)',
-        state.error,
-      );
-      return state;
-    }
-
-    // ── Step 3: GetDatasetData ──────────────────────────────────────────────
-    debug('Executing step: GetDatasetData');
-    state = this.merge(
-      state,
-      await getDatasetDataStep(state, context, {
-        store: this.datasetStore,
-      }),
-    );
-    debug('Completed step: GetDatasetData sql=%s', state.sql?.substring(0, 60));
-
-    // ── Step 4: RenderVisualization ─────────────────────────────────────────
-    debug('Executing step: RenderVisualization');
-    state = this.merge(state, await renderVisualizationStep(state, context));
-    debug('Completed step: RenderVisualization done=%s', state.done);
-
-    debug('Workflow END success=true visualizer=%s', state.visualizerName);
-    return state;
   }
 
   /**
    * Shallow-merge one or more partial states into `base`.
-   * Last-write-wins per field — same semantics as LangGraph's `Annotation.Root`.
+   * Last-write-wins per field.
    */
   private merge(
     base: MastraVisualizationState,
