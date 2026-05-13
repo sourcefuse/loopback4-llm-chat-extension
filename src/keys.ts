@@ -1,6 +1,7 @@
 import {VectorStore as VectorStoreType} from '@langchain/core/vectorstores';
 import {BaseCheckpointSaver} from '@langchain/langgraph';
 import {BindingKey} from '@loopback/context';
+import type {MastraLanguageModel} from '@mastra/core/agent';
 import {ITransport} from './transports/types';
 import {
   AIIntegrationConfig,
@@ -54,6 +55,28 @@ export namespace AiIntegrationBindings {
   );
   export const SystemContext = BindingKey.create<string[]>(
     `services.ai-reporting.system-context`,
+  );
+
+  // ── Mastra LLM bindings (Phase 1 migration) ──────────────────────────────
+  /**
+   * Mastra-compatible chat LLM.
+   * Bind a `MastraLanguageModel` (e.g. from @mastra/openai, @mastra/anthropic, etc.)
+   * to this key in your application's `application.ts`.
+   *
+   * Example:
+   *   app.bind(AiIntegrationBindings.MastraChatLLM).to(openai('gpt-4o'));
+   */
+  export const MastraChatLLM = BindingKey.create<MastraLanguageModel>(
+    'services.ai-reporting.mastraChatLLMProvider',
+  );
+
+  /**
+   * Mastra-compatible file/document processing LLM (optional).
+   * Used by FileProcessingStep to summarise uploaded files.
+   * Falls back to MastraChatLLM if not bound.
+   */
+  export const MastraFileLLM = BindingKey.create<MastraLanguageModel>(
+    'services.ai-reporting.mastraFileLLMProvider',
   );
 }
 export const WriterDB = 'writerdb';

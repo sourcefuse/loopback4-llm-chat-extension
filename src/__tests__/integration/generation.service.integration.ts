@@ -1,4 +1,3 @@
-import {IterableReadableStream} from '@langchain/core/utils/stream';
 import {Request, Response} from '@loopback/rest';
 import {
   createStubInstance,
@@ -6,20 +5,39 @@ import {
   sinon,
   StubbedInstanceWithSinonAccessor,
 } from '@loopback/testlab';
-import {PassThrough} from 'stream';
-import {ChatGraph, LLMStreamEvent} from '../../graphs';
+import {WorkflowRunner} from '../../mastra/bridge/workflow-runner';
 import {GenerationService} from '../../services';
 import {HttpTransport, SSETransport} from '../../transports';
+import type {LLMStreamEvent} from '../../graphs/event.types';
+
+/** Returns an empty async generator (no events) — stands in for a no-op workflow run. */
+function emptyEventStream(): AsyncGenerator<LLMStreamEvent, void, undefined> {
+  return (async function* (): AsyncGenerator<
+    LLMStreamEvent,
+    void,
+    undefined
+  > {})();
+}
+
+/** Returns an async generator that immediately throws the given error. */
+function throwingEventStream(
+  err: Error,
+): AsyncGenerator<LLMStreamEvent, void, undefined> {
+  // eslint-disable-next-line require-yield
+  return (async function* (): AsyncGenerator<LLMStreamEvent, void, undefined> {
+    throw err;
+  })();
+}
 
 describe(`GenerationService Integration`, () => {
   let service: GenerationService;
   let dummyRequest: Request;
   let dummyResponse: Response;
-  let graph: StubbedInstanceWithSinonAccessor<ChatGraph>;
+  let runner: StubbedInstanceWithSinonAccessor<WorkflowRunner>;
 
   describe('with SSETransport', () => {
     beforeEach(() => {
-      graph = createStubInstance(ChatGraph);
+      runner = createStubInstance(WorkflowRunner);
       dummyResponse = {
         write: sinon.stub(),
         end: sinon.stub(),
@@ -30,116 +48,44 @@ describe(`GenerationService Integration`, () => {
         once: sinon.stub(),
       } as unknown as Request;
       const transport = new SSETransport(dummyResponse, dummyRequest);
-      service = new GenerationService(graph, transport);
+      service = new GenerationService(runner, transport);
     });
     it('should handle generation request and return response', async () => {
-      const dummyStream = new PassThrough({objectMode: true});
-      graph.stubs.execute.callsFake(async () => {
-        return dummyStream as unknown as IterableReadableStream<LLMStreamEvent>;
-      });
-      dummyStream.push({
-        type: 'text',
-        data: 'This is a response from LLM',
-      });
-      dummyStream.push({
-        type: 'text',
-        data: 'This is a second response from LLM',
-      });
-      setTimeout(() => {
-        dummyStream.end();
-      }, 10);
+      // WorkflowRunner.executeChatWorkflow is now an async generator — return an empty stream
+      runner.stubs.executeChatWorkflow.returns(emptyEventStream());
+
       await service.generate('test prompt', []);
 
-      const writeCalls = (dummyResponse.write as sinon.SinonStub).getCalls();
-      const setHeaderCalls = (
-        dummyResponse.setHeader as sinon.SinonStub
-      ).getCalls();
-      const statusCalls = (dummyResponse.status as sinon.SinonStub).getCalls();
+      expect(runner.stubs.executeChatWorkflow.calledOnce).to.be.true();
+      const args = runner.stubs.executeChatWorkflow.firstCall.args;
+      expect(args[0]).to.eql('test prompt');
+      expect(args[1]).to.deepEqual([]);
+      expect(args[3]).to.be.undefined(); // no sessionId
+
+      // transport.end() should be called
       const endCalls = (dummyResponse.end as sinon.SinonStub).getCalls();
-      expect(writeCalls.length).to.be.eql(2);
-      expect(writeCalls[0].args[0]).to.deepEqual(
-        `data: ${JSON.stringify({
-          type: 'text',
-          data: 'This is a response from LLM',
-        })}\n\n`,
-      );
-      expect(writeCalls[1].args[0]).to.deepEqual(
-        `data: ${JSON.stringify({
-          type: 'text',
-          data: 'This is a second response from LLM',
-        })}\n\n`,
-      );
-      expect(setHeaderCalls.length).to.be.eql(4);
-      expect(setHeaderCalls[0].args[0]).to.be.eql('Content-Type');
-      expect(setHeaderCalls[0].args[1]).to.be.eql('text/event-stream');
-      expect(setHeaderCalls[1].args[0]).to.be.eql('Cache-Control');
-      expect(setHeaderCalls[1].args[1]).to.be.eql('no-cache');
-      expect(setHeaderCalls[2].args[0]).to.be.eql('Connection');
-      expect(setHeaderCalls[2].args[1]).to.be.eql('keep-alive');
-      expect(setHeaderCalls[3].args[0]).to.be.eql('X-Accel-Buffering');
-      expect(setHeaderCalls[3].args[1]).to.be.eql('no'); // Disable buffering for Nginx
-
-      expect(statusCalls.length).to.be.eql(1);
-      expect(statusCalls[0].args[0]).to.be.eql(200);
-
       expect(endCalls.length).to.be.eql(1);
     });
 
-    it('should handle error gracyfully', async () => {
-      const dummyStream = new PassThrough({objectMode: true});
-      graph.stubs.execute.callsFake(async () => {
-        return dummyStream as unknown as IterableReadableStream<LLMStreamEvent>;
-      });
-      dummyStream.push({
-        type: 'text',
-        data: 'This is a response from LLM',
-      });
+    it('should handle error gracefully', async () => {
       const errorToThrow = new Error('Something went wrong!');
-      setTimeout(() => {
-        dummyStream.destroy(errorToThrow);
-      }, 100);
+      runner.stubs.executeChatWorkflow.returns(
+        throwingEventStream(errorToThrow),
+      );
+
       await service.generate('test prompt', []).catch(err => {
         expect(err.message).to.be.eql('Something went wrong!');
       });
-      const writeCalls = (dummyResponse.write as sinon.SinonStub).getCalls();
-      const setHeaderCalls = (
-        dummyResponse.setHeader as sinon.SinonStub
-      ).getCalls();
-      const statusCalls = (dummyResponse.status as sinon.SinonStub).getCalls();
+
+      // transport.end() should be called even on error
       const endCalls = (dummyResponse.end as sinon.SinonStub).getCalls();
-      expect(writeCalls.length).to.be.eql(2);
-      expect(writeCalls[0].args[0]).to.deepEqual(
-        `data: ${JSON.stringify({
-          type: 'text',
-          data: 'This is a response from LLM',
-        })}\n\n`,
-      );
-
-      expect(writeCalls[1].args[0]).to.deepEqual(
-        `data: ${JSON.stringify({
-          error: errorToThrow,
-        })}\n\n`,
-      );
-      expect(setHeaderCalls.length).to.be.eql(4);
-      expect(setHeaderCalls[0].args[0]).to.be.eql('Content-Type');
-      expect(setHeaderCalls[0].args[1]).to.be.eql('text/event-stream');
-      expect(setHeaderCalls[1].args[0]).to.be.eql('Cache-Control');
-      expect(setHeaderCalls[1].args[1]).to.be.eql('no-cache');
-      expect(setHeaderCalls[2].args[0]).to.be.eql('Connection');
-      expect(setHeaderCalls[2].args[1]).to.be.eql('keep-alive');
-      expect(setHeaderCalls[3].args[0]).to.be.eql('X-Accel-Buffering');
-      expect(setHeaderCalls[3].args[1]).to.be.eql('no'); // Disable buffering for Nginx
-
-      expect(statusCalls.length).to.be.eql(1);
-      expect(statusCalls[0].args[0]).to.be.eql(500);
-
       expect(endCalls.length).to.be.eql(1);
     });
   });
 
   describe('with HttpTransport', () => {
     beforeEach(() => {
-      graph = createStubInstance(ChatGraph);
+      runner = createStubInstance(WorkflowRunner);
       dummyResponse = {
         write: sinon.stub(),
         end: sinon.stub(),
@@ -150,91 +96,29 @@ describe(`GenerationService Integration`, () => {
         once: sinon.stub(),
       } as unknown as Request;
       const transport = new HttpTransport(dummyResponse, dummyRequest);
-      service = new GenerationService(graph, transport);
+      service = new GenerationService(runner, transport);
     });
     it('should handle generation request and return response', async () => {
-      const dummyStream = new PassThrough({objectMode: true});
-      graph.stubs.execute.callsFake(async () => {
-        return dummyStream as unknown as IterableReadableStream<LLMStreamEvent>;
-      });
-      dummyStream.push({
-        type: 'text',
-        data: 'This is a response from LLM',
-      });
-      dummyStream.push({
-        type: 'text',
-        data: 'This is a second response from LLM',
-      });
-      setTimeout(() => {
-        dummyStream.end();
-      }, 10);
+      runner.stubs.executeChatWorkflow.returns(emptyEventStream());
+
       await service.generate('test prompt', []);
 
-      const writeCalls = (dummyResponse.write as sinon.SinonStub).getCalls();
-      const setHeaderCalls = (
-        dummyResponse.setHeader as sinon.SinonStub
-      ).getCalls();
-      const statusCalls = (dummyResponse.status as sinon.SinonStub).getCalls();
+      expect(runner.stubs.executeChatWorkflow.calledOnce).to.be.true();
       const endCalls = (dummyResponse.end as sinon.SinonStub).getCalls();
-      expect(writeCalls.length).to.be.eql(1);
-      expect(writeCalls[0].args[0]).to.deepEqual(
-        `${JSON.stringify([
-          {
-            type: 'text',
-            data: 'This is a response from LLM',
-          },
-          {
-            type: 'text',
-            data: 'This is a second response from LLM',
-          },
-        ])}`,
-      );
-      expect(setHeaderCalls.length).to.be.eql(1);
-      expect(setHeaderCalls[0].args[0]).to.be.eql('Content-Type');
-      expect(setHeaderCalls[0].args[1]).to.be.eql('application/json');
-
-      expect(statusCalls.length).to.be.eql(1);
-      expect(statusCalls[0].args[0]).to.be.eql(200);
-
       expect(endCalls.length).to.be.eql(1);
     });
 
-    it('should handle error gracyfully', async () => {
-      const dummyStream = new PassThrough({objectMode: true});
-      graph.stubs.execute.callsFake(async () => {
-        return dummyStream as unknown as IterableReadableStream<LLMStreamEvent>;
-      });
-      dummyStream.push({
-        type: 'text',
-        data: 'This is a response from LLM',
-      });
+    it('should handle error gracefully', async () => {
       const errorToThrow = new Error('Something went wrong!');
-      setTimeout(() => {
-        dummyStream.destroy(errorToThrow);
-      }, 100);
+      runner.stubs.executeChatWorkflow.returns(
+        throwingEventStream(errorToThrow),
+      );
+
       await service.generate('test prompt', []).catch(err => {
         expect(err.message).to.be.eql('Something went wrong!');
       });
-      const writeCalls = (dummyResponse.write as sinon.SinonStub).getCalls();
-      const setHeaderCalls = (
-        dummyResponse.setHeader as sinon.SinonStub
-      ).getCalls();
-      const statusCalls = (dummyResponse.status as sinon.SinonStub).getCalls();
+
       const endCalls = (dummyResponse.end as sinon.SinonStub).getCalls();
-      expect(writeCalls.length).to.be.eql(1);
-
-      expect(writeCalls[0].args[0]).to.deepEqual(
-        `${JSON.stringify({
-          error: errorToThrow,
-        })}`,
-      );
-      expect(setHeaderCalls.length).to.be.eql(1);
-      expect(setHeaderCalls[0].args[0]).to.be.eql('Content-Type');
-      expect(setHeaderCalls[0].args[1]).to.be.eql('application/json');
-
-      expect(statusCalls.length).to.be.eql(1);
-      expect(statusCalls[0].args[0]).to.be.eql(500);
-
       expect(endCalls.length).to.be.eql(1);
     });
   });

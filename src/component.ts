@@ -57,6 +57,7 @@ import {TokenCounter} from './services/token-counter.service';
 import {SSETransport} from './transports';
 import {AIIntegrationConfig} from './types';
 import {PgVectorStore} from './sub-modules/db/postgresql';
+import {WorkflowRunner} from './mastra/bridge/workflow-runner';
 
 const debug = require('debug')('ai-integration:log-events:component');
 export class AiIntegrationsComponent implements Component {
@@ -88,6 +89,8 @@ export class AiIntegrationsComponent implements Component {
       TokenCounter,
       GenerationService,
       ChatStore,
+      // mastra migration
+      WorkflowRunner,
       // graph
       ChatGraph,
       // nodes

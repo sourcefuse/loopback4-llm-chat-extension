@@ -15,6 +15,7 @@ import {ChatRepository} from '../../repositories';
 import {ChannelType, TokenMetadata} from '../../types';
 import {getTextContent, mergeAttachments} from '../../utils';
 import {SavedMessage} from '../types';
+import {CoreMessageLike} from '../../mastra/bridge/context-window-manager';
 import {
   MessageMetadata,
   MessageMetadataType,
@@ -112,10 +113,104 @@ export class ChatStore {
     return newMessage;
   }
 
+  /**
+   * Find a message entity by its ID within a chat session.
+   * Used by FileProcessingStep to retrieve the user Message for addAttachmentMessage.
+   */
+  async findMessageById(
+    chatId: string,
+    messageId: string,
+  ): Promise<Message | undefined> {
+    try {
+      return await this.chatRepository
+        .messages(chatId)
+        .find({
+          where: {id: messageId},
+          limit: 1,
+        })
+        .then(results => results[0]);
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * Load all messages for a session, including nested sub-messages.
+   * Used by PrepareContextStep to build the full conversation context.
+   */
+  async getMessages(chatId: string): Promise<Message[]> {
+    const chat = await this.chatRepository.findById(chatId, {
+      include: [
+        {
+          relation: 'messages',
+          scope: {
+            include: ['messages'],
+            order: ['createdOn ASC'],
+          },
+        },
+      ],
+    });
+    return chat.messages ?? [];
+  }
+
   async addHumanMessage(chatId: string, message: HumanMessage) {
     return this.addMessage(chatId, getTextContent(message.content), {
       type: MessageMetadataType.User,
     });
+  }
+
+  /**
+   * Mastra-compatible variant of addHumanMessage that accepts a plain string.
+   * Used by the ChatWorkflow's InitSessionStep without LangChain dependencies.
+   */
+  async addHumanMessageText(chatId: string, text: string) {
+    return this.addMessage(chatId, text, {
+      type: MessageMetadataType.User,
+    });
+  }
+
+  /**
+   * Mastra-compatible variant of addAIMessage that accepts a plain string.
+   * Used by the ChatWorkflow's PersistConversationStep without LangChain dependencies.
+   */
+  async addAIMessageText(chatId: string, text: string) {
+    const body = text.trim() || ' ';
+    return this.addMessage(
+      chatId,
+      body,
+      {
+        type: MessageMetadataType.AI,
+      },
+      true,
+    );
+  }
+
+  /**
+   * Mastra-compatible variant of addToolMessage that accepts plain strings/objects.
+   * Used by the ChatWorkflow's PersistConversationStep without LangChain dependencies.
+   */
+  async addToolMessageText(
+    chatId: string,
+    toolCallId: string,
+    toolName: string,
+    content: string,
+    metadata: AnyObject,
+    aiMessage: Message,
+    args?: AnyObject,
+  ) {
+    return this.addMessage(
+      chatId,
+      content,
+      {
+        type: MessageMetadataType.Tool,
+        toolName,
+        id: toolCallId,
+        args,
+        ...metadata,
+      },
+      true,
+      aiMessage.id,
+    );
   }
 
   async addAttachmentMessage(
@@ -221,6 +316,66 @@ export class ChatStore {
     } else {
       // do nothing for other types
     }
+  }
+
+  /**
+   * Convert a persisted Message entity to a CoreMessage-compatible object.
+   * Used by PrepareContextStep to build the agent's conversation history.
+   * Avoids LangChain types — compatible with Vercel AI SDK CoreMessage format.
+   */
+  async toCoreMessage(message: Message): Promise<CoreMessageLike | undefined> {
+    if (message.metadata?.type === MessageMetadataType.User) {
+      let messageContent = message.body;
+      for (const fileMessage of message.messages ?? []) {
+        if (fileMessage.metadata?.type === MessageMetadataType.Attachment) {
+          messageContent = mergeAttachments(
+            messageContent,
+            fileMessage.metadata.fileName,
+            fileMessage.body,
+          );
+        }
+      }
+      return {role: 'user', content: messageContent};
+    } else if (message.metadata?.type === MessageMetadataType.AI) {
+      const toolCalls = message.messages
+        ?.filter(
+          (v): v is Message & {metadata: ToolMessageMetadata} =>
+            v.metadata.type === MessageMetadataType.Tool,
+        )
+        .map(msg => ({
+          type: 'tool-call' as const,
+          toolCallId: msg.metadata.id,
+          toolName: msg.metadata.toolName,
+          args: msg.metadata.args ?? {},
+        }));
+
+      if (toolCalls?.length) {
+        return {
+          role: 'assistant',
+          content: [
+            ...(message.body.trim()
+              ? [{type: 'text' as const, text: message.body.trim()}]
+              : []),
+            ...toolCalls,
+          ],
+        };
+      }
+      return {role: 'assistant', content: message.body.trim() || ' '};
+    } else if (message.metadata?.type === MessageMetadataType.Tool) {
+      const toolMeta = message.metadata as ToolMessageMetadata;
+      return {
+        role: 'tool',
+        content: [
+          {
+            type: 'tool-result' as const,
+            toolCallId: toolMeta.id,
+            toolName: toolMeta.toolName,
+            result: message.body,
+          },
+        ],
+      };
+    }
+    return undefined;
   }
 
   private mergeCountMap(metadata: TokenMetadata, newData: TokenMetadata) {
