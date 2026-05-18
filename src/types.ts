@@ -8,6 +8,7 @@ import {
 import {BaseCheckpointSaver} from '@langchain/langgraph';
 import {ChatOllama, OllamaEmbeddings} from '@langchain/ollama';
 import {ChatOpenAI, OpenAIEmbeddings} from '@langchain/openai';
+import {createTool} from '@mastra/core/tools';
 import {Provider} from '@loopback/core';
 import {AnyObject} from '@loopback/repository';
 import {IGraphTool} from './graphs/types';
@@ -62,6 +63,30 @@ export type CheckpointerProvider = Provider<BaseCheckpointSaver>;
 export type ToolStore = {
   list: IGraphTool[];
   map: Record<string, IGraphTool>;
+};
+
+export type JsonPrimitive = string | number | boolean | null;
+
+export type JsonValue = JsonPrimitive | JsonObject | JsonValue[];
+
+export type JsonObject = {
+  [key: string]: JsonValue;
+};
+
+export type MastraTool = ReturnType<typeof createTool>;
+
+export type MastraToolDefinition = {
+  id: string;
+  tool: MastraTool;
+  source: 'native' | 'legacy-compat';
+  formatResult: (result: JsonObject) => string;
+  getMetadata: (result: JsonObject) => JsonObject;
+};
+
+export type MastraToolStore = {
+  list: MastraToolDefinition[];
+  map: Record<string, MastraToolDefinition>;
+  tools: Record<string, MastraTool>;
 };
 
 export enum ChannelType {

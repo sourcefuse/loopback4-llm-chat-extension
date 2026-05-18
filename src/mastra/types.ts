@@ -1,11 +1,9 @@
-import {AnyObject} from '@loopback/repository';
 import {z} from 'zod';
 import {LLMStreamEvent} from '../graphs/event.types';
 import type {AsyncEventQueue} from './bridge/async-event-queue';
 import type {TokenUsageAccumulator} from './bridge/token-usage-accumulator';
 import type {ChatStore} from '../graphs/chat/chat.store';
-import type {ToolStore} from '../types';
-import type {AIIntegrationConfig} from '../types';
+import type {AIIntegrationConfig, JsonObject, MastraToolStore} from '../types';
 import type {MastraLanguageModel} from '@mastra/core/agent';
 
 /**
@@ -23,8 +21,8 @@ export type ChatWorkflowRequestContext = {
   mastraFileLlm: MastraLanguageModel;
   /** Per-request chat data store */
   chatStore: ChatStore;
-  /** Available tools for the agent */
-  toolStore: ToolStore;
+  /** Available Mastra-native tools for the agent */
+  mastraTools: MastraToolStore;
   /** AI integration configuration */
   aiConfig: AIIntegrationConfig;
   /** Optional system context additions */
@@ -43,20 +41,22 @@ export interface IMastraTool {
   /** Human-readable description for the LLM */
   description: string;
   /** Zod schema for the tool's input */
-  inputSchema: z.ZodTypeAny;
+  inputSchema: z.ZodType<JsonObject>;
   /**
    * Execute the tool.
    * @param args - Input data validated against inputSchema
    * @param requestContext - RequestContext for accessing services
    */
   execute(
-    args: AnyObject,
-    requestContext: {get: (key: string) => unknown},
-  ): Promise<AnyObject>;
+    args: JsonObject,
+    requestContext: {
+      get: (key: string) => string | number | boolean | object | undefined;
+    },
+  ): Promise<JsonObject>;
   /** Extract the human-readable value from the raw result */
-  getValue?(result: AnyObject): string;
+  getValue?(result: JsonObject): string;
   /** Extract metadata for DB persistence */
-  getMetadata?(result: AnyObject): AnyObject;
+  getMetadata?(result: JsonObject): JsonObject;
   /** Whether this tool requires human review before execution */
   needsReview?: boolean;
 }
@@ -86,9 +86,9 @@ export type ToolCallRecord = {
   /** Tool name */
   toolName: string;
   /** Arguments passed to the tool */
-  args: AnyObject;
+  args: JsonObject;
   /** Raw result returned by the tool */
-  rawResult: AnyObject;
+  rawResult: JsonObject;
 };
 
 /**

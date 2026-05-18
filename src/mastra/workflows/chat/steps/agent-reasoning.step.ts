@@ -10,9 +10,26 @@ import {
   FileProcessingOutputSchema,
   AgentReasoningOutputSchema,
 } from '../chat-workflow-schemas';
-import type {AnyObject} from '@loopback/repository';
+import type {JsonObject, JsonValue} from '../../../../types';
 
 const debug = require('debug')('ai-integration:mastra:agent-reasoning.step');
+
+function toJsonObject(value: JsonValue | undefined): JsonObject {
+  if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+    return value;
+  }
+
+  if (
+    typeof value === 'string' ||
+    typeof value === 'number' ||
+    typeof value === 'boolean' ||
+    value === null
+  ) {
+    return {value};
+  }
+
+  return {};
+}
 
 /**
  * AgentReasoningStep — the core agentic loop.
@@ -41,7 +58,7 @@ export const agentReasoningStep = createStep({
 
     const eventQueue = ctx.get('eventQueue');
     const tokenAccumulator = ctx.get('tokenUsageAccumulator');
-    const toolStore = ctx.get('toolStore');
+    const mastraTools = ctx.get('mastraTools');
     const abortSignal = ctx.get('abortSignal');
     const aiConfig = ctx.get('aiConfig') as
       | {maxSteps?: number; modelName?: string}
@@ -85,7 +102,7 @@ export const agentReasoningStep = createStep({
             data: {
               id: toolCallId,
               tool: toolName,
-              data: (args ?? {}) as AnyObject,
+              data: toJsonObject(args as JsonValue),
             },
           });
           break;
@@ -99,22 +116,17 @@ export const agentReasoningStep = createStep({
           toolCallRecords.push({
             toolCallId,
             toolName,
-            args: (args ?? {}) as AnyObject,
-            rawResult: (result ?? {}) as AnyObject,
+            args: toJsonObject(args as JsonValue),
+            rawResult: toJsonObject(result as JsonValue),
           });
 
-          // IGraphTool sub-graphs emit ToolStatus internally via config.writer → eventQueue.
-          // For plain Mastra tools (not IGraphTool), emit a generic ToolStatus here.
-          const igraphTool = toolStore?.map?.[toolName];
-          if (!igraphTool) {
-            emitToolStatusEvent(
-              eventQueue,
-              toolCallId,
-              toolStore,
-              toolName,
-              (result ?? {}) as AnyObject,
-            );
-          }
+          emitToolStatusEvent(
+            eventQueue,
+            toolCallId,
+            mastraTools,
+            toolName,
+            toJsonObject(result as JsonValue),
+          );
           break;
         }
 

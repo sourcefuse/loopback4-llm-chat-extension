@@ -2,7 +2,7 @@
  * Mastra migration layer barrel export.
  *
  * Phase 1: Foundation Layer + ChatWorkflow
- * Phase 2 (future): DBQueryWorkflow
+ * Phase 2: DBQueryWorkflow
  * Phase 3 (future): VisualizationWorkflow
  */
 
@@ -22,6 +22,14 @@ export type {
 
 // Chat workflow
 export {chatWorkflow} from './workflows/chat/chat.workflow';
+
+// DB Query workflow
+export {dbQueryWorkflow} from './workflows/db-query/db-query.workflow';
+export {
+  getDataAsDatasetTool,
+  improveDatasetTool,
+  askAboutDatasetTool,
+} from './workflows/db-query/tools';
 
 // Agent
 export {chatReasoningAgent} from './agents/chat-reasoning.agent';

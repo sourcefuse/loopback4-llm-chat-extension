@@ -3,6 +3,7 @@ import {z} from 'zod';
 import {createStep} from '@mastra/core/workflows';
 import {Agent} from '@mastra/core/agent';
 import type {MastraLanguageModel} from '@mastra/core/agent';
+import {Readable} from 'stream';
 import {LLMStreamEventType} from '../../../../graphs/event.types';
 import {asWorkflowContext} from '../../../bridge/workflow-request-context';
 import {mergeAttachments} from '../../../../utils';
@@ -21,6 +22,19 @@ You will be provided with user's original prompt and one file among the files th
 You will summarize the one file at a time so don't worry about the other files mentioned in the user's prompt.
 The summary should be relatively short and only contain the important details that are relevant to the user's query.
 The output should just be a plain text string without any additional markdown syntax or any special formatting.`;
+
+type FileContentPart = {
+  type: 'file';
+  // eslint-disable-next-line @typescript-eslint/naming-convention
+  source_type: 'base64';
+  data: string;
+  // eslint-disable-next-line @typescript-eslint/naming-convention
+  mime_type: string;
+};
+
+type FileModelWithAdapter = MastraLanguageModel & {
+  getFile?: (file: Express.Multer.File) => FileContentPart;
+};
 
 /**
  * FileProcessingStep — summarise uploaded files using the file LLM.
@@ -68,7 +82,7 @@ export const fileProcessingStep = createStep({
     let mergedPrompt = prompt;
 
     for (const file of files) {
-      const multerFile = file as unknown as Express.Multer.File;
+      const multerFile = toMulterFile(file);
       debug(`FileProcessing: processing file ${multerFile.originalname}`);
 
       // Emit Status via writer (workflow-native streaming, not AsyncEventQueue)
@@ -134,6 +148,49 @@ export const fileProcessingStep = createStep({
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+function toMulterFile(
+  file: z.infer<typeof PrepareContextOutputSchema>['files'][number],
+): Express.Multer.File {
+  const source = file as Record<string, unknown>;
+
+  const buffer = Buffer.isBuffer(source.buffer)
+    ? source.buffer
+    : Buffer.alloc(0);
+  const originalname =
+    typeof source.originalname === 'string' && source.originalname.length > 0
+      ? source.originalname
+      : 'attachment';
+  const mimetype =
+    typeof source.mimetype === 'string' && source.mimetype.length > 0
+      ? source.mimetype
+      : 'application/pdf';
+  const fieldname =
+    typeof source.fieldname === 'string' && source.fieldname.length > 0
+      ? source.fieldname
+      : 'file';
+  const encoding =
+    typeof source.encoding === 'string' && source.encoding.length > 0
+      ? source.encoding
+      : '7bit';
+  const size =
+    typeof source.size === 'number' && Number.isFinite(source.size)
+      ? source.size
+      : buffer.length;
+
+  return {
+    fieldname,
+    originalname,
+    encoding,
+    mimetype,
+    size,
+    destination: '',
+    filename: originalname,
+    path: '',
+    buffer,
+    stream: Readable.from(buffer),
+  };
+}
+
 /**
  * Build a file content part compatible with the Vercel AI SDK message format.
  * Mirrors `SummariseFileNode.buildFileContent()`.
@@ -141,11 +198,9 @@ export const fileProcessingStep = createStep({
 function buildFileContentPart(
   file: Express.Multer.File,
   llm: MastraLanguageModel,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-): any {
+): FileContentPart {
   // Some LLM providers have a custom getFile() helper on the provider instance
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const provider = llm as any;
+  const provider = llm as FileModelWithAdapter;
   if (typeof provider?.getFile === 'function') {
     return provider.getFile(file);
   }

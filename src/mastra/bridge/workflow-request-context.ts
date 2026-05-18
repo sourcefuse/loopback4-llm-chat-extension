@@ -2,7 +2,7 @@ import type {RequestContext} from '@mastra/core/request-context';
 import type {MastraLanguageModel} from '@mastra/core/agent';
 import type {IAuthUserWithPermissions} from '@sourceloop/core';
 import type {ChatStore} from '../../graphs/chat/chat.store';
-import type {AIIntegrationConfig, ToolStore} from '../../types';
+import type {AIIntegrationConfig, MastraToolStore} from '../../types';
 import type {AsyncEventQueue} from './async-event-queue';
 import type {TokenUsageAccumulator} from './token-usage-accumulator';
 
@@ -22,8 +22,8 @@ export interface WorkflowRequestContext {
   mastraFileLlm: MastraLanguageModel;
   /** Chat session store — request-scoped */
   chatStore: ChatStore;
-  /** Tool registry for the chat Agent */
-  toolStore: ToolStore;
+  /** Mastra-native tool registry for the chat Agent */
+  mastraTools: MastraToolStore;
   /** AI integration config (optional — may be undefined if not bound) */
   aiConfig: AIIntegrationConfig | Record<string, never>;
   /** System context strings to prepend to the system prompt */

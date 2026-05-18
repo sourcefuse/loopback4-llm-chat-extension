@@ -8,6 +8,7 @@ import {
   EmbeddingProvider,
   ICache,
   LLMProvider,
+  MastraToolStore,
   ToolStore,
 } from './types';
 import {ILimitStrategy} from './services/limit-strategies/types';
@@ -39,6 +40,9 @@ export namespace AiIntegrationBindings {
   );
   export const Tools = BindingKey.create<ToolStore>(
     'services.ai-reporting.tool-store',
+  );
+  export const MastraTools = BindingKey.create<MastraToolStore>(
+    'services.ai-reporting.mastra-tool-store',
   );
   export const Transport = BindingKey.create<ITransport>(
     'services.ai-reporting.transport',
@@ -78,6 +82,33 @@ export namespace AiIntegrationBindings {
   export const MastraFileLLM = BindingKey.create<MastraLanguageModel>(
     'services.ai-reporting.mastraFileLLMProvider',
   );
+
+  // ── Mastra DBQuery LLM bindings (Phase 2 migration) ──────────────────────
+
+  /**
+   * Mastra-compatible cheap/fast LLM for DBQuery workflow.
+   * Used for table selection, column selection, classification, etc.
+   */
+  export const MastraCheapLLM = BindingKey.create<MastraLanguageModel>(
+    'services.ai-reporting.mastraCheapLLMProvider',
+  );
+
+  /**
+   * Mastra-compatible smart/powerful LLM for DBQuery workflow.
+   * Used for SQL generation and complex validation.
+   */
+  export const MastraSmartLLM = BindingKey.create<MastraLanguageModel>(
+    'services.ai-reporting.mastraSmartLLMProvider',
+  );
+
+  /**
+   * Mastra-compatible smart non-thinking LLM (optional).
+   * Used for checklist verification. Falls back to MastraSmartLLM.
+   */
+  export const MastraSmartNonThinkingLLM =
+    BindingKey.create<MastraLanguageModel>(
+      'services.ai-reporting.mastraSmartNonThinkingLLMProvider',
+    );
 }
 export const WriterDB = 'writerdb';
 export const ReaderDB = 'readerdb';

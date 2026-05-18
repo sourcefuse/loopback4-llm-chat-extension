@@ -2,113 +2,10 @@ import {Agent} from '@mastra/core/agent';
 import {RequestContext} from '@mastra/core/request-context';
 import type {MastraLanguageModel} from '@mastra/core/agent';
 import type {MastraModelConfig} from '@mastra/core/llm';
-import {createTool} from '@mastra/core/tools';
-import {z} from 'zod';
-import {AnyObject} from '@loopback/repository';
-import {IGraphTool, ToolStatus} from '../../graphs/types';
-import {LLMStreamEvent, LLMStreamEventType} from '../../graphs/event.types';
+import {LLMStreamEventType} from '../../graphs/event.types';
 import type {AsyncEventQueue} from '../bridge/async-event-queue';
-import type {ToolStore} from '../../types';
+import type {JsonObject, MastraToolStore} from '../../types';
 import {asWorkflowContext} from '../bridge/workflow-request-context';
-
-const debug = require('debug')('ai-integration:mastra:chat-agent');
-
-/**
- * Typed interface for the LangChain tool extracted via igraphTool.build().
- * Only the fields we need are declared.
- */
-interface LangChainToolLike {
-  schema?: z.ZodTypeAny;
-  description?: string;
-  invoke(
-    input: Record<string, unknown>,
-    config?: Record<string, unknown>,
-  ): Promise<unknown>;
-}
-
-/**
- * Build a Mastra-compatible tool from an IGraphTool instance.
- *
- * The adapter:
- * 1. Builds the LangChain tool once (to extract the Zod schema and description).
- * 2. Returns a Mastra createTool() with the same schema.
- * 3. At execution time, re-builds with a config that routes config.writer → AsyncEventQueue.
- */
-async function buildMastraToolFromIGraphTool(
-  igraphTool: IGraphTool,
-): Promise<ReturnType<typeof createTool>> {
-  // Build once with a minimal config to extract the schema and description.
-  // IGraphTool.build() is typed to accept LangGraphRunnableConfig — we pass the
-  // minimum required shape.
-  const lcTool = (await igraphTool.build({
-    configurable: {},
-  } as Parameters<IGraphTool['build']>[0])) as unknown as LangChainToolLike;
-
-  const toolSchema: z.ZodTypeAny = lcTool.schema ?? z.record(z.unknown());
-  const toolDescription: string = lcTool.description ?? igraphTool.key;
-
-  return createTool({
-    id: igraphTool.key,
-    description: toolDescription,
-    inputSchema: toolSchema,
-    execute: async (inputData, context) => {
-      // Retrieve the event queue from RequestContext (typed access via asWorkflowContext).
-      const eventQueue: AsyncEventQueue | undefined = context?.requestContext
-        ? asWorkflowContext(context.requestContext as RequestContext).get(
-            'eventQueue',
-          )
-        : undefined;
-
-      debug(`Executing tool: ${igraphTool.key}`, inputData);
-
-      // Build a LangGraph-compatible config so tool sub-graphs can emit SSE events
-      // via config.writer — those events are routed into the AsyncEventQueue.
-      const lgConfig: Parameters<IGraphTool['build']>[0] = {
-        configurable: {},
-        writer: (event: LLMStreamEvent) => {
-          eventQueue?.push(event);
-        },
-      } as unknown as Parameters<IGraphTool['build']>[0];
-
-      // Re-build with writer so sub-graphs can emit events during tool execution.
-      const freshLcTool = (await igraphTool.build(
-        lgConfig,
-      )) as unknown as LangChainToolLike;
-
-      const result = await freshLcTool.invoke(
-        inputData as Record<string, unknown>,
-        lgConfig as Record<string, unknown>,
-      );
-
-      return result as AnyObject;
-    },
-  });
-}
-
-/**
- * Build the Mastra tools map for the ChatReasoningAgent.
- * Called once per request from AgentReasoningStep.
- */
-export async function buildChatAgentTools(
-  toolStore: ToolStore,
-): Promise<Record<string, ReturnType<typeof createTool>>> {
-  const toolsMap: Record<string, ReturnType<typeof createTool>> = {};
-
-  for (const igraphTool of toolStore.list) {
-    if (igraphTool.needsReview === true) {
-      debug(`Skipping tool ${igraphTool.key}: requires user review`);
-      continue;
-    }
-    try {
-      toolsMap[igraphTool.key] =
-        await buildMastraToolFromIGraphTool(igraphTool);
-    } catch (err) {
-      debug(`Failed to build Mastra tool wrapper for ${igraphTool.key}:`, err);
-    }
-  }
-
-  return toolsMap;
-}
 
 /**
  * ChatReasoningAgent — the Mastra Agent that drives the multi-turn tool-calling loop.
@@ -118,7 +15,7 @@ export async function buildChatAgentTools(
  *
  * Architecture:
  *  - model: resolved from RequestContext at each call (supports per-request model injection)
- *  - tools: built from the ToolStore in RequestContext (adapts IGraphTool → Mastra tools)
+ *  - tools: resolved from the MastraToolStore in RequestContext (native createTool definitions)
  *  - maxSteps: 20 (equivalent to recursionLimit: 60 / 3 nodes per cycle)
  *
  * RequestContext access uses `asWorkflowContext()` for fully typed, zero-any access.
@@ -160,11 +57,11 @@ export const chatReasoningAgent = new Agent({
   },
   tools: async ({requestContext}: {requestContext: RequestContext}) => {
     const ctx = asWorkflowContext(requestContext);
-    const toolStore: ToolStore = ctx.get('toolStore');
-    if (!toolStore?.list?.length) {
+    const mastraTools: MastraToolStore = ctx.get('mastraTools');
+    if (!mastraTools?.list?.length) {
       return {};
     }
-    return buildChatAgentTools(toolStore);
+    return mastraTools.tools;
   },
 });
 
@@ -176,7 +73,7 @@ export function emitToolStartEvent(
   eventQueue: AsyncEventQueue,
   toolCallId: string,
   toolName: string,
-  args: AnyObject,
+  args: JsonObject,
 ): void {
   eventQueue.push({
     type: LLMStreamEventType.Tool,
@@ -195,16 +92,14 @@ export function emitToolStartEvent(
 export function emitToolStatusEvent(
   eventQueue: AsyncEventQueue,
   toolCallId: string,
-  toolStore: ToolStore,
+  toolStore: MastraToolStore,
   toolName: string,
-  result: AnyObject,
+  result: JsonObject,
 ): void {
-  const igraphTool = toolStore.map[toolName];
-  const metadata =
-    igraphTool?.getMetadata?.(result as Record<string, string>) ?? {};
+  const toolDefinition = toolStore.map[toolName];
+  const metadata = toolDefinition?.getMetadata?.(result) ?? {};
   const status =
-    (metadata['status'] as string) ??
-    (result ? ToolStatus.Completed : ToolStatus.Failed);
+    typeof metadata['status'] === 'string' ? metadata['status'] : 'completed';
 
   eventQueue.push({
     type: LLMStreamEventType.ToolStatus,

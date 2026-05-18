@@ -29,7 +29,7 @@ import {endSessionStep} from './steps/end-session.step';
  *  - tokenUsageAccumulator: TokenUsageAccumulator (per-request)
  *  - mastraChatLlm: MastraLanguageModel (bound in LB4 DI)
  *  - mastraFileLlm: MastraLanguageModel (optional, bound in LB4 DI)
- *  - toolStore: ToolStore (REQUEST-scoped via ToolsProvider)
+ *  - mastraTools: MastraToolStore (REQUEST-scoped via MastraToolsProvider)
  *  - aiConfig: { maxTokens?, maxSteps?, modelName? } (optional, from LB4 config)
  *  - systemContext: string[] (optional, from LB4 SystemContext binding)
  *  - abortSignal: AbortSignal (from AbortController in GenerationService)

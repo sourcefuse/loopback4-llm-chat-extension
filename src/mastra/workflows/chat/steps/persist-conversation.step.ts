@@ -4,6 +4,7 @@ import {
   AgentReasoningOutputSchema,
   PersistConversationOutputSchema,
 } from '../chat-workflow-schemas';
+import type {JsonObject} from '../../../../types';
 
 const debug = require('debug')(
   'ai-integration:mastra:persist-conversation.step',
@@ -17,12 +18,12 @@ const debug = require('debug')(
  * Responsibilities:
  *  - Persist the AI's final text response as an AI-type message
  *  - For each tool call, persist a Tool-type message linked to the AI message
- *  - Retrieve per-tool metadata (e.g. report IDs) via IGraphTool.getMetadata()
+ *  - Retrieve per-tool metadata via MastraToolStore.getMetadata()
  *
  * Tool message metadata enrichment:
- *  `IGraphTool.getMetadata(rawResult)` returns application-specific metadata
- *  (e.g. `{ reportId: '...' }`) that gets stored alongside the tool message.
- *  `IGraphTool.getValue(rawResult)` returns the human-readable content to store.
+ *  `MastraToolDefinition.getMetadata(rawResult)` returns application-specific metadata
+ *  stored alongside each persisted tool message.
+ *  `MastraToolDefinition.formatResult(rawResult)` returns the human-readable content.
  */
 export const persistConversationStep = createStep({
   id: 'persist-conversation',
@@ -32,7 +33,7 @@ export const persistConversationStep = createStep({
   execute: async ({inputData, requestContext}) => {
     const ctx = asWorkflowContext(requestContext);
     const chatStore = ctx.get('chatStore');
-    const toolStore = ctx.get('toolStore');
+    const mastraTools = ctx.get('mastraTools');
 
     const {
       sessionId,
@@ -56,16 +57,16 @@ export const persistConversationStep = createStep({
 
     // 2. Persist each tool call as a linked Tool message
     for (const toolCall of toolCalls) {
-      const igraphTool = toolStore?.map?.[toolCall.toolName];
+      const toolDefinition = mastraTools?.map?.[toolCall.toolName];
+      const result = toolCall.rawResult as JsonObject;
 
-      const content =
-        igraphTool?.getValue?.(toolCall.rawResult as Record<string, string>) ??
-        JSON.stringify(toolCall.rawResult);
+      const content = toolDefinition
+        ? toolDefinition.formatResult(result)
+        : JSON.stringify(result);
 
-      const metadata =
-        igraphTool?.getMetadata?.(
-          toolCall.rawResult as Record<string, string>,
-        ) ?? {};
+      const metadata = toolDefinition
+        ? toolDefinition.getMetadata(result)
+        : ({status: 'completed'} as JsonObject);
 
       if (aiMessage) {
         await chatStore.addToolMessageText(

@@ -1,4 +1,16 @@
 import {z} from 'zod';
+import type {JsonValue} from '../../../types';
+
+const JsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
+  z.union([
+    z.string(),
+    z.number(),
+    z.boolean(),
+    z.null(),
+    z.array(JsonValueSchema),
+    z.record(JsonValueSchema),
+  ]),
+);
 
 /**
  * Input schema for the ChatWorkflow.
@@ -18,7 +30,7 @@ export const ChatWorkflowInputSchema = z.object({
           encoding: z.string().optional(),
           // Allow arbitrary additional fields from Multer
         })
-        .catchall(z.unknown()),
+        .passthrough(),
     )
     .default([])
     .describe('Uploaded files to process'),
@@ -50,7 +62,7 @@ export const InitSessionOutputSchema = z.object({
   isNewSession: z.boolean(),
   userMessageId: z.string().optional(),
   prompt: z.string(),
-  files: z.array(z.object({}).catchall(z.unknown())).default([]),
+  files: z.array(z.object({}).passthrough()).default([]),
 });
 export type InitSessionOutput = z.infer<typeof InitSessionOutputSchema>;
 
@@ -64,17 +76,14 @@ export const PrepareContextOutputSchema = z.object({
       z
         .object({
           role: z.string(),
-          content: z.union([
-            z.string(),
-            z.array(z.object({}).catchall(z.unknown())),
-          ]),
+          content: z.union([z.string(), z.array(z.object({}).passthrough())]),
         })
-        .catchall(z.unknown()),
+        .passthrough(),
     )
     .describe('Full conversation context (CoreMessage[])'),
   userMessageId: z.string().optional(),
   prompt: z.string(),
-  files: z.array(z.object({}).catchall(z.unknown())).default([]),
+  files: z.array(z.object({}).passthrough()).default([]),
 });
 export type PrepareContextOutput = z.infer<typeof PrepareContextOutputSchema>;
 
@@ -88,12 +97,9 @@ export const FileProcessingOutputSchema = z.object({
       z
         .object({
           role: z.string(),
-          content: z.union([
-            z.string(),
-            z.array(z.object({}).catchall(z.unknown())),
-          ]),
+          content: z.union([z.string(), z.array(z.object({}).passthrough())]),
         })
-        .catchall(z.unknown()),
+        .passthrough(),
     )
     .describe('Updated context after file processing'),
   userMessageId: z.string().optional(),
@@ -112,8 +118,8 @@ export const AgentReasoningOutputSchema = z.object({
       z.object({
         toolCallId: z.string(),
         toolName: z.string(),
-        args: z.record(z.unknown()),
-        rawResult: z.unknown(),
+        args: z.record(JsonValueSchema),
+        rawResult: JsonValueSchema,
       }),
     )
     .default([]),

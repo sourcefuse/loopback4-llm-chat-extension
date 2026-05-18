@@ -49,9 +49,9 @@ export class AsyncEventQueue implements AsyncIterable<LLMStreamEvent> {
    * Async iterator — yields events as they arrive.
    * Suspends (awaits) when the queue is empty and not yet closed.
    */
-  [Symbol.asyncIterator](): AsyncIterator<LLMStreamEvent> {
+  [Symbol.asyncIterator](): AsyncIterator<LLMStreamEvent, void> {
     return {
-      next: async (): Promise<IteratorResult<LLMStreamEvent>> => {
+      next: async (): Promise<IteratorResult<LLMStreamEvent, void>> => {
         // Spin until an event is available or the queue is closed
         // eslint-disable-next-line no-constant-condition
         while (true) {
@@ -59,7 +59,7 @@ export class AsyncEventQueue implements AsyncIterable<LLMStreamEvent> {
             return {value: this._queue.shift()!, done: false};
           }
           if (this._closed) {
-            return {value: undefined as unknown as LLMStreamEvent, done: true};
+            return {value: undefined, done: true};
           }
           // Wait for next push or close
           await new Promise<void>(resolve => {
