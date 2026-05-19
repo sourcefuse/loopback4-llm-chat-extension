@@ -25,6 +25,11 @@ import {
   getImproveDatasetMetadata,
   improveDatasetTool,
 } from '../mastra/workflows/db-query/tools';
+import {
+  formatGenerateVisualizationResult,
+  generateVisualizationTool,
+  getGenerateVisualizationMetadata,
+} from '../mastra/workflows/visualization/tools';
 
 const debug = require('debug')('ai-integration:provider:mastra-tools');
 
@@ -113,6 +118,13 @@ function createNativeDefinitions(): MastraToolDefinition[] {
       source: 'native',
       formatResult: formatAskAboutDatasetResult,
       getMetadata: getAskAboutDatasetMetadata,
+    },
+    {
+      id: generateVisualizationTool.id,
+      tool: generateVisualizationTool,
+      source: 'native',
+      formatResult: formatGenerateVisualizationResult,
+      getMetadata: getGenerateVisualizationMetadata,
     },
   ];
 }

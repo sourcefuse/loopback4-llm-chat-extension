@@ -3,7 +3,7 @@
  *
  * Phase 1: Foundation Layer + ChatWorkflow
  * Phase 2: DBQueryWorkflow
- * Phase 3 (future): VisualizationWorkflow
+ * Phase 3: VisualizationWorkflow
  */
 
 // Bridge utilities
@@ -30,6 +30,10 @@ export {
   improveDatasetTool,
   askAboutDatasetTool,
 } from './workflows/db-query/tools';
+
+// Visualization workflow
+export {visualizationWorkflow} from './workflows/visualization/visualization.workflow';
+export {generateVisualizationTool} from './workflows/visualization/tools';
 
 // Agent
 export {chatReasoningAgent} from './agents/chat-reasoning.agent';

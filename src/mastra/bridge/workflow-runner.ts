@@ -1,5 +1,6 @@
 import {
   BindingScope,
+  Context,
   Getter,
   inject,
   injectable,
@@ -39,6 +40,11 @@ import type {
   CacheDocument,
   TemplateDocument,
 } from '../workflows/db-query/db-query-request-context';
+import {VISUALIZATION_KEY} from '../../components/visualization/keys';
+import type {
+  IVisualizer,
+  VisualizerStore,
+} from '../../components/visualization/types';
 
 const debug = require('debug')('ai-integration:mastra:workflow-runner');
 
@@ -76,6 +82,8 @@ function isLLMStreamEvent(value: unknown): value is LLMStreamEvent {
 @injectable({scope: BindingScope.REQUEST})
 export class WorkflowRunner {
   constructor(
+    @inject.context()
+    private readonly lbContext: Context,
     @service(ChatStore)
     private readonly chatStore: ChatStore,
     @inject(AiIntegrationBindings.MastraChatLLM)
@@ -160,6 +168,7 @@ export class WorkflowRunner {
     requestContext.set('systemContext', this.systemContext);
     requestContext.set('tokenUsageAccumulator', tokenAccumulator);
     requestContext.set('currentUser', currentUser);
+    requestContext.set('visualizerStore', await this.resolveVisualizerStore());
 
     const chatDbQuerySchema = this.resolveDbQueryChatSchema();
     if (chatDbQuerySchema) {
@@ -256,6 +265,42 @@ export class WorkflowRunner {
     } catch {
       return undefined;
     }
+  }
+
+  private async resolveVisualizerStore(): Promise<VisualizerStore> {
+    const bindings = this.lbContext.findByTag({
+      [VISUALIZATION_KEY]: true,
+    });
+
+    if (!bindings.length) {
+      return {
+        list: [],
+        map: {},
+      };
+    }
+
+    const visualizers: IVisualizer[] = [];
+    for (const binding of bindings) {
+      try {
+        const visualizer = await this.lbContext.get<IVisualizer>(binding.key);
+        visualizers.push(visualizer);
+      } catch (error) {
+        debug(
+          `WorkflowRunner: failed to resolve visualizer binding ${binding.key}:`,
+          error,
+        );
+      }
+    }
+
+    const visualizerMap: Record<string, IVisualizer> = {};
+    for (const visualizer of visualizers) {
+      visualizerMap[visualizer.name] = visualizer;
+    }
+
+    return {
+      list: visualizers,
+      map: visualizerMap,
+    };
   }
 
   private resolveDbQueryChatSchema(): DatabaseSchema | undefined {

@@ -7,3 +7,8 @@ export interface IVisualizer {
   context?: string;
   getConfig(state: VisualizationGraphState): Promise<AnyObject> | AnyObject;
 }
+
+export type VisualizerStore = {
+  list: IVisualizer[];
+  map: Record<string, IVisualizer>;
+};
