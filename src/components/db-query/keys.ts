@@ -1,10 +1,13 @@
 import {BindingKey} from '@loopback/context';
+import {BaseRetriever} from '@langchain/core/retrievers';
 import {
   DatasetServiceConfig,
   DbQueryConfig,
   IDataSetStore,
   IDbConnector,
   IQueryTemplateStore,
+  QueryCacheMetadata,
+  QueryTemplateMetadata,
 } from './types';
 import {AnyObject} from '@loopback/repository';
 
@@ -21,9 +24,9 @@ export namespace DbQueryAIExtensionBindings {
     `services.ai-integration.db-query.config`,
   );
 
-  export const QueryCache = BindingKey.create<string>(
-    'services.ai-integration.db-query.query-cache',
-  );
+  export const QueryCache = BindingKey.create<
+    BaseRetriever<QueryCacheMetadata>
+  >('services.ai-integration.db-query.query-cache');
 
   export const Connector = BindingKey.create<IDbConnector>(
     'services.ai-integration.db-query.connector',
@@ -37,9 +40,9 @@ export namespace DbQueryAIExtensionBindings {
     'services.ai-integration.db-query.default-conditions',
   );
 
-  export const TemplateCache = BindingKey.create<string>(
-    'services.ai-integration.db-query.template-cache',
-  );
+  export const TemplateCache = BindingKey.create<
+    BaseRetriever<QueryTemplateMetadata>
+  >('services.ai-integration.db-query.template-cache');
 
   export const TemplateStore = BindingKey.create<IQueryTemplateStore>(
     'services.ai-integration.db-query.template-store',

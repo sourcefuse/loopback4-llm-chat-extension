@@ -1,0 +1,39 @@
+/**
+ * Mastra migration layer barrel export.
+ *
+ * Phase 1: Foundation Layer + ChatWorkflow
+ * Phase 2: DBQueryWorkflow
+ * Phase 3: VisualizationWorkflow
+ */
+
+// Bridge utilities
+export {AsyncEventQueue} from './bridge/async-event-queue';
+export {TokenUsageAccumulator} from './bridge/token-usage-accumulator';
+export {ContextWindowManager} from './bridge/context-window-manager';
+export {WorkflowRunner} from './bridge/workflow-runner';
+
+// Types
+export type {
+  ChatWorkflowRequestContext,
+  IMastraTool,
+  AgentReasoningOutput,
+  ToolCallRecord,
+} from './types';
+
+// Chat workflow
+export {chatWorkflow} from './workflows/chat/chat.workflow';
+
+// DB Query workflow
+export {dbQueryWorkflow} from './workflows/db-query/db-query.workflow';
+export {
+  getDataAsDatasetTool,
+  improveDatasetTool,
+  askAboutDatasetTool,
+} from './workflows/db-query/tools';
+
+// Visualization workflow
+export {visualizationWorkflow} from './workflows/visualization/visualization.workflow';
+export {generateVisualizationTool} from './workflows/visualization/tools';
+
+// Agent
+export {chatReasoningAgent} from './agents/chat-reasoning.agent';

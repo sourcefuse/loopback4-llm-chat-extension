@@ -61,6 +61,13 @@ export type LLMStreamInitEvent = {
   };
 };
 
+export type LLMStreamErrorEvent = {
+  type: LLMStreamEventType.Error;
+  data: {
+    message: string;
+  };
+};
+
 export type LLMStreamEvent =
   | LLMStreamInitEvent
   | LLMStreamMessageEvent
@@ -68,4 +75,5 @@ export type LLMStreamEvent =
   | LLMStreamToolEvent
   | LLMStreamToolStatusEvent
   | LLMStreamLogEvent
-  | LLMStreamTokenCountEvent;
+  | LLMStreamTokenCountEvent
+  | LLMStreamErrorEvent;

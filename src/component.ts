@@ -44,7 +44,7 @@ import {
 } from './graphs/chat';
 import {WriterDB, AiIntegrationBindings, ReaderDB} from './keys';
 import {Chat, Message} from './models';
-import {CacheModel, ToolsProvider} from './providers';
+import {CacheModel, MastraToolsProvider, ToolsProvider} from './providers';
 import {RedisCache, RedisCacheRepository} from './providers/cache/redis';
 import {ChatRepository, MessageRepository} from './repositories';
 import {
@@ -57,6 +57,7 @@ import {TokenCounter} from './services/token-counter.service';
 import {SSETransport} from './transports';
 import {AIIntegrationConfig} from './types';
 import {PgVectorStore} from './sub-modules/db/postgresql';
+import {WorkflowRunner} from './mastra/bridge/workflow-runner';
 
 const debug = require('debug')('ai-integration:log-events:component');
 export class AiIntegrationsComponent implements Component {
@@ -81,6 +82,7 @@ export class AiIntegrationsComponent implements Component {
     this.providers = {
       [AiIntegrationBindings.VectorStore.key]: PgVectorStore,
       [AiIntegrationBindings.Tools.key]: ToolsProvider,
+      [AiIntegrationBindings.MastraTools.key]: MastraToolsProvider,
     };
 
     this.services = [
@@ -88,6 +90,8 @@ export class AiIntegrationsComponent implements Component {
       TokenCounter,
       GenerationService,
       ChatStore,
+      // mastra migration
+      WorkflowRunner,
       // graph
       ChatGraph,
       // nodes
