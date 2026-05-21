@@ -2,10 +2,12 @@ import {
   Binding,
   BindingScope,
   Component,
+  Constructor,
   ControllerClass,
   CoreBindings,
   createBindingFromClass,
   inject,
+  LifeCycleObserver,
   ProviderMap,
   ServiceOrProviderClass,
 } from '@loopback/core';
@@ -54,9 +56,15 @@ import {
   TokenCountStrategy,
 } from './services';
 import {TokenCounter} from './services/token-counter.service';
+import {UsageAccumulator} from './services/usage-accumulator.service';
 import {SSETransport} from './transports';
 import {AIIntegrationConfig} from './types';
 import {PgVectorStore} from './sub-modules/db/postgresql';
+import {DefaultMastraStorageProvider} from './providers/mastra/storage.provider';
+import {MastraProvider} from './providers/mastra/mastra.provider';
+import {InProcessRunRegistry} from './mastra/bridge/run-registry';
+import {WorkflowRunner} from './mastra/bridge/workflow-runner';
+import {MastraLifecycleObserver} from './observers/mastra-lifecycle.observer';
 
 const debug = require('debug')('ai-integration:log-events:component');
 export class AiIntegrationsComponent implements Component {
@@ -76,6 +84,17 @@ export class AiIntegrationsComponent implements Component {
       createBindingFromClass(RedisCache, {
         key: AiIntegrationBindings.Cache.key,
       }),
+      // Mastra v3 singletons — consumers can override MastraStorage with
+      // PostgresStore/MongoDBStore/etc. The defaults work zero-config.
+      createBindingFromClass(DefaultMastraStorageProvider, {
+        key: AiIntegrationBindings.MastraStorage.key,
+      }).inScope(BindingScope.SINGLETON),
+      createBindingFromClass(MastraProvider, {
+        key: AiIntegrationBindings.Mastra.key,
+      }).inScope(BindingScope.SINGLETON),
+      createBindingFromClass(InProcessRunRegistry, {
+        key: AiIntegrationBindings.RunRegistry.key,
+      }).inScope(BindingScope.SINGLETON),
     ];
 
     this.providers = {
@@ -97,7 +116,12 @@ export class AiIntegrationsComponent implements Component {
       SummariseFileNode,
       ContextCompressionNode,
       EndSessionNode,
+      // mastra v3 services
+      UsageAccumulator,
+      WorkflowRunner,
     ];
+
+    this.lifeCycleObservers = [MastraLifecycleObserver];
 
     this.controllers = [GenerationController, ChatController];
     this.models = [Chat, Message, CacheModel];
@@ -196,6 +220,8 @@ export class AiIntegrationsComponent implements Component {
   bindings?: Binding[] = [];
 
   services: ServiceOrProviderClass[] | undefined;
+
+  lifeCycleObservers?: Constructor<LifeCycleObserver>[];
 
   /**
    * An optional list of Repository classes to bind for dependency injection
