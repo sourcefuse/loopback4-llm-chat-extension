@@ -9,7 +9,7 @@ import {
 import {Agent} from '@mastra/core/agent';
 import {Mastra} from '@mastra/core';
 import {RequestContext} from '@mastra/core/request-context';
-import type {MastraLanguageModel} from '@mastra/core/agent';
+import type {MastraModelConfig} from '@mastra/core/llm';
 import {AiIntegrationBindings, IRunRegistry} from '../../keys';
 import {LLMStreamEvent, LLMStreamEventType} from '../../graphs/event.types';
 import {ToolStatus} from '../../graphs/types';
@@ -33,7 +33,7 @@ export class WorkflowRunner {
     @inject.context() private lb4Ctx: Context,
     @inject(AiIntegrationBindings.Mastra) private mastra: Mastra,
     @inject(AiIntegrationBindings.MastraChatLLM, {optional: true})
-    private chatLlm?: MastraLanguageModel,
+    private chatLlm?: MastraModelConfig,
     @inject(AiIntegrationBindings.RunRegistry)
     private runRegistry?: IRunRegistry,
     @inject(AiIntegrationBindings.ResourceId, {optional: true})

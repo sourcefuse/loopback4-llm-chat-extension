@@ -1,7 +1,7 @@
 import {VectorStore as VectorStoreType} from '@langchain/core/vectorstores';
 import {BaseCheckpointSaver} from '@langchain/langgraph';
 import type {Mastra} from '@mastra/core';
-import type {MastraLanguageModel} from '@mastra/core/agent';
+import type {MastraModelConfig} from '@mastra/core/llm';
 import type {MastraCompositeStore} from '@mastra/core/storage';
 import type {MastraVector, MastraEmbeddingModel} from '@mastra/core/vector';
 import {BindingKey} from '@loopback/context';
@@ -72,10 +72,10 @@ export namespace AiIntegrationBindings {
   export const Mastra = BindingKey.create<Mastra>(
     'services.ai-reporting.mastra',
   );
-  export const MastraChatLLM = BindingKey.create<MastraLanguageModel>(
+  export const MastraChatLLM = BindingKey.create<MastraModelConfig>(
     'services.ai-reporting.mastraChatLlm',
   );
-  export const MastraFileLLM = BindingKey.create<MastraLanguageModel>(
+  export const MastraFileLLM = BindingKey.create<MastraModelConfig>(
     'services.ai-reporting.mastraFileLlm',
   );
   export const MastraStorage = BindingKey.create<MastraCompositeStore>(
