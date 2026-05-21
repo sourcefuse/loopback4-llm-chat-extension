@@ -2,10 +2,12 @@ import {
   Binding,
   BindingScope,
   Component,
+  Constructor,
   ControllerClass,
   CoreBindings,
   createBindingFromClass,
   inject,
+  LifeCycleObserver,
   ProviderMap,
   ServiceOrProviderClass,
 } from '@loopback/core';
@@ -35,7 +37,12 @@ import {ChatController, GenerationController} from './controllers';
 import {ChatStore} from './graphs/chat';
 import {WriterDB, AiIntegrationBindings, ReaderDB} from './keys';
 import {Chat, Message} from './models';
-import {CacheModel, MastraToolsProvider} from './providers';
+import {
+  CacheModel,
+  DefaultMastraStorageProvider,
+  MastraProvider,
+  MastraToolsProvider,
+} from './providers';
 import {RedisCache, RedisCacheRepository} from './providers/cache/redis';
 import {ChatRepository, MessageRepository} from './repositories';
 import {
@@ -49,6 +56,7 @@ import {SSETransport} from './transports';
 import {AIIntegrationConfig} from './types';
 import {PgVectorStore} from './sub-modules/db/postgresql';
 import {WorkflowRunner} from './mastra/bridge/workflow-runner';
+import {MastraLifecycleObserver} from './observers';
 
 const debug = require('debug')('ai-integration:log-events:component');
 export class AiIntegrationsComponent implements Component {
@@ -68,6 +76,14 @@ export class AiIntegrationsComponent implements Component {
       createBindingFromClass(RedisCache, {
         key: AiIntegrationBindings.Cache.key,
       }),
+      createBindingFromClass(DefaultMastraStorageProvider, {
+        key: AiIntegrationBindings.MastraStorage.key,
+        defaultScope: BindingScope.SINGLETON,
+      }),
+      createBindingFromClass(MastraProvider, {
+        key: AiIntegrationBindings.Mastra.key,
+        defaultScope: BindingScope.SINGLETON,
+      }),
     ];
 
     this.providers = {
@@ -85,6 +101,7 @@ export class AiIntegrationsComponent implements Component {
     ];
 
     this.controllers = [GenerationController, ChatController];
+    this.lifeCycleObservers = [MastraLifecycleObserver];
     this.models = [Chat, Message, CacheModel];
     this.repositories = [
       ChatRepository,
@@ -181,6 +198,8 @@ export class AiIntegrationsComponent implements Component {
   bindings?: Binding[] = [];
 
   services: ServiceOrProviderClass[] | undefined;
+
+  lifeCycleObservers: Constructor<LifeCycleObserver>[] | undefined;
 
   /**
    * An optional list of Repository classes to bind for dependency injection

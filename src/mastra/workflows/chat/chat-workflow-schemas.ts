@@ -38,6 +38,10 @@ export const ChatWorkflowInputSchema = z.object({
     .string()
     .optional()
     .describe('Existing chat session ID for resuming a conversation'),
+  isNewSession: z
+    .boolean()
+    .optional()
+    .describe('Whether session was newly created by WorkflowRunner'),
 });
 
 export type ChatWorkflowInput = z.infer<typeof ChatWorkflowInputSchema>;
@@ -60,7 +64,6 @@ export type ChatWorkflowOutput = z.infer<typeof ChatWorkflowOutputSchema>;
 export const InitSessionOutputSchema = z.object({
   sessionId: z.string(),
   isNewSession: z.boolean(),
-  userMessageId: z.string().optional(),
   prompt: z.string(),
   files: z.array(z.object({}).passthrough()).default([]),
 });
@@ -71,17 +74,6 @@ export type InitSessionOutput = z.infer<typeof InitSessionOutputSchema>;
  */
 export const PrepareContextOutputSchema = z.object({
   sessionId: z.string(),
-  messages: z
-    .array(
-      z
-        .object({
-          role: z.string(),
-          content: z.union([z.string(), z.array(z.object({}).passthrough())]),
-        })
-        .passthrough(),
-    )
-    .describe('Full conversation context (CoreMessage[])'),
-  userMessageId: z.string().optional(),
   prompt: z.string(),
   files: z.array(z.object({}).passthrough()).default([]),
 });
@@ -92,17 +84,6 @@ export type PrepareContextOutput = z.infer<typeof PrepareContextOutputSchema>;
  */
 export const FileProcessingOutputSchema = z.object({
   sessionId: z.string(),
-  messages: z
-    .array(
-      z
-        .object({
-          role: z.string(),
-          content: z.union([z.string(), z.array(z.object({}).passthrough())]),
-        })
-        .passthrough(),
-    )
-    .describe('Updated context after file processing'),
-  userMessageId: z.string().optional(),
   prompt: z.string(),
 });
 export type FileProcessingOutput = z.infer<typeof FileProcessingOutputSchema>;
@@ -133,7 +114,6 @@ export const AgentReasoningOutputSchema = z.object({
       }),
     )
     .default({}),
-  userMessageId: z.string().optional(),
 });
 export type AgentReasoningOutput = z.infer<typeof AgentReasoningOutputSchema>;
 

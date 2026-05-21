@@ -7,7 +7,6 @@ import {Readable} from 'stream';
 import {LLMStreamEventType} from '../../../../graphs/event.types';
 import {asWorkflowContext} from '../../../bridge/workflow-request-context';
 import {mergeAttachments} from '../../../../utils';
-import {Message} from '../../../../models';
 import {
   PrepareContextOutputSchema,
   FileProcessingOutputSchema,
@@ -47,7 +46,7 @@ type FileModelWithAdapter = MastraLanguageModel & {
  *  - Replace the last user message in the context with an enhanced version
  *    that merges the original prompt with all file summaries
  *
- * If no files are present, messages and prompt pass through unchanged.
+ * If no files are present, prompt passes through unchanged.
  */
 export const fileProcessingStep = createStep({
   id: 'file-processing',
@@ -58,14 +57,13 @@ export const fileProcessingStep = createStep({
   execute: async ({inputData, requestContext, writer}) => {
     const ctx = asWorkflowContext(requestContext);
 
-    const {sessionId, messages, userMessageId, prompt, files} = inputData;
+    const {sessionId, prompt, files} = inputData;
 
     if (!files?.length) {
       debug('FileProcessing: no files to process, passing through');
-      return {sessionId, messages, userMessageId, prompt};
+      return {sessionId, prompt};
     }
 
-    const chatStore = ctx.get('chatStore');
     const fileLlm = ctx.get('mastraFileLlm') as MastraLanguageModel | undefined;
 
     if (!fileLlm) {
@@ -73,11 +71,6 @@ export const fileProcessingStep = createStep({
         'MastraFileLLM not bound. Bind AiIntegrationBindings.MastraFileLLM to process files.',
       );
     }
-
-    // Retrieve the saved user Message entity for addAttachmentMessage
-    const userMessageRecord = userMessageId
-      ? await chatStore.findMessageById(sessionId, userMessageId)
-      : undefined;
 
     let mergedPrompt = prompt;
 
@@ -114,16 +107,6 @@ export const fileProcessingStep = createStep({
 
       debug(`FileProcessing: file summary length=${summary.length}`);
 
-      // Persist the attachment message to the database
-      if (userMessageRecord) {
-        await chatStore.addAttachmentMessage(
-          sessionId,
-          userMessageRecord as Message,
-          multerFile,
-          summary,
-        );
-      }
-
       // Merge the file summary into the running prompt
       mergedPrompt = mergeAttachments(
         mergedPrompt,
@@ -132,15 +115,8 @@ export const fileProcessingStep = createStep({
       );
     }
 
-    // Replace the last user message in the context with the enhanced version
-    const updatedMessages = replaceLastUserMessage(messages, mergedPrompt);
-
     return {
       sessionId,
-      messages: updatedMessages as z.infer<
-        typeof FileProcessingOutputSchema
-      >['messages'],
-      userMessageId,
       prompt: mergedPrompt,
     };
   },
@@ -212,29 +188,4 @@ function buildFileContentPart(
     // eslint-disable-next-line @typescript-eslint/naming-convention
     mime_type: file.mimetype ?? 'application/pdf',
   };
-}
-
-/**
- * Replace the last user message with an enhanced version containing file summaries.
- */
-function replaceLastUserMessage(
-  messages: z.infer<typeof PrepareContextOutputSchema>['messages'],
-  enhancedPrompt: string,
-): z.infer<typeof PrepareContextOutputSchema>['messages'] {
-  // Find the last user message index
-  let lastUserIdx = -1;
-  for (let i = messages.length - 1; i >= 0; i--) {
-    if (messages[i].role === 'user') {
-      lastUserIdx = i;
-      break;
-    }
-  }
-
-  if (lastUserIdx < 0) {
-    return [...messages, {role: 'user', content: enhancedPrompt}];
-  }
-
-  const updated = [...messages];
-  updated[lastUserIdx] = {role: 'user', content: enhancedPrompt};
-  return updated;
 }

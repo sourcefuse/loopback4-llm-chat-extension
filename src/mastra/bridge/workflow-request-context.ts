@@ -1,7 +1,7 @@
 import type {RequestContext} from '@mastra/core/request-context';
-import type {MastraLanguageModel} from '@mastra/core/agent';
+import type {Agent, MastraLanguageModel} from '@mastra/core/agent';
+import type {MastraMemory} from '@mastra/core/memory';
 import type {IAuthUserWithPermissions} from '@sourceloop/core';
-import type {ChatStore} from '../../graphs/chat/chat.store';
 import type {AIIntegrationConfig, MastraToolStore} from '../../types';
 import type {AsyncEventQueue} from './async-event-queue';
 import type {TokenUsageAccumulator} from './token-usage-accumulator';
@@ -20,8 +20,10 @@ export interface WorkflowRequestContext {
   mastraChatLlm: MastraLanguageModel;
   /** LLM used for file summarisation (falls back to mastraChatLlm if not set) */
   mastraFileLlm: MastraLanguageModel;
-  /** Chat session store — request-scoped */
-  chatStore: ChatStore;
+  /** Shared Mastra memory instance used for thread persistence and recall */
+  mastraMemory: MastraMemory;
+  /** Request-scoped chat agent instance resolved from Mastra singleton */
+  chatReasoningAgent: Agent;
   /** Mastra-native tool registry for the chat Agent */
   mastraTools: MastraToolStore;
   /** AI integration config (optional — may be undefined if not bound) */
@@ -46,6 +48,8 @@ export interface WorkflowRequestContext {
   workflowId: string;
   /** Optional chat session id associated with this workflow invocation */
   chatSessionId: string | undefined;
+  /** Resource identifier used for memory isolation */
+  resourceId: string;
   /** AI SDK telemetry toggle for request-scoped model calls */
   aiSdkTelemetryEnabled: boolean;
   /** Additional AI SDK telemetry metadata propagated to model calls */
@@ -57,7 +61,7 @@ export interface WorkflowRequestContext {
  *
  * Usage:
  *   const ctx = asWorkflowContext(requestContext);
- *   const chatStore = ctx.get('chatStore'); // typed as ChatStore
+ *   const memory = ctx.get('mastraMemory'); // typed as MastraMemory
  */
 export function asWorkflowContext(
   requestContext: RequestContext,

@@ -1,7 +1,6 @@
 import {createStep} from '@mastra/core/workflows';
 import {z} from 'zod';
 import {LLMStreamEventType} from '../../../../graphs/event.types';
-import {asWorkflowContext} from '../../../bridge/workflow-request-context';
 import {
   ChatWorkflowInputSchema,
   InitSessionOutputSchema,
@@ -15,53 +14,44 @@ const debug = require('debug')('ai-integration:mastra:init-session.step');
  * LangGraph equivalent: `InitSessionNode`
  *
  * Responsibilities:
- *  - Call `chatStore.init()` to create or fetch the session
- *  - Persist the user's message to the database
+ *  - Read the resolved thread id from workflow input
  *  - Emit the `Init` SSE event for new sessions via writer.write() (workflow-native streaming)
  *
- * Retry: 2 attempts (DB availability issues)
- * Error: Throws if chatStore.init() fails after retries
+ * Retry: 2 attempts
+ * Error: Throws if WorkflowRunner did not resolve a session id
  */
 export const initSessionStep = createStep({
   id: 'init-session',
   description:
-    'Initialise or resume a chat session; persist the user message; emit Init event',
+    'Initialise or resume a chat session and emit Init event when needed',
   inputSchema: ChatWorkflowInputSchema,
   outputSchema: InitSessionOutputSchema,
   retries: 2,
-  execute: async ({inputData, requestContext, writer}) => {
-    const ctx = asWorkflowContext(requestContext);
-    const chatStore = ctx.get('chatStore');
+  execute: async ({inputData, writer}) => {
+    const {prompt, files, sessionId, isNewSession = false} = inputData;
 
-    const {prompt, files, sessionId} = inputData;
-    const isNewSession = !sessionId;
+    if (!sessionId) {
+      throw new Error(
+        'Chat session id was not resolved before init-session execution.',
+      );
+    }
 
     debug(
       `InitSession: isNew=${isNewSession}, sessionId=${sessionId ?? 'none'}`,
     );
 
-    // Create or resume the session
-    const chat = await chatStore.init(prompt, sessionId);
-
     // Emit Init event via writer (workflow-native streaming, not AsyncEventQueue)
     if (isNewSession) {
-      debug(`Emitting Init event for new session ${chat.id}`);
+      debug(`Emitting Init event for new session ${sessionId}`);
       await writer.write({
         type: LLMStreamEventType.Init,
-        data: {sessionId: chat.id},
+        data: {sessionId},
       });
     }
 
-    // Persist the human message to the database
-    const savedUserMessage = await chatStore.addHumanMessageText(
-      chat.id,
-      prompt,
-    );
-
     return {
-      sessionId: chat.id,
+      sessionId,
       isNewSession,
-      userMessageId: savedUserMessage?.id,
       prompt,
       files: files as z.infer<typeof InitSessionOutputSchema>['files'],
     };

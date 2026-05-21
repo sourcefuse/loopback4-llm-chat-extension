@@ -2,9 +2,9 @@ import {z} from 'zod';
 import {LLMStreamEvent} from '../graphs/event.types';
 import type {AsyncEventQueue} from './bridge/async-event-queue';
 import type {TokenUsageAccumulator} from './bridge/token-usage-accumulator';
-import type {ChatStore} from '../graphs/chat/chat.store';
 import type {AIIntegrationConfig, JsonObject, MastraToolStore} from '../types';
-import type {MastraLanguageModel} from '@mastra/core/agent';
+import type {Agent, MastraLanguageModel} from '@mastra/core/agent';
+import type {MastraMemory} from '@mastra/core/memory';
 
 /**
  * Type-safe key map for the RequestContext used by the ChatWorkflow.
@@ -19,8 +19,10 @@ export type ChatWorkflowRequestContext = {
   mastraChatLlm: MastraLanguageModel;
   /** Mastra-compatible LLM for file summarization */
   mastraFileLlm: MastraLanguageModel;
-  /** Per-request chat data store */
-  chatStore: ChatStore;
+  /** Shared Mastra memory instance */
+  mastraMemory: MastraMemory;
+  /** Request-scoped chat agent loaded from Mastra singleton */
+  chatReasoningAgent: Agent;
   /** Available Mastra-native tools for the agent */
   mastraTools: MastraToolStore;
   /** AI integration configuration */
@@ -35,6 +37,8 @@ export type ChatWorkflowRequestContext = {
   workflowId: string;
   /** Optional chat session id associated with request */
   chatSessionId: string | undefined;
+  /** Resource identifier used for memory scoping */
+  resourceId: string;
   /** AI SDK telemetry toggle for model calls */
   aiSdkTelemetryEnabled: boolean;
   /** Additional request-scoped telemetry metadata */

@@ -1,6 +1,10 @@
 import {VectorStore as VectorStoreType} from '@langchain/core/vectorstores';
 import {BindingKey} from '@loopback/context';
 import type {MastraLanguageModel} from '@mastra/core/agent';
+import type {Mastra} from '@mastra/core/mastra';
+import type {MastraCompositeStore} from '@mastra/core/storage';
+import type {MastraEmbeddingModel, MastraVector} from '@mastra/core/vector';
+import type {WorkflowRunner} from './mastra/bridge/workflow-runner';
 import {ITransport} from './transports/types';
 import {
   AIIntegrationConfig,
@@ -11,6 +15,12 @@ import {
   ToolStore,
 } from './types';
 import {ILimitStrategy} from './services/limit-strategies/types';
+
+export interface IRunRegistry {
+  set(sessionId: string, runId: string): Promise<void>;
+  get(sessionId: string): Promise<string | undefined>;
+  delete(sessionId: string): Promise<void>;
+}
 
 export namespace AiIntegrationBindings {
   export const Config = BindingKey.create<AIIntegrationConfig>(
@@ -34,9 +44,6 @@ export namespace AiIntegrationBindings {
   export const EmbeddingModel = BindingKey.create<EmbeddingProvider>(
     'services.ai-reporting.embeddingModel',
   );
-  export const Checkpointer = BindingKey.create<unknown>(
-    'services.ai-reporting.checkpointer',
-  );
   export const Tools = BindingKey.create<ToolStore>(
     'services.ai-reporting.tool-store',
   );
@@ -58,6 +65,35 @@ export namespace AiIntegrationBindings {
   );
   export const SystemContext = BindingKey.create<string[]>(
     `services.ai-reporting.system-context`,
+  );
+
+  // ── Mastra foundation bindings (Phase 1 migration) ──────────────────────
+  export const Mastra = BindingKey.create<Mastra>(
+    'services.ai-reporting.mastra',
+  );
+
+  export const MastraStorage = BindingKey.create<MastraCompositeStore>(
+    'services.ai-reporting.mastraStorage',
+  );
+
+  export const MastraVectorStore = BindingKey.create<MastraVector>(
+    'services.ai-reporting.mastraVectorStore',
+  );
+
+  export const MastraEmbedder = BindingKey.create<MastraEmbeddingModel<string>>(
+    'services.ai-reporting.mastraEmbedder',
+  );
+
+  export const RunRegistry = BindingKey.create<IRunRegistry>(
+    'services.ai-reporting.runRegistry',
+  );
+
+  export const WorkflowRunner = BindingKey.create<WorkflowRunner>(
+    'services.ai-reporting.workflowRunner',
+  );
+
+  export const ResourceId = BindingKey.create<string>(
+    'services.ai-reporting.resourceId',
   );
 
   // ── Mastra LLM bindings (Phase 1 migration) ──────────────────────────────

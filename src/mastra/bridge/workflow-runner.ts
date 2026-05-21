@@ -6,17 +6,15 @@ import {
   injectable,
   service,
 } from '@loopback/core';
-import {repository} from '@loopback/repository';
 import {IAuthUserWithPermissions} from '@sourceloop/core';
 import {AuthenticationBindings} from 'loopback4-authentication';
 import {randomUUID} from 'crypto';
 import {SpanStatusCode, trace} from '@opentelemetry/api';
 import {RequestContext} from '@mastra/core/request-context';
 import {BaseRetriever} from '@langchain/core/retrievers';
-import {ChatStore} from '../../graphs/chat/chat.store';
+import {Mastra} from '@mastra/core/mastra';
 import {LLMStreamEvent, LLMStreamEventType} from '../../graphs/event.types';
 import {AiIntegrationBindings} from '../../keys';
-import {ChatRepository} from '../../repositories';
 import {AIIntegrationConfig, MastraToolStore} from '../../types';
 import {chatWorkflow} from '../workflows/chat/chat.workflow';
 import {dbQueryWorkflow} from '../workflows/db-query/db-query.workflow';
@@ -69,7 +67,7 @@ function isLLMStreamEvent(value: unknown): value is LLMStreamEvent {
  * WorkflowRunner — the LoopBack 4 ↔ Mastra bridge.
  *
  * Responsibilities:
- *  1. Resolve all REQUEST-scoped LoopBack services (ChatStore, LLMs, etc.)
+ *  1. Resolve request-scoped LoopBack services and identity context
  *  2. Build a typed RequestContext and inject it into the Mastra ChatWorkflow
  *  3. Stream the workflow via run.stream() and concurrently drain the AsyncEventQueue
  *  4. Yield LLMStreamEvents to the caller (GenerationService forwards to ITransport)
@@ -87,8 +85,8 @@ export class WorkflowRunner {
   constructor(
     @inject.context()
     private readonly lbContext: Context,
-    @service(ChatStore)
-    private readonly chatStore: ChatStore,
+    @inject(AiIntegrationBindings.Mastra)
+    private readonly mastra: Mastra,
     @inject(AiIntegrationBindings.MastraChatLLM)
     private readonly mastraChatLlm: MastraLanguageModel,
     @inject(AiIntegrationBindings.MastraFileLLM, {optional: true})
@@ -101,8 +99,8 @@ export class WorkflowRunner {
     private readonly systemContext: string[] | undefined,
     @inject.getter(AuthenticationBindings.CURRENT_USER)
     private readonly getCurrentUser: Getter<IAuthUserWithPermissions>,
-    @repository(ChatRepository)
-    private readonly chatRepository: ChatRepository,
+    @inject(AiIntegrationBindings.ResourceId, {optional: true})
+    private readonly resourceIdValue: string | undefined,
     // ── DBQuery bindings (optional — only present when DB Query component is loaded)
     @inject(AiIntegrationBindings.MastraCheapLLM, {optional: true})
     private readonly mastraCheapLlm: MastraLanguageModel | undefined,
@@ -159,6 +157,63 @@ export class WorkflowRunner {
     const eventQueue = new AsyncEventQueue();
     const tokenAccumulator = new TokenUsageAccumulator();
     const currentUser = await this.resolveOptionalCurrentUser();
+    const chatAgent = this.mastra.getAgent('chatAgent');
+
+    if (!chatAgent) {
+      throw new Error(
+        'Mastra chat agent is not configured. Ensure MastraProvider registers chatAgent.',
+      );
+    }
+
+    const memory = await chatAgent.getMemory();
+    if (!memory) {
+      throw new Error('Mastra Memory is required but not configured.');
+    }
+
+    let resolvedSessionId = sessionId;
+    let resourceId = this.resolveResourceId(currentUser, sessionId);
+    let isNewSession = false;
+
+    if (resolvedSessionId) {
+      const existingThread = await memory.getThreadById({
+        threadId: resolvedSessionId,
+      });
+
+      if (!existingThread) {
+        throw new Error(`Chat session ${resolvedSessionId} was not found.`);
+      }
+
+      resourceId = resourceId ?? existingThread.resourceId;
+    } else {
+      isNewSession = true;
+
+      if (!resourceId) {
+        resolvedSessionId = randomUUID();
+        resourceId = resolvedSessionId;
+
+        await memory.createThread({
+          threadId: resolvedSessionId,
+          resourceId,
+          title: prompt.slice(0, 80),
+        });
+      } else {
+        const thread = await memory.createThread({
+          resourceId,
+          title: prompt.slice(0, 80),
+        });
+        resolvedSessionId = thread.id;
+      }
+    }
+
+    if (!resolvedSessionId) {
+      throw new Error(
+        'Failed to resolve chat session id for workflow execution.',
+      );
+    }
+
+    if (!resourceId) {
+      resourceId = resolvedSessionId;
+    }
 
     const requestContext = new RequestContext();
 
@@ -169,7 +224,7 @@ export class WorkflowRunner {
       'mastraFileLlm',
       this.mastraFileLlm ?? this.mastraChatLlm,
     );
-    requestContext.set('chatStore', this.chatStore);
+    requestContext.set('mastraMemory', memory);
     requestContext.set('mastraTools', this.mastraTools);
     requestContext.set('aiConfig', this.aiConfig ?? {});
     requestContext.set('systemContext', this.systemContext);
@@ -177,7 +232,9 @@ export class WorkflowRunner {
     requestContext.set('currentUser', currentUser);
     requestContext.set('correlationId', correlationId);
     requestContext.set('workflowId', 'chat-workflow');
-    requestContext.set('chatSessionId', sessionId);
+    requestContext.set('chatSessionId', resolvedSessionId);
+    requestContext.set('resourceId', resourceId);
+    requestContext.set('chatReasoningAgent', chatAgent);
     requestContext.set('aiSdkTelemetryEnabled', telemetryEnabled);
     requestContext.set('aiSdkTelemetryMetadata', telemetryMetadata);
     requestContext.set('visualizerStore', await this.resolveVisualizerStore());
@@ -197,7 +254,7 @@ export class WorkflowRunner {
       attributes: {
         'workflow.id': 'chat-workflow',
         'workflow.correlation_id': correlationId,
-        'chat.session_id': sessionId ?? '',
+        'chat.session_id': resolvedSessionId,
         'chat.files_count': files.length,
       },
     });
@@ -209,7 +266,12 @@ export class WorkflowRunner {
       // The iterator yields WorkflowStreamEvent — steps emit via writer.write() which
       // surfaces as {type: 'workflow-step-output', payload: {output: <our event>}}.
       const workflowStream = run.stream({
-        inputData: {prompt, files, sessionId},
+        inputData: {
+          prompt,
+          files,
+          sessionId: resolvedSessionId,
+          isNewSession,
+        },
         requestContext,
       });
 
@@ -331,6 +393,25 @@ export class WorkflowRunner {
     } catch {
       return undefined;
     }
+  }
+
+  private resolveResourceId(
+    currentUser: IAuthUserWithPermissions | undefined,
+    sessionId?: string,
+  ): string | undefined {
+    if (this.resourceIdValue?.trim()) {
+      return this.resourceIdValue;
+    }
+
+    if (currentUser?.tenantId && currentUser?.userTenantId) {
+      return `${currentUser.tenantId}:${currentUser.userTenantId}`;
+    }
+
+    if (currentUser?.userTenantId) {
+      return currentUser.userTenantId;
+    }
+
+    return sessionId;
   }
 
   private async resolveVisualizerStore(): Promise<VisualizerStore> {

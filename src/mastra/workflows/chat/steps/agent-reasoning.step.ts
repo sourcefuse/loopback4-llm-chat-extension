@@ -1,10 +1,7 @@
 import {createStep} from '@mastra/core/workflows';
 import {z} from 'zod';
 import {LLMStreamEventType} from '../../../../graphs/event.types';
-import {
-  chatReasoningAgent,
-  emitToolStatusEvent,
-} from '../../../agents/chat-reasoning.agent';
+import {emitToolStatusEvent} from '../../../agents/chat-reasoning.agent';
 import {asWorkflowContext} from '../../../bridge/workflow-request-context';
 import {
   FileProcessingOutputSchema,
@@ -54,19 +51,19 @@ export const agentReasoningStep = createStep({
   execute: async ({inputData, requestContext, writer}) => {
     const ctx = asWorkflowContext(requestContext);
 
-    const {sessionId, messages, userMessageId} = inputData;
+    const {sessionId, prompt} = inputData;
 
     const eventQueue = ctx.get('eventQueue');
     const tokenAccumulator = ctx.get('tokenUsageAccumulator');
     const mastraTools = ctx.get('mastraTools');
+    const chatReasoningAgent = ctx.get('chatReasoningAgent');
+    const resourceId = ctx.get('resourceId');
     const abortSignal = ctx.get('abortSignal');
     const aiConfig = ctx.get('aiConfig') as
       | {maxSteps?: number; modelName?: string}
       | undefined;
 
-    debug(
-      `AgentReasoning: streaming agent with ${messages.length} messages, session=${sessionId}`,
-    );
+    debug(`AgentReasoning: streaming agent for session=${sessionId}`);
 
     const toolCallRecords: z.infer<
       typeof AgentReasoningOutputSchema
@@ -74,14 +71,22 @@ export const agentReasoningStep = createStep({
 
     let finalText = '';
 
-    const agentOutput = await chatReasoningAgent.stream(
-      messages as Parameters<typeof chatReasoningAgent.stream>[0],
+    const inputMessages: Parameters<typeof chatReasoningAgent.stream>[0] = [
       {
-        maxSteps: (aiConfig as {maxSteps?: number} | undefined)?.maxSteps ?? 20,
-        abortSignal,
-        requestContext: ctx,
+        role: 'user',
+        content: prompt,
       },
-    );
+    ];
+
+    const agentOutput = await chatReasoningAgent.stream(inputMessages, {
+      maxSteps: (aiConfig as {maxSteps?: number} | undefined)?.maxSteps ?? 20,
+      abortSignal,
+      requestContext: ctx,
+      memory: {
+        thread: sessionId,
+        resource: resourceId,
+      },
+    });
 
     // Consume the full stream using discriminated union narrowing.
     // AgentChunkType is: tool-call | tool-result | text-delta | step-finish | error | ...
@@ -207,7 +212,6 @@ export const agentReasoningStep = createStep({
       tokenMap: counts.map as z.infer<
         typeof AgentReasoningOutputSchema
       >['tokenMap'],
-      userMessageId,
     };
   },
 });

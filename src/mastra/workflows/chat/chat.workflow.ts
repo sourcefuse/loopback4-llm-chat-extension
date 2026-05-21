@@ -24,12 +24,14 @@ import {endSessionStep} from './steps/end-session.step';
  * the event forwarding loop.
  *
  * RequestContext keys (injected by WorkflowRunner):
- *  - chatStore: ChatStore (REQUEST-scoped)
+ *  - mastraMemory: Memory (shared singleton)
+ *  - chatReasoningAgent: Agent (memory-enabled)
  *  - eventQueue: AsyncEventQueue (per-request)
  *  - tokenUsageAccumulator: TokenUsageAccumulator (per-request)
  *  - mastraChatLlm: MastraLanguageModel (bound in LB4 DI)
  *  - mastraFileLlm: MastraLanguageModel (optional, bound in LB4 DI)
  *  - mastraTools: MastraToolStore (REQUEST-scoped via MastraToolsProvider)
+ *  - resourceId: tenant/user scoped resource identity for memory isolation
  *  - aiConfig: { maxTokens?, maxSteps?, modelName? } (optional, from LB4 config)
  *  - systemContext: string[] (optional, from LB4 SystemContext binding)
  *  - abortSignal: AbortSignal (from AbortController in GenerationService)
