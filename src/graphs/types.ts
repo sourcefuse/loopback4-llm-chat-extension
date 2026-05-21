@@ -2,6 +2,7 @@ import {AIMessage, HumanMessage, ToolMessage} from '@langchain/core/messages';
 import {RunnableToolLike} from '@langchain/core/runnables';
 import {StructuredToolInterface} from '@langchain/core/tools';
 import {LangGraphRunnableConfig} from '@langchain/langgraph';
+import {Tool} from '@mastra/core/tools';
 import {AnyObject, Command} from '@loopback/repository';
 import {LLMStreamEvent} from './event.types';
 
@@ -46,4 +47,15 @@ export enum ToolStatus {
   Running = 'running',
   Completed = 'completed',
   Failed = 'failed',
+  AwaitingApproval = 'awaiting_approval',
+}
+
+// Mastra-shaped tool interface. Coexists with v2 IGraphTool during P1 transition.
+// In P3 (LangGraph deletion), IGraphTool is replaced by this shape and renamed back to IGraphTool.
+export interface IMastraGraphTool {
+  key: string;
+  requireApproval?: boolean;
+  build(): Tool;
+  getValue?(result: Record<string, unknown>): string;
+  getMetadata?(result: Record<string, unknown>): AnyObject;
 }
