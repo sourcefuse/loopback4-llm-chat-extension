@@ -5,6 +5,11 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
+# Mastra LibSQL default storage (file:./mastra.db) — local dev / tests only
+mastra.db
+mastra.db-shm
+mastra.db-wal
+
 # Runtime data
 pids
 *.pid

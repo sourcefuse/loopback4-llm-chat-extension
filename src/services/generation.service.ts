@@ -1,5 +1,5 @@
 import {BindingScope, inject, injectable, service} from '@loopback/core';
-import {ChatGraph} from '../graphs/chat/chat.graph';
+import {WorkflowRunner} from '../mastra/bridge/workflow-runner';
 import {AiIntegrationBindings} from '../keys';
 import {ITransport} from '../transports/types';
 import {ILimitStrategy} from './limit-strategies/types';
@@ -7,8 +7,8 @@ import {ILimitStrategy} from './limit-strategies/types';
 @injectable({scope: BindingScope.REQUEST})
 export class GenerationService {
   constructor(
-    @service(ChatGraph)
-    private readonly chatGraph: ChatGraph,
+    @service(WorkflowRunner)
+    private readonly workflowRunner: WorkflowRunner,
     @inject(AiIntegrationBindings.Transport)
     private readonly transport: ITransport,
     @inject(AiIntegrationBindings.LimitStrategy, {optional: true})
@@ -21,7 +21,7 @@ export class GenerationService {
     this.transport.onCancel(() => {
       abortController.abort();
     });
-    const stream = await this.chatGraph.execute(
+    const stream = this.workflowRunner.run(
       prompt,
       files,
       abortController.signal,
