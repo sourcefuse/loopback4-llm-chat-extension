@@ -55,11 +55,15 @@ export const queryGenerationStep = createStep({
   }),
   outputSchema: visualizationWorkflowStateSchema,
   execute: async ({inputData, requestContext, writer}) => {
+    if (!requestContext) {
+      throw new Error('RequestContext is required for query-generation step.');
+    }
+
     if (inputData.error !== undefined || inputData.datasetId !== undefined) {
       return inputData;
     }
 
-    const ctx = asVisualizationContext(requestContext!);
+    const ctx = asVisualizationContext(requestContext);
     const schema = ctx.get('fullSchema');
 
     if (!schema) {

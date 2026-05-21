@@ -77,7 +77,13 @@ export const visualizationSelectionStep = createStep({
   }),
   outputSchema: visualizationWorkflowStateSchema,
   execute: async ({inputData, requestContext, writer}) => {
-    const ctx = asVisualizationContext(requestContext!);
+    if (!requestContext) {
+      throw new Error(
+        'RequestContext is required for visualization-selection step.',
+      );
+    }
+
+    const ctx = asVisualizationContext(requestContext);
     const visualizerStore = ctx.get('visualizerStore');
     const visualizations = visualizerStore.list;
 
@@ -119,7 +125,10 @@ export const visualizationSelectionStep = createStep({
         .join('\n'),
     });
 
-    const rawOutput = await invokeLlm(ctx.get('cheapLlm'), selectionPrompt);
+    const rawOutput = await invokeLlm(ctx.get('cheapLlm'), selectionPrompt, {
+      requestContext,
+      functionId: 'visualization-selection.step',
+    });
     const output = stripThinkingTokens(rawOutput);
 
     if (output.trim().startsWith('none')) {

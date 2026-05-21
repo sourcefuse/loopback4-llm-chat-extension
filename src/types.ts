@@ -1,13 +1,9 @@
 import {ChatAnthropic} from '@langchain/anthropic';
-import {BedrockEmbeddings, ChatBedrockConverse} from '@langchain/aws';
+import {ChatBedrockConverse} from '@langchain/aws';
 import {ChatCerebras} from '@langchain/cerebras';
-import {
-  ChatGoogleGenerativeAI,
-  GoogleGenerativeAIEmbeddings,
-} from '@langchain/google-genai';
-import {BaseCheckpointSaver} from '@langchain/langgraph';
-import {ChatOllama, OllamaEmbeddings} from '@langchain/ollama';
-import {ChatOpenAI, OpenAIEmbeddings} from '@langchain/openai';
+import {ChatGoogleGenerativeAI} from '@langchain/google-genai';
+import {ChatOllama} from '@langchain/ollama';
+import {ChatOpenAI} from '@langchain/openai';
 import {createTool} from '@mastra/core/tools';
 import {Provider} from '@loopback/core';
 import {AnyObject} from '@loopback/repository';
@@ -34,6 +30,10 @@ export type AIIntegrationConfig = {
     bufferTokens?: number;
     period: number; // in seconds
   };
+  aiSdkTelemetry?: {
+    enabled?: boolean;
+    metadata?: Record<string, string | number | boolean>;
+  };
 };
 
 export type FileMessageBuilder = (file: Express.Multer.File) => AnyObject;
@@ -52,13 +52,12 @@ export type LLMProvider = LLMProviderType & {
   getFile?: FileMessageBuilder;
 };
 
-export type EmbeddingProvider =
-  | OpenAIEmbeddings
-  | OllamaEmbeddings
-  | BedrockEmbeddings
-  | GoogleGenerativeAIEmbeddings;
+export type EmbeddingProvider = {
+  embedDocuments(texts: string[]): Promise<number[][]>;
+  embedQuery(text: string): Promise<number[]>;
+};
 
-export type CheckpointerProvider = Provider<BaseCheckpointSaver>;
+export type CheckpointerProvider = Provider<unknown>;
 
 export type ToolStore = {
   list: IGraphTool[];
@@ -78,7 +77,7 @@ export type MastraTool = ReturnType<typeof createTool>;
 export type MastraToolDefinition = {
   id: string;
   tool: MastraTool;
-  source: 'native' | 'legacy-compat';
+  source: 'native';
   formatResult: (result: JsonObject) => string;
   getMetadata: (result: JsonObject) => JsonObject;
 };

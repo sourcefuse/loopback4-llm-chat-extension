@@ -1,22 +1,18 @@
 import {expect, sinon} from '@loopback/testlab';
-import {BarVisualizer} from '../../../../components/visualization/visualizers/bar.visualizer';
-import {LLMProvider} from '../../../../types';
+import type {MastraLanguageModel} from '@mastra/core/agent';
 import {fail} from 'assert';
-import {VisualizationGraphState} from '../../../../components';
+import {BarVisualizer} from '../../../../components/visualization/visualizers/bar.visualizer';
+import * as llmHelpers from '../../../../mastra/workflows/db-query/llm-helpers';
 
 describe('BarVisualizer Unit', function () {
   let visualizer: BarVisualizer;
-  let llmProvider: sinon.SinonStubbedInstance<LLMProvider>;
-  let withStructuredOutputStub: sinon.SinonStub;
+  let llm: MastraLanguageModel;
+  let invokeLlmObjectStub: sinon.SinonStub;
 
   beforeEach(() => {
-    // Create stub for LLM provider
-    withStructuredOutputStub = sinon.stub();
-    llmProvider = {
-      withStructuredOutput: withStructuredOutputStub,
-    } as sinon.SinonStubbedInstance<LLMProvider>;
-
-    visualizer = new BarVisualizer(llmProvider);
+    llm = {} as MastraLanguageModel;
+    visualizer = new BarVisualizer(llm);
+    invokeLlmObjectStub = sinon.stub(llmHelpers, 'invokeLlmObject');
   });
 
   afterEach(() => {
@@ -33,7 +29,6 @@ describe('BarVisualizer Unit', function () {
     const schema = visualizer.schema;
     expect(schema).to.be.ok();
 
-    // Test schema structure by trying to parse valid data
     const validData = {
       categoryColumn: 'category',
       valueColumn: 'value',
@@ -49,13 +44,11 @@ describe('BarVisualizer Unit', function () {
   });
 
   it('should validate schema with default orientation', () => {
-    const schema = visualizer.schema;
-    const dataWithoutOrientation = {
+    const result = visualizer.schema.safeParse({
       categoryColumn: 'category',
       valueColumn: 'value',
-    };
+    });
 
-    const result = schema.safeParse(dataWithoutOrientation);
     expect(result.success).to.be.true();
 
     if (result.success) {
@@ -64,27 +57,22 @@ describe('BarVisualizer Unit', function () {
   });
 
   it('should reject invalid orientation values', () => {
-    const schema = visualizer.schema;
-    const invalidData = {
+    const result = visualizer.schema.safeParse({
       categoryColumn: 'category',
       valueColumn: 'value',
-      orientation: 42, // invalid type
-    };
+      orientation: 42,
+    });
 
-    const result = schema.safeParse(invalidData);
     expect(result.success).to.be.false();
   });
 
   it('should throw error when state is invalid (missing sql)', async () => {
-    const invalidState = {
-      prompt: 'test prompt',
-      datasetId: 'test-id',
-      queryDescription: 'test description',
-      // sql is missing - will be undefined
-    } as unknown as VisualizationGraphState;
-
     try {
-      await visualizer.getConfig(invalidState);
+      await visualizer.getConfig({
+        prompt: 'test prompt',
+        datasetId: 'test-id',
+        queryDescription: 'test description',
+      });
       fail('Should have thrown an error');
     } catch (error) {
       expect(error).to.have.property('message', 'Invalid State');
@@ -92,15 +80,12 @@ describe('BarVisualizer Unit', function () {
   });
 
   it('should throw error when state is invalid (missing queryDescription)', async () => {
-    const invalidState = {
-      prompt: 'test prompt',
-      datasetId: 'test-id',
-      sql: 'SELECT * FROM test',
-      // queryDescription is missing - will be undefined
-    } as unknown as VisualizationGraphState;
-
     try {
-      await visualizer.getConfig(invalidState);
+      await visualizer.getConfig({
+        prompt: 'test prompt',
+        datasetId: 'test-id',
+        sql: 'SELECT * FROM test',
+      });
       fail('Should have thrown an error');
     } catch (error) {
       expect(error).to.have.property('message', 'Invalid State');
@@ -108,15 +93,12 @@ describe('BarVisualizer Unit', function () {
   });
 
   it('should throw error when state is invalid (missing prompt)', async () => {
-    const invalidState = {
-      datasetId: 'test-id',
-      sql: 'SELECT * FROM test',
-      queryDescription: 'test description',
-      // prompt is missing - will be undefined
-    } as unknown as VisualizationGraphState;
-
     try {
-      await visualizer.getConfig(invalidState);
+      await visualizer.getConfig({
+        datasetId: 'test-id',
+        sql: 'SELECT * FROM test',
+        queryDescription: 'test description',
+      });
       fail('Should have thrown an error');
     } catch (error) {
       expect(error).to.have.property('message', 'Invalid State');
@@ -129,52 +111,47 @@ describe('BarVisualizer Unit', function () {
       valueColumn: 'salary',
       orientation: 'vertical',
     };
+    invokeLlmObjectStub.resolves(mockLLMResponse);
 
-    const mockInvoke = sinon.stub().resolves(mockLLMResponse);
-    withStructuredOutputStub.returns(mockInvoke);
-
-    const validState = {
+    const input = {
       prompt: 'Show me a bar chart of salaries by department',
       datasetId: 'test-dataset',
       sql: 'SELECT department, AVG(salary) as avg_salary FROM employees GROUP BY department',
       queryDescription: 'Average salary by department',
-    } as unknown as VisualizationGraphState;
+    };
 
-    const config = await visualizer.getConfig(validState);
+    const config = await visualizer.getConfig(input);
 
     expect(config).to.deepEqual(mockLLMResponse);
-    expect(
-      withStructuredOutputStub.calledOnceWith(visualizer.schema),
-    ).to.be.true();
-    expect(mockInvoke.calledOnce).to.be.true();
+    expect(invokeLlmObjectStub.calledOnce).to.be.true();
 
-    // Check that the mock was called with a StringPromptValue containing our data
-    const invokeArgs = mockInvoke.getCall(0).args[0];
-    expect(invokeArgs).to.have.property('value');
-    // Escape special regex characters in SQL
-    const escapedSQL =
-      validState.sql?.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') ?? '';
-    expect(invokeArgs.value).to.match(new RegExp(escapedSQL));
-    expect(invokeArgs.value).to.match(
-      new RegExp(validState.queryDescription ?? ''),
+    const [modelArg, promptArg, schemaArg, optionsArg] =
+      invokeLlmObjectStub.getCall(0).args;
+    expect(modelArg).to.equal(llm);
+    expect(schemaArg).to.equal(visualizer.schema);
+    expect(optionsArg).to.deepEqual({
+      requestContext: undefined,
+      functionId: 'visualization.bar.config',
+    });
+
+    expect(promptArg).to.match(
+      new RegExp(input.sql.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')),
     );
-    expect(invokeArgs.value).to.match(new RegExp(validState.prompt));
+    expect(promptArg).to.match(new RegExp(input.queryDescription));
+    expect(promptArg).to.match(new RegExp(input.prompt));
   });
 
   it('should handle LLM errors gracefully', async () => {
     const mockError = new Error('LLM processing failed');
-    const mockInvoke = sinon.stub().rejects(mockError);
-    withStructuredOutputStub.returns(mockInvoke);
-
-    const validState = {
-      prompt: 'test prompt',
-      datasetId: 'test-dataset',
-      sql: 'SELECT * FROM test',
-      queryDescription: 'test description',
-    } as unknown as VisualizationGraphState;
+    invokeLlmObjectStub.rejects(mockError);
 
     try {
-      await visualizer.getConfig(validState);
+      await visualizer.getConfig({
+        prompt: 'test prompt',
+        datasetId: 'test-dataset',
+        sql: 'SELECT * FROM test',
+        queryDescription: 'test description',
+      });
       fail('Should have thrown an error');
     } catch (error) {
       expect(error).to.equal(mockError);

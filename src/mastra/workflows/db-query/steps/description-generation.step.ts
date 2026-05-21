@@ -83,7 +83,10 @@ export const descriptionGenerationStep = createStep({
       .replace('{schema}', schemaHelper.asString(schema))
       .replace('{checks}', checks);
 
-    const rawOutput = await invokeLlm(cheapLlm, prompt);
+    const rawOutput = await invokeLlm(cheapLlm, prompt, {
+      requestContext,
+      functionId: 'db-query.description-generation',
+    });
     const description = stripThinkingTokens(rawOutput);
 
     await writer.write({

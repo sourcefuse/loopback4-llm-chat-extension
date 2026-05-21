@@ -32,19 +32,10 @@ import {
 } from './components';
 import {DEFAULT_FILE_SIZE, MAX_TOTAL_SIZE} from './constant';
 import {ChatController, GenerationController} from './controllers';
-import {
-  CallLLMNode,
-  ChatGraph,
-  ChatStore,
-  ContextCompressionNode,
-  EndSessionNode,
-  InitSessionNode,
-  RunToolNode,
-  SummariseFileNode,
-} from './graphs/chat';
+import {ChatStore} from './graphs/chat';
 import {WriterDB, AiIntegrationBindings, ReaderDB} from './keys';
 import {Chat, Message} from './models';
-import {CacheModel, MastraToolsProvider, ToolsProvider} from './providers';
+import {CacheModel, MastraToolsProvider} from './providers';
 import {RedisCache, RedisCacheRepository} from './providers/cache/redis';
 import {ChatRepository, MessageRepository} from './repositories';
 import {
@@ -81,7 +72,6 @@ export class AiIntegrationsComponent implements Component {
 
     this.providers = {
       [AiIntegrationBindings.VectorStore.key]: PgVectorStore,
-      [AiIntegrationBindings.Tools.key]: ToolsProvider,
       [AiIntegrationBindings.MastraTools.key]: MastraToolsProvider,
     };
 
@@ -92,15 +82,6 @@ export class AiIntegrationsComponent implements Component {
       ChatStore,
       // mastra migration
       WorkflowRunner,
-      // graph
-      ChatGraph,
-      // nodes
-      CallLLMNode,
-      RunToolNode,
-      InitSessionNode,
-      SummariseFileNode,
-      ContextCompressionNode,
-      EndSessionNode,
     ];
 
     this.controllers = [GenerationController, ChatController];

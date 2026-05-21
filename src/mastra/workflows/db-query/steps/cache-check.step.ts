@@ -78,7 +78,10 @@ export const cacheCheckStep = createStep({
       inputData.prompt,
     ).replace('{queries}', buildQueriesText(relevantDocs));
 
-    const rawResponse = await invokeLlm(cheapLlm, prompt);
+    const rawResponse = await invokeLlm(cheapLlm, prompt, {
+      requestContext,
+      functionId: 'db-query.cache-check',
+    });
     const decision = parseCacheDecision(
       stripThinkingTokens(rawResponse),
       relevantDocs.length,

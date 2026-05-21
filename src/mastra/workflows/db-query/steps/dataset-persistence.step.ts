@@ -57,7 +57,7 @@ export const datasetPersistenceStep = createStep({
       data: 'Dataset generated',
     });
 
-    const tenantId = currentUser.tenantId;
+    const tenantId = currentUser?.tenantId;
     if (!tenantId) {
       throw new Error('User does not have a tenantId');
     }
@@ -74,7 +74,10 @@ export const datasetPersistenceStep = createStep({
         .replace('{schema}', schemaHelper.asString(schema))
         .replace('{checks}', checks);
 
-      const rawOutput = await invokeLlm(cheapLlm, prompt);
+      const rawOutput = await invokeLlm(cheapLlm, prompt, {
+        requestContext,
+        functionId: 'db-query.dataset-persistence',
+      });
       description = stripThinkingTokens(rawOutput);
     }
 

@@ -16,6 +16,10 @@ export const dataFetchStep = createStep({
   }),
   outputSchema: visualizationWorkflowStateSchema,
   execute: async ({inputData, requestContext, writer}) => {
+    if (!requestContext) {
+      throw new Error('RequestContext is required for data-fetch step.');
+    }
+
     if (inputData.error) {
       return inputData;
     }
@@ -24,7 +28,7 @@ export const dataFetchStep = createStep({
       throw new Error('Invalid State');
     }
 
-    const ctx = asVisualizationContext(requestContext!);
+    const ctx = asVisualizationContext(requestContext);
     const dataset = await ctx.get('datasetStore').findById(inputData.datasetId);
 
     await writer.write({

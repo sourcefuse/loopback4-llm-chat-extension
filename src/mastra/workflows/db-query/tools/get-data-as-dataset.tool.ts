@@ -8,7 +8,6 @@ import {
   type DbQueryWorkflowOutput,
 } from '../db-query-workflow-schemas';
 import type {LLMStreamEvent} from '../../../../graphs/event.types';
-import type {AsyncEventQueue} from '../../../bridge/async-event-queue';
 import type {JsonObject, JsonValue} from '../../../../types';
 
 const DEFAULT_MAX_READ_ROWS_FOR_AI = 25;
@@ -85,9 +84,7 @@ It internally fires an event that renders a grid for the dataset on the UI for t
     }
 
     const ctx = asDbQueryContext(requestContext);
-    const eventQueue = requestContext.get('eventQueue') as
-      | AsyncEventQueue
-      | undefined;
+    const eventQueue = ctx.get('eventQueue');
     const schema = ctx.get('fullSchema');
     const abortSignal = ctx.get('abortSignal');
 

@@ -8,14 +8,6 @@ import {
   ServiceOrProviderClass,
 } from '@loopback/core';
 import {AnyObject} from '@loopback/repository';
-import {VisualizationGraph} from './visualization.graph';
-import {
-  CallQueryGenerationNode,
-  GetDatasetDataNode,
-  RenderVisualizationNode,
-  SelectVisualizationNode,
-} from './nodes';
-import {GenerateVisualizationTool} from './tools/generate-visualization.tool';
 import {PieVisualizer, BarVisualizer, LineVisualizer} from './visualizers';
 
 export class VisualizerComponent implements Component {
@@ -32,16 +24,7 @@ export class VisualizerComponent implements Component {
     this.bindings = [];
     this.lifeCycleObservers = [];
     this.services = [
-      // graph
-      VisualizationGraph,
-      // tools
-      GenerateVisualizationTool,
-      // nodes
-      GetDatasetDataNode,
-      SelectVisualizationNode,
-      RenderVisualizationNode,
-      CallQueryGenerationNode,
-      // visualizers
+      // native visualizers
       PieVisualizer,
       BarVisualizer,
       LineVisualizer,

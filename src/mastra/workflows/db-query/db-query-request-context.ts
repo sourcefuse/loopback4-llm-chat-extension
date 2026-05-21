@@ -1,6 +1,7 @@
 import type {RequestContext} from '@mastra/core/request-context';
 import type {MastraLanguageModel} from '@mastra/core/agent';
 import type {IAuthUserWithPermissions} from '@sourceloop/core';
+import type {AsyncEventQueue} from '../../bridge/async-event-queue';
 import type {
   DatabaseSchema,
   DbQueryConfig,
@@ -53,11 +54,23 @@ export interface DbQueryRequestContext {
   /** Abort signal from HTTP request */
   abortSignal: AbortSignal;
   /** Authenticated user */
-  currentUser: IAuthUserWithPermissions;
+  currentUser: IAuthUserWithPermissions | undefined;
   /** Full database schema (unfiltered) */
   fullSchema: DatabaseSchema;
   /** Whether this is a direct internal call (not from chat tool) */
   directCall: boolean;
+  /** Optional event queue when DBQuery runs inside chat tool execution */
+  eventQueue?: AsyncEventQueue;
+  /** Correlation id propagated across workflow and model calls */
+  correlationId?: string;
+  /** Workflow id attached by the workflow runner */
+  workflowId?: string;
+  /** Optional chat session id for chat-originated tool execution */
+  chatSessionId?: string;
+  /** Global AI SDK telemetry switch for request-scoped model calls */
+  aiSdkTelemetryEnabled?: boolean;
+  /** Additional AI SDK telemetry metadata attached to model calls */
+  aiSdkTelemetryMetadata?: Record<string, string | number | boolean>;
 }
 
 /** Document returned by the query cache retriever */

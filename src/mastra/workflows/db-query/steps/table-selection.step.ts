@@ -1,5 +1,6 @@
 import {createStep} from '@mastra/core/workflows';
 import type {MastraLanguageModel} from '@mastra/core/agent';
+import type {RequestContext} from '@mastra/core/request-context';
 import {z} from 'zod';
 import {LLMStreamEventType} from '../../../../graphs/event.types';
 import {asDbQueryContext} from '../db-query-request-context';
@@ -131,6 +132,7 @@ export const tableSelectionStep = createStep({
       feedbacksText,
       checks,
       dbSchema,
+      requestContext,
       writer,
       maxAttempts: 2,
     });
@@ -223,6 +225,7 @@ async function selectTablesWithRetries(params: {
   feedbacksText: string;
   checks: string;
   dbSchema: DatabaseSchema;
+  requestContext: RequestContext;
   writer: {
     write: (event: {
       type: LLMStreamEventType;
@@ -245,7 +248,10 @@ async function selectTablesWithRetries(params: {
       .replace('{feedbacks}', params.feedbacksText)
       .replace('{checks}', params.checks);
 
-    const rawResult = await invokeLlm(params.llm, prompt);
+    const rawResult = await invokeLlm(params.llm, prompt, {
+      requestContext: params.requestContext,
+      functionId: 'db-query.table-selection',
+    });
     const output = stripThinkingTokens(rawResult);
     const parsed = parseTableSelectionOutput(output);
 

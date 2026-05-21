@@ -1,7 +1,9 @@
-import {TaskType} from '@google/generative-ai';
-import {GoogleGenerativeAIEmbeddings} from '@langchain/google-genai';
+import {embed, embedMany} from 'ai';
+import {createGoogleGenerativeAI} from '@ai-sdk/google';
 import {Provider} from '@loopback/core';
 import {EmbeddingProvider} from '../../../../types';
+
+type AiEmbeddingModel = Parameters<typeof embed>[0]['model'];
 
 export class GeminiEmbedding implements Provider<EmbeddingProvider> {
   value() {
@@ -11,10 +13,45 @@ export class GeminiEmbedding implements Provider<EmbeddingProvider> {
       );
     }
 
-    return new GoogleGenerativeAIEmbeddings({
-      model: process.env.GOOGLE_EMBEDDING_MODEL!,
-      taskType: TaskType.RETRIEVAL_DOCUMENT,
-      title: process.env.GOOGLE_EMBEDDING_TITLE ?? 'AI Integration Embedding',
+    const provider = createGoogleGenerativeAI({
+      apiKey: process.env.GOOGLE_API_KEY,
     });
+
+    const model = provider.embeddingModel(
+      process.env.GOOGLE_EMBEDDING_MODEL,
+    ) as unknown as AiEmbeddingModel;
+
+    return {
+      embedDocuments: async (texts: string[]) => {
+        if (texts.length === 0) {
+          return [];
+        }
+
+        const result = await embedMany({
+          model,
+          values: texts,
+          providerOptions: {
+            google: {
+              taskType: 'RETRIEVAL_DOCUMENT',
+            },
+          },
+        });
+
+        return result.embeddings.map(embedding => Array.from(embedding));
+      },
+      embedQuery: async (text: string) => {
+        const result = await embed({
+          model,
+          value: text,
+          providerOptions: {
+            google: {
+              taskType: 'RETRIEVAL_QUERY',
+            },
+          },
+        });
+
+        return Array.from(result.embedding);
+      },
+    } as EmbeddingProvider;
   }
 }

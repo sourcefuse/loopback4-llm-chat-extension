@@ -72,7 +72,10 @@ export const syntacticValidationStep = createStep({
         .replace('{query}', inputData.sql)
         .replace('{tableNames}', tableNames.join(', '));
 
-      const rawOutput = await invokeLlm(cheapLlm, prompt);
+      const rawOutput = await invokeLlm(cheapLlm, prompt, {
+        requestContext,
+        functionId: 'db-query.syntactic-validation',
+      });
       const result = stripThinkingTokens(rawOutput);
 
       const categoryMatch = /<category>(.*?)<\/category>/s.exec(result);

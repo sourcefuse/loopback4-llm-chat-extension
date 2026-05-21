@@ -29,6 +29,16 @@ export type ChatWorkflowRequestContext = {
   systemContext: string[] | undefined;
   /** Token usage accumulator for the request */
   tokenUsageAccumulator: TokenUsageAccumulator;
+  /** Correlation id propagated across workflows/tools/model calls */
+  correlationId: string;
+  /** Workflow identifier for telemetry metadata */
+  workflowId: string;
+  /** Optional chat session id associated with request */
+  chatSessionId: string | undefined;
+  /** AI SDK telemetry toggle for model calls */
+  aiSdkTelemetryEnabled: boolean;
+  /** Additional request-scoped telemetry metadata */
+  aiSdkTelemetryMetadata: Record<string, string | number | boolean>;
 };
 
 /**

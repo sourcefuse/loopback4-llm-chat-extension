@@ -1,4 +1,4 @@
-import {ChatCerebras, ChatCerebrasInput} from '@langchain/cerebras';
+import {createCerebras} from '@ai-sdk/cerebras';
 import {Provider} from '@loopback/core';
 import {LLMProvider} from '../../../../types';
 
@@ -9,17 +9,12 @@ export class Cerebras implements Provider<LLMProvider> {
         'CEREBRAS_MODEL and CEREBRAS_KEY environment variable is not set.',
       );
     }
-    const config: ChatCerebrasInput = {
-      temperature: parseFloat(process.env.CEREBRAS_TEMPERATURE ?? '0'),
-      model: process.env.CEREBRAS_MODEL,
-      apiKey: process.env.CEREBRAS_KEY, // Default value.
-    };
-    if (process.env.CEREBRAS_TOP_P) {
-      config.topP = parseFloat(process.env.CEREBRAS_TOP_P);
-    }
-    if (process.env.CEREBRAS_MAX_TOKENS) {
-      config.maxCompletionTokens = parseInt(process.env.CEREBRAS_MAX_TOKENS);
-    }
-    return new ChatCerebras(config);
+
+    const provider = createCerebras({
+      apiKey: process.env.CEREBRAS_KEY,
+      baseURL: process.env.CEREBRAS_BASE_URL,
+    });
+
+    return provider(process.env.CEREBRAS_MODEL) as unknown as LLMProvider;
   }
 }

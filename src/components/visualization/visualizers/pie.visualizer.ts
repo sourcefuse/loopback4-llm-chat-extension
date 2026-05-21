@@ -1,13 +1,16 @@
 import {PromptTemplate} from '@langchain/core/prompts';
-import {IVisualizer} from '../types';
+import {
+  IVisualizer,
+  VisualizationConfigInput,
+  VisualizationConfigOptions,
+} from '../types';
 import {AiIntegrationBindings} from '../../../keys';
-import {LLMProvider} from '../../../types';
 import {inject} from '@loopback/core';
 import {AnyObject} from '@loopback/repository';
-import {VisualizationGraphState} from '../state';
 import z from 'zod';
-import {RunnableSequence} from '@langchain/core/runnables';
 import {visualizer} from '../decorators/visualizer.decorator';
+import {invokeLlmObject} from '../../../mastra/workflows/db-query/llm-helpers';
+import type {MastraLanguageModel} from '@mastra/core/agent';
 
 @visualizer()
 export class PieVisualizer implements IVisualizer {
@@ -46,28 +49,34 @@ You are an expert data visualization assistant. Your task is to create a pie cha
   }) as z.AnyZodObject;
 
   constructor(
-    @inject(AiIntegrationBindings.CheapLLM)
-    private readonly llm: LLMProvider,
+    @inject(AiIntegrationBindings.MastraCheapLLM)
+    private readonly llm: MastraLanguageModel,
   ) {}
 
-  async getConfig(state: VisualizationGraphState): Promise<AnyObject> {
-    if (!state.sql || !state.queryDescription || !state.prompt) {
+  async getConfig(
+    input: VisualizationConfigInput,
+    options?: VisualizationConfigOptions,
+  ): Promise<AnyObject> {
+    if (!input.sql || !input.queryDescription || !input.prompt) {
       throw new Error('Invalid State');
     }
-    const llmWithStructuredOutput = this.llm.withStructuredOutput<AnyObject>(
+
+    const prompt = await this.renderPrompt.format({
+      sql: input.sql,
+      description: input.queryDescription,
+      userPrompt: input.prompt,
+    });
+
+    const settings = await invokeLlmObject<AnyObject>(
+      this.llm,
+      prompt,
       this.schema,
+      {
+        requestContext: options?.requestContext,
+        functionId: 'visualization.pie.config',
+      },
     );
 
-    const chain = RunnableSequence.from([
-      this.renderPrompt,
-      llmWithStructuredOutput,
-    ]);
-
-    const settings = await chain.invoke({
-      sql: state.sql!,
-      description: state.queryDescription!,
-      userPrompt: state.prompt!,
-    });
     return settings;
   }
 }

@@ -1,5 +1,4 @@
 import {VectorStore as VectorStoreType} from '@langchain/core/vectorstores';
-import {BaseCheckpointSaver} from '@langchain/langgraph';
 import {BindingKey} from '@loopback/context';
 import type {MastraLanguageModel} from '@mastra/core/agent';
 import {ITransport} from './transports/types';
@@ -35,7 +34,7 @@ export namespace AiIntegrationBindings {
   export const EmbeddingModel = BindingKey.create<EmbeddingProvider>(
     'services.ai-reporting.embeddingModel',
   );
-  export const Checkpointer = BindingKey.create<BaseCheckpointSaver>(
+  export const Checkpointer = BindingKey.create<unknown>(
     'services.ai-reporting.checkpointer',
   );
   export const Tools = BindingKey.create<ToolStore>(
@@ -54,7 +53,7 @@ export namespace AiIntegrationBindings {
   export const LimitStrategy = BindingKey.create<ILimitStrategy>(
     'services.ai-reporting.limit-strategy',
   );
-  export const ObfHandler = BindingKey.create<Function>(
+  export const ObfHandler = BindingKey.create<unknown>(
     'services.ai-reporting.obf-handler',
   );
   export const SystemContext = BindingKey.create<string[]>(

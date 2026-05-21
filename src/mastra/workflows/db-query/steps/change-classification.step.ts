@@ -63,7 +63,10 @@ export const changeClassificationStep = createStep({
       inputData.sampleSqlPrompt ?? '',
     ).replace('{newDescription}', inputData.prompt);
 
-    const rawOutput = await invokeLlm(cheapLlm, prompt);
+    const rawOutput = await invokeLlm(cheapLlm, prompt, {
+      requestContext,
+      functionId: 'db-query.change-classification',
+    });
     const response = stripThinkingTokens(rawOutput).trim().toLowerCase();
 
     const changeType = parseChangeType(response);

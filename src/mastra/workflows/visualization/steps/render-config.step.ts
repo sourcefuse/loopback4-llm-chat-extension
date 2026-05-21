@@ -2,7 +2,6 @@ import {createStep} from '@mastra/core/workflows';
 import {z} from 'zod';
 import {LLMStreamEventType} from '../../../../graphs/event.types';
 import {ToolStatus} from '../../../../graphs/types';
-import type {VisualizationGraphState} from '../../../../components/visualization/state';
 import {asVisualizationContext} from '../visualization-request-context';
 import {visualizationWorkflowOutputSchema} from '../visualization-workflow-schemas';
 
@@ -19,6 +18,10 @@ export const renderConfigStep = createStep({
   }),
   outputSchema: visualizationWorkflowOutputSchema,
   execute: async ({inputData, requestContext, writer}) => {
+    if (!requestContext) {
+      throw new Error('RequestContext is required for render-config step.');
+    }
+
     if (inputData.error) {
       return {
         datasetId: inputData.datasetId,
@@ -28,7 +31,7 @@ export const renderConfigStep = createStep({
       };
     }
 
-    const ctx = asVisualizationContext(requestContext!);
+    const ctx = asVisualizationContext(requestContext);
     const visualizerStore = ctx.get('visualizerStore');
     const visualizer = inputData.visualizerName
       ? visualizerStore.map[inputData.visualizerName]
@@ -50,14 +53,19 @@ export const renderConfigStep = createStep({
       },
     });
 
-    const settings = await visualizer.getConfig({
-      prompt: inputData.prompt,
-      datasetId: inputData.datasetId,
-      sql: inputData.sql,
-      queryDescription: inputData.queryDescription,
-      visualizerName: visualizer.name,
-      type: inputData.type,
-    } as VisualizationGraphState);
+    const settings = await visualizer.getConfig(
+      {
+        prompt: inputData.prompt,
+        datasetId: inputData.datasetId,
+        sql: inputData.sql,
+        queryDescription: inputData.queryDescription,
+        visualizerName: visualizer.name,
+        type: inputData.type,
+      },
+      {
+        requestContext,
+      },
+    );
 
     await writer.write({
       type: LLMStreamEventType.ToolStatus,

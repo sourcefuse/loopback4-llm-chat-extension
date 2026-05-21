@@ -92,7 +92,10 @@ ${placeholderText}
       inputData.prompt,
     ).replace('{templates}', templatesText);
 
-    const rawResponse = await invokeLlm(cheapLlm, prompt);
+    const rawResponse = await invokeLlm(cheapLlm, prompt, {
+      requestContext,
+      functionId: 'db-query.template-match',
+    });
     const trimmed = stripThinkingTokens(rawResponse).trim();
 
     if (trimmed === 'no_match') {

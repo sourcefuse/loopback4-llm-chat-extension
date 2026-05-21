@@ -7,8 +7,8 @@ import {
   visualizationWorkflowOutputSchema,
   type VisualizationWorkflowOutput,
 } from '../visualization-workflow-schemas';
+import {asVisualizationContext} from '../visualization-request-context';
 import type {LLMStreamEvent} from '../../../../graphs/event.types';
-import type {AsyncEventQueue} from '../../../bridge/async-event-queue';
 import type {JsonObject, JsonValue} from '../../../../types';
 
 const looseObjectSchema = z.object({}).passthrough();
@@ -131,12 +131,9 @@ It does not return anything, instead it fires an event internally that renders t
       );
     }
 
-    const eventQueue = requestContext.get('eventQueue') as
-      | AsyncEventQueue
-      | undefined;
-    const abortSignal = requestContext.get('abortSignal') as
-      | AbortSignal
-      | undefined;
+    const ctx = asVisualizationContext(requestContext);
+    const eventQueue = ctx.get('eventQueue');
+    const abortSignal = ctx.get('abortSignal');
 
     const run = await visualizationWorkflow.createRun();
     const stream = run.stream({

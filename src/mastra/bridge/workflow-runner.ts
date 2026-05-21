@@ -9,6 +9,8 @@ import {
 import {repository} from '@loopback/repository';
 import {IAuthUserWithPermissions} from '@sourceloop/core';
 import {AuthenticationBindings} from 'loopback4-authentication';
+import {randomUUID} from 'crypto';
+import {SpanStatusCode, trace} from '@opentelemetry/api';
 import {RequestContext} from '@mastra/core/request-context';
 import {BaseRetriever} from '@langchain/core/retrievers';
 import {ChatStore} from '../../graphs/chat/chat.store';
@@ -47,6 +49,7 @@ import type {
 } from '../../components/visualization/types';
 
 const debug = require('debug')('ai-integration:mastra:workflow-runner');
+const tracer = trace.getTracer('ai-reporting.mastra.workflow-runner');
 
 /**
  * Type guard: checks if an unknown value is an LLMStreamEvent.
@@ -149,6 +152,10 @@ export class WorkflowRunner {
     abortController: AbortController,
     sessionId?: string,
   ): AsyncGenerator<LLMStreamEvent> {
+    const correlationId = randomUUID();
+    const telemetryEnabled = this.aiConfig?.aiSdkTelemetry?.enabled ?? true;
+    const telemetryMetadata = this.aiConfig?.aiSdkTelemetry?.metadata ?? {};
+
     const eventQueue = new AsyncEventQueue();
     const tokenAccumulator = new TokenUsageAccumulator();
     const currentUser = await this.resolveOptionalCurrentUser();
@@ -168,6 +175,11 @@ export class WorkflowRunner {
     requestContext.set('systemContext', this.systemContext);
     requestContext.set('tokenUsageAccumulator', tokenAccumulator);
     requestContext.set('currentUser', currentUser);
+    requestContext.set('correlationId', correlationId);
+    requestContext.set('workflowId', 'chat-workflow');
+    requestContext.set('chatSessionId', sessionId);
+    requestContext.set('aiSdkTelemetryEnabled', telemetryEnabled);
+    requestContext.set('aiSdkTelemetryMetadata', telemetryMetadata);
     requestContext.set('visualizerStore', await this.resolveVisualizerStore());
 
     const chatDbQuerySchema = this.resolveDbQueryChatSchema();
@@ -177,22 +189,45 @@ export class WorkflowRunner {
         abortSignal: abortController.signal,
         currentUser,
         directCall: false,
+        correlationId,
       });
     }
 
-    const run = await chatWorkflow.createRun();
-
-    // run.stream() executes the workflow lazily as we consume the returned iterator.
-    // The iterator yields WorkflowStreamEvent — steps emit via writer.write() which
-    // surfaces as {type: 'workflow-step-output', payload: {output: <our event>}}.
-    const workflowStream = run.stream({
-      inputData: {prompt, files, sessionId},
-      requestContext,
+    const span = tracer.startSpan('workflow.chat.execute', {
+      attributes: {
+        'workflow.id': 'chat-workflow',
+        'workflow.correlation_id': correlationId,
+        'chat.session_id': sessionId ?? '',
+        'chat.files_count': files.length,
+      },
     });
 
-    // Merge the workflow stream (writer.write events) and AsyncEventQueue (agent callbacks)
-    // concurrently. Yield all LLMStreamEvents to GenerationService in arrival order.
-    yield* this._mergeStreams(workflowStream, eventQueue, abortController);
+    try {
+      const run = await chatWorkflow.createRun();
+
+      // run.stream() executes the workflow lazily as we consume the returned iterator.
+      // The iterator yields WorkflowStreamEvent — steps emit via writer.write() which
+      // surfaces as {type: 'workflow-step-output', payload: {output: <our event>}}.
+      const workflowStream = run.stream({
+        inputData: {prompt, files, sessionId},
+        requestContext,
+      });
+
+      // Merge the workflow stream (writer.write events) and AsyncEventQueue (agent callbacks)
+      // concurrently. Yield all LLMStreamEvents to GenerationService in arrival order.
+      yield* this._mergeStreams(workflowStream, eventQueue, abortController);
+
+      span.setStatus({code: SpanStatusCode.OK});
+    } catch (error) {
+      span.recordException(error as Error);
+      span.setStatus({
+        code: SpanStatusCode.ERROR,
+        message: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    } finally {
+      span.end();
+    }
   }
 
   /**
@@ -228,33 +263,64 @@ export class WorkflowRunner {
     }
 
     const currentUser = await this.getCurrentUser();
+    const correlationId = randomUUID();
+    const telemetryEnabled = this.aiConfig?.aiSdkTelemetry?.enabled ?? true;
+    const telemetryMetadata = this.aiConfig?.aiSdkTelemetry?.metadata ?? {};
 
     const requestContext = new RequestContext();
+    requestContext.set('correlationId', correlationId);
+    requestContext.set('workflowId', 'db-query-workflow');
+    requestContext.set('chatSessionId', undefined);
+    requestContext.set('aiSdkTelemetryEnabled', telemetryEnabled);
+    requestContext.set('aiSdkTelemetryMetadata', telemetryMetadata);
+
     this.bindDbQueryContext(requestContext, {
       schema,
       abortSignal: abortController.signal,
       currentUser,
       directCall: options?.directCall ?? false,
+      correlationId,
     });
 
-    const run = await dbQueryWorkflow.createRun();
-
-    const workflowStream = run.stream({
-      inputData: {
-        prompt,
-        schema,
-        datasetId: options?.datasetId,
-        directCall: options?.directCall,
+    const span = tracer.startSpan('workflow.db-query.execute', {
+      attributes: {
+        'workflow.id': 'db-query-workflow',
+        'workflow.correlation_id': correlationId,
+        'db-query.direct_call': options?.directCall ?? false,
       },
-      requestContext,
     });
 
-    // DBQuery doesn't use AsyncEventQueue (no Agent/tool callbacks)
-    // but we still use _mergeStreams for consistency with the abort logic
-    const emptyQueue = new AsyncEventQueue();
-    emptyQueue.close(); // immediately close since no events will come from it
+    try {
+      const run = await dbQueryWorkflow.createRun();
 
-    yield* this._mergeStreams(workflowStream, emptyQueue, abortController);
+      const workflowStream = run.stream({
+        inputData: {
+          prompt,
+          schema,
+          datasetId: options?.datasetId,
+          directCall: options?.directCall,
+        },
+        requestContext,
+      });
+
+      // DBQuery doesn't use AsyncEventQueue (no Agent/tool callbacks)
+      // but we still use _mergeStreams for consistency with the abort logic
+      const emptyQueue = new AsyncEventQueue();
+      emptyQueue.close(); // immediately close since no events will come from it
+
+      yield* this._mergeStreams(workflowStream, emptyQueue, abortController);
+
+      span.setStatus({code: SpanStatusCode.OK});
+    } catch (error) {
+      span.recordException(error as Error);
+      span.setStatus({
+        code: SpanStatusCode.ERROR,
+        message: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    } finally {
+      span.end();
+    }
   }
 
   private async resolveOptionalCurrentUser(): Promise<
@@ -322,6 +388,7 @@ export class WorkflowRunner {
       abortSignal: AbortSignal;
       currentUser: IAuthUserWithPermissions | undefined;
       directCall: boolean;
+      correlationId: string;
     },
   ): void {
     if (
@@ -361,6 +428,7 @@ export class WorkflowRunner {
     requestContext.set('globalContext', this.dbGlobalContext ?? []);
     requestContext.set('abortSignal', params.abortSignal);
     requestContext.set('currentUser', params.currentUser);
+    requestContext.set('correlationId', params.correlationId);
     requestContext.set('fullSchema', params.schema);
     requestContext.set('directCall', params.directCall);
     requestContext.set('queryCache', {

@@ -40,6 +40,16 @@ export interface WorkflowRequestContext {
   abortSignal: AbortSignal;
   /** Authenticated user resolved from LoopBack auth middleware */
   currentUser: IAuthUserWithPermissions | undefined;
+  /** Correlation id propagated across workflow, tools, and model calls */
+  correlationId: string;
+  /** Workflow identifier for telemetry metadata */
+  workflowId: string;
+  /** Optional chat session id associated with this workflow invocation */
+  chatSessionId: string | undefined;
+  /** AI SDK telemetry toggle for request-scoped model calls */
+  aiSdkTelemetryEnabled: boolean;
+  /** Additional AI SDK telemetry metadata propagated to model calls */
+  aiSdkTelemetryMetadata: Record<string, string | number | boolean>;
 }
 
 /**

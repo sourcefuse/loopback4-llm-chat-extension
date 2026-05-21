@@ -84,7 +84,10 @@ export const askAboutDatasetTool = createTool({
         .replace('{context}', [...globalContext, ...schemaContext].join('\n'))
         .replace('{question}', inputData.question);
 
-      const llmResponse = await invokeLlm(cheapLlm, prompt);
+      const llmResponse = await invokeLlm(cheapLlm, prompt, {
+        requestContext,
+        functionId: 'db-query.ask-about-dataset',
+      });
       const reply = stripThinkingTokens(llmResponse).trim();
 
       return {

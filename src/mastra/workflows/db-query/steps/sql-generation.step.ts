@@ -129,7 +129,10 @@ export const sqlGenerationStep = createStep({
       .replace('{exampleQueries}', exampleQueries)
       .replace('{feedbacks}', feedbacksText);
 
-    const rawOutput = await invokeLlm(llm, prompt);
+    const rawOutput = await invokeLlm(llm, prompt, {
+      requestContext,
+      functionId: 'db-query.sql-generation',
+    });
     const response = stripThinkingTokens(rawOutput);
     const sql = stripCodeBlock(response) || undefined;
 

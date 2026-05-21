@@ -1,6 +1,8 @@
-import {ChatOpenAIFields} from '@langchain/openai';
-
 export type OpenAIInstanceConfig = {
   model: string;
-  config: ChatOpenAIFields;
+  apiKey?: string;
+  baseURL?: string;
+  organization?: string;
+  project?: string;
+  settings?: Record<string, unknown>;
 };

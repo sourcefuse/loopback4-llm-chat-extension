@@ -120,7 +120,10 @@ export const queryRepairStep = createStep({
           : '',
       );
 
-    const rawOutput = await invokeLlm(cheapLlm, prompt);
+    const rawOutput = await invokeLlm(cheapLlm, prompt, {
+      requestContext,
+      functionId: 'db-query.query-repair',
+    });
     const response = stripThinkingTokens(rawOutput);
     const sql = stripCodeBlock(response) || undefined;
 

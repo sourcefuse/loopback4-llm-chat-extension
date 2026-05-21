@@ -103,7 +103,10 @@ export const generateChecklistStep = createStep({
 
     const results = await Promise.all(
       Array.from({length: parallelism}, () =>
-        invokeLlm(cheapLlm, invokePrompt),
+        invokeLlm(cheapLlm, invokePrompt, {
+          requestContext,
+          functionId: 'db-query.generate-checklist',
+        }),
       ),
     );
 

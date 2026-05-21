@@ -127,7 +127,10 @@ export const verifyChecklistStep = createStep({
       outputInstructions,
     );
 
-    const rawOutput = await invokeLlm(llm, prompt);
+    const rawOutput = await invokeLlm(llm, prompt, {
+      requestContext,
+      functionId: 'db-query.verify-checklist',
+    });
     const verifiedIndexes = parseVerifiedIndexes(
       stripThinkingTokens(rawOutput),
       allChecks.length,

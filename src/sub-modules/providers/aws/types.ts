@@ -1,6 +1,6 @@
-import {ChatBedrockConverseInput} from '@langchain/aws';
+import {AmazonBedrockProviderSettings} from '@ai-sdk/amazon-bedrock';
 
 export type BedrockInstanceConfig = {
   model: string;
-  config?: Partial<ChatBedrockConverseInput>;
+  providerSettings?: AmazonBedrockProviderSettings;
 };

@@ -126,7 +126,10 @@ export const semanticValidationStep = createStep({
       feedbacks: inputData.feedbacks,
     });
 
-    const rawOutput = await invokeLlm(llm, prompt);
+    const rawOutput = await invokeLlm(llm, prompt, {
+      requestContext,
+      functionId: 'db-query.semantic-validation',
+    });
     const response = stripThinkingTokens(rawOutput);
 
     const parsed = parseSemanticValidationResponse(response);

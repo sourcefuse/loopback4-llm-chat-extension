@@ -1,22 +1,18 @@
 import {expect, sinon} from '@loopback/testlab';
-import {LineVisualizer} from '../../../../components/visualization/visualizers/line.visualizer';
-import {LLMProvider} from '../../../../types';
+import type {MastraLanguageModel} from '@mastra/core/agent';
 import {fail} from 'assert';
-import {VisualizationGraphState} from '../../../../components';
+import {LineVisualizer} from '../../../../components/visualization/visualizers/line.visualizer';
+import * as llmHelpers from '../../../../mastra/workflows/db-query/llm-helpers';
 
 describe('LineVisualizer Unit', function () {
   let visualizer: LineVisualizer;
-  let llmProvider: sinon.SinonStubbedInstance<LLMProvider>;
-  let withStructuredOutputStub: sinon.SinonStub;
+  let llm: MastraLanguageModel;
+  let invokeLlmObjectStub: sinon.SinonStub;
 
   beforeEach(() => {
-    // Create stub for LLM provider
-    withStructuredOutputStub = sinon.stub();
-    llmProvider = {
-      withStructuredOutput: withStructuredOutputStub,
-    } as sinon.SinonStubbedInstance<LLMProvider>;
-
-    visualizer = new LineVisualizer(llmProvider);
+    llm = {} as MastraLanguageModel;
+    visualizer = new LineVisualizer(llm);
+    invokeLlmObjectStub = sinon.stub(llmHelpers, 'invokeLlmObject');
   });
 
   afterEach(() => {
@@ -31,76 +27,57 @@ describe('LineVisualizer Unit', function () {
   });
 
   it('should have valid schema with required fields', () => {
-    const schema = visualizer.schema;
-    expect(schema).to.be.ok();
-
-    // Test schema structure by trying to parse valid data
-    const validData = {
+    const result = visualizer.schema.safeParse({
       xAxisColumn: 'date',
       yAxisColumn: 'value',
       seriesColumns: 'category',
-    };
+    });
 
-    const result = schema.safeParse(validData);
     expect(result.success).to.be.true();
-
-    if (result.success) {
-      expect(result.data).to.deepEqual(validData);
-    }
   });
 
   it('should accept empty string seriesColumn', () => {
-    const schema = visualizer.schema;
-    const dataWithNullSeries = {
+    const result = visualizer.schema.safeParse({
       xAxisColumn: 'date',
       yAxisColumn: 'value',
       seriesColumns: '',
-    };
+    });
 
-    const result = schema.safeParse(dataWithNullSeries);
     expect(result.success).to.be.true();
   });
 
   it('should reject missing seriesColumn field', () => {
-    const schema = visualizer.schema;
-    const dataWithoutSeries = {
+    const result = visualizer.schema.safeParse({
       xAxisColumn: 'date',
       yAxisColumn: 'value',
-    };
+    });
 
-    const result = schema.safeParse(dataWithoutSeries);
-    // seriesColumn is nullable but still required - omitting it should fail
     expect(result.success).to.be.false();
   });
 
   it('should reject missing required fields', () => {
-    const schema = visualizer.schema;
+    expect(
+      visualizer.schema.safeParse({
+        yAxisColumn: 'value',
+        seriesColumn: 'category',
+      }).success,
+    ).to.be.false();
 
-    // Missing xAxisColumn
-    const missingXAxis = {
-      yAxisColumn: 'value',
-      seriesColumn: 'category',
-    };
-    expect(schema.safeParse(missingXAxis).success).to.be.false();
-
-    // Missing yAxisColumn
-    const missingYAxis = {
-      xAxisColumn: 'date',
-      seriesColumn: 'category',
-    };
-    expect(schema.safeParse(missingYAxis).success).to.be.false();
+    expect(
+      visualizer.schema.safeParse({
+        xAxisColumn: 'date',
+        seriesColumn: 'category',
+      }).success,
+    ).to.be.false();
   });
 
   it('should throw error when state is invalid (missing sql)', async () => {
-    const invalidState = {
-      prompt: 'test prompt',
-      datasetId: 'test-id',
-      queryDescription: 'test description',
-      // sql is missing - will be undefined
-    } as unknown as VisualizationGraphState;
-
     try {
-      await visualizer.getConfig(invalidState);
+      await visualizer.getConfig({
+        prompt: 'test prompt',
+        datasetId: 'test-id',
+        queryDescription: 'test description',
+      });
       fail('Should have thrown an error');
     } catch (error) {
       expect(error).to.have.property('message', 'Invalid State');
@@ -108,15 +85,12 @@ describe('LineVisualizer Unit', function () {
   });
 
   it('should throw error when state is invalid (missing queryDescription)', async () => {
-    const invalidState = {
-      prompt: 'test prompt',
-      datasetId: 'test-id',
-      sql: 'SELECT * FROM test',
-      // queryDescription is missing - will be undefined
-    } as unknown as VisualizationGraphState;
-
     try {
-      await visualizer.getConfig(invalidState);
+      await visualizer.getConfig({
+        prompt: 'test prompt',
+        datasetId: 'test-id',
+        sql: 'SELECT * FROM test',
+      });
       fail('Should have thrown an error');
     } catch (error) {
       expect(error).to.have.property('message', 'Invalid State');
@@ -124,15 +98,12 @@ describe('LineVisualizer Unit', function () {
   });
 
   it('should throw error when state is invalid (missing prompt)', async () => {
-    const invalidState = {
-      datasetId: 'test-id',
-      sql: 'SELECT * FROM test',
-      queryDescription: 'test description',
-      // prompt is missing - will be undefined
-    } as unknown as VisualizationGraphState;
-
     try {
-      await visualizer.getConfig(invalidState);
+      await visualizer.getConfig({
+        datasetId: 'test-id',
+        sql: 'SELECT * FROM test',
+        queryDescription: 'test description',
+      });
       fail('Should have thrown an error');
     } catch (error) {
       expect(error).to.have.property('message', 'Invalid State');
@@ -146,74 +117,66 @@ describe('LineVisualizer Unit', function () {
       seriesColumns: 'product_line',
     };
 
-    const mockInvoke = sinon.stub().resolves(mockLLMResponse);
-    withStructuredOutputStub.returns(mockInvoke);
+    invokeLlmObjectStub.resolves(mockLLMResponse);
 
-    const validState = {
+    const input = {
       prompt:
         'Show me a line chart of revenue trends over time by product line',
       datasetId: 'test-dataset',
       sql: 'SELECT month, product_line, SUM(revenue) as revenue FROM sales GROUP BY month, product_line',
       queryDescription: 'Revenue trends by product line over time',
-    } as unknown as VisualizationGraphState;
+    };
 
-    const config = await visualizer.getConfig(validState);
+    const config = await visualizer.getConfig(input);
 
-    expect(config).to.deepEqual(mockLLMResponse);
-    expect(
-      withStructuredOutputStub.calledOnceWith(visualizer.schema),
-    ).to.be.true();
-    expect(mockInvoke.calledOnce).to.be.true();
+    expect(config).to.deepEqual({
+      ...mockLLMResponse,
+      seriesColumns: ['product_line'],
+    });
+    expect(invokeLlmObjectStub.calledOnce).to.be.true();
 
-    // Check that the mock was called with a StringPromptValue containing our data
-    const invokeArgs = mockInvoke.getCall(0).args[0];
-    expect(invokeArgs).to.have.property('value');
-    // Escape special regex characters in SQL
-    const escapedSQL = validState.sql?.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    expect(invokeArgs.value).to.match(new RegExp(escapedSQL ?? ''));
-    expect(invokeArgs.value).to.match(
-      new RegExp(validState.queryDescription ?? ''),
-    );
-    expect(invokeArgs.value).to.match(new RegExp(validState.prompt));
+    const [modelArg, , schemaArg, optionsArg] =
+      invokeLlmObjectStub.getCall(0).args;
+    expect(modelArg).to.equal(llm);
+    expect(schemaArg).to.equal(visualizer.schema);
+    expect(optionsArg).to.deepEqual({
+      requestContext: undefined,
+      functionId: 'visualization.line.config',
+    });
   });
 
   it('should successfully generate config without series column', async () => {
-    const mockLLMResponse = {
+    invokeLlmObjectStub.resolves({
       xAxisColumn: 'month',
       yAxisColumn: 'total_sales',
       seriesColumns: null,
-    };
+    });
 
-    const mockInvoke = sinon.stub().resolves(mockLLMResponse);
-    withStructuredOutputStub.returns(mockInvoke);
-
-    const validState = {
+    const config = await visualizer.getConfig({
       prompt: 'Show me total sales over time',
       datasetId: 'test-dataset',
       sql: 'SELECT month, SUM(sales) as total_sales FROM sales GROUP BY month',
       queryDescription: 'Total sales over time',
-    } as unknown as VisualizationGraphState;
+    });
 
-    const config = await visualizer.getConfig(validState);
-
-    expect(config).to.deepEqual(mockLLMResponse);
-    expect(config.seriesColumns).to.be.null();
+    expect(config).to.deepEqual({
+      xAxisColumn: 'month',
+      yAxisColumn: 'total_sales',
+      seriesColumns: null,
+    });
   });
 
   it('should handle LLM errors gracefully', async () => {
     const mockError = new Error('LLM processing failed');
-    const mockInvoke = sinon.stub().rejects(mockError);
-    withStructuredOutputStub.returns(mockInvoke);
-
-    const validState = {
-      prompt: 'test prompt',
-      datasetId: 'test-dataset',
-      sql: 'SELECT * FROM test',
-      queryDescription: 'test description',
-    } as unknown as VisualizationGraphState;
+    invokeLlmObjectStub.rejects(mockError);
 
     try {
-      await visualizer.getConfig(validState);
+      await visualizer.getConfig({
+        prompt: 'test prompt',
+        datasetId: 'test-dataset',
+        sql: 'SELECT * FROM test',
+        queryDescription: 'test description',
+      });
       fail('Should have thrown an error');
     } catch (error) {
       expect(error).to.equal(mockError);
@@ -221,10 +184,7 @@ describe('LineVisualizer Unit', function () {
   });
 
   it('should contain proper prompt template structure', () => {
-    const promptTemplate = visualizer.renderPrompt;
-    expect(promptTemplate).to.be.ok();
-
-    const templateText = promptTemplate.template;
+    const templateText = visualizer.renderPrompt.template;
     expect(templateText).to.match(/line chart/);
     expect(templateText).to.match(/\{sql\}/);
     expect(templateText).to.match(/\{description\}/);
