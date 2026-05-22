@@ -6,11 +6,15 @@ import type {LanguageModel} from 'ai';
 import {AuthenticationBindings} from 'loopback4-authentication';
 import {z} from 'zod';
 import {DbQueryAIExtensionBindings} from '../../../components/db-query/keys';
-import type {DbSchemaHelperService} from '../../../components/db-query/services';
+import type {
+  DbSchemaHelperService,
+  TemplateHelper,
+} from '../../../components/db-query/services';
 import type {SchemaStore} from '../../../components/db-query/services/schema.store';
 import type {
   IDataSetStore,
   IDbConnector,
+  IQueryTemplateStore,
 } from '../../../components/db-query/types';
 
 /**
@@ -56,6 +60,14 @@ const isImprovementStep = createStep({
 
 const parallelInput = inputSchema.extend({isImprovement: z.boolean()});
 
+/**
+ * check-cache — wired with retriever + LLM judge. Resolves the
+ * QueryCache LangChain retriever via lb4Ctx, pulls candidate cached
+ * datasets via semantic similarity, then asks the chat model whether
+ * any candidate satisfies the new prompt exactly (`AsIs`),
+ * approximately (`Similar`), or not at all (`NotRelevant`). Mirrors v2
+ * CheckCacheNode (`git show 4be9767^:src/components/db-query/nodes/check-cache.node.ts`).
+ */
 const checkCacheStep = createStep({
   id: 'check-cache',
   inputSchema: parallelInput,
@@ -63,7 +75,52 @@ const checkCacheStep = createStep({
     cacheHit: z.boolean(),
     datasetId: z.string().optional(),
   }),
-  execute: async () => ({cacheHit: false}),
+  execute: async ({inputData, requestContext}) => {
+    const data = inputData as {prompt?: string; isImprovement?: boolean};
+    if ((data.isImprovement ?? false) || !data.prompt) return {cacheHit: false};
+    const lb4Ctx = requestContext?.get('lb4Ctx') as Context | undefined;
+    const chatLlm = requestContext?.get('chatLlm') as LanguageModel | undefined;
+    if (!lb4Ctx) return {cacheHit: false};
+    const cache = await lb4Ctx.get<{
+      invoke: (
+        input: string,
+      ) => Promise<Array<{pageContent: string; metadata: {id?: string}}>>;
+    }>(DbQueryAIExtensionBindings.QueryCache, {optional: true});
+    if (!cache || !chatLlm) return {cacheHit: false};
+    let docs: Array<{pageContent: string; metadata: {id?: string}}> = [];
+    try {
+      docs = await cache.invoke(data.prompt);
+    } catch {
+      return {cacheHit: false};
+    }
+    if (docs.length === 0) return {cacheHit: false};
+    const queries = docs.map((d, i) => `${i + 1}. ${d.pageContent}`).join('\n');
+    const judgePrompt = `You are a semantic analyser. Given a user's prompt and a list of past prompts that were handled, return the most relevant past prompt and how it relates.
+- Return 'AsIs <index>' when the past prompt's result fully answers the new prompt without changes.
+- Return 'Similar <index>' when it is close but needs modification.
+- Return 'NotRelevant' when nothing fits.
+
+User prompt: ${data.prompt}
+Past prompts:
+${queries}
+
+Return ONLY the verdict, no other text.`;
+    try {
+      const verdict = await generateText({model: chatLlm, prompt: judgePrompt});
+      const text = verdict.text.trim();
+      const match = text.match(/AsIs\s+(\d+)/i);
+      if (match) {
+        const idx = parseInt(match[1], 10) - 1;
+        const doc = docs[idx];
+        if (doc?.metadata?.id) {
+          return {cacheHit: true, datasetId: doc.metadata.id};
+        }
+      }
+    } catch {
+      // judge LLM failed — degrade to cacheHit=false.
+    }
+    return {cacheHit: false};
+  },
 });
 
 /**
@@ -101,6 +158,16 @@ const getTablesStep = createStep({
   },
 });
 
+/**
+ * check-templates — wired with retriever + LLM judge. Resolves the
+ * TemplateCache LangChain retriever via lb4Ctx, pulls candidate
+ * pre-authored templates via semantic similarity, then asks the chat
+ * model whether one exactly matches the user's intent. Mirrors v2
+ * CheckTemplatesNode (`git show 4be9767^:src/components/db-query/nodes/check-templates.node.ts`).
+ * The placeholder-extraction half (TemplateHelper.extractPlaceholderValues)
+ * still runs only inside save-dataset-from-template, where the
+ * matched template id is consumed.
+ */
 const checkTemplatesStep = createStep({
   id: 'check-templates',
   inputSchema: parallelInput,
@@ -108,7 +175,51 @@ const checkTemplatesStep = createStep({
     matched: z.boolean(),
     templateId: z.string().optional(),
   }),
-  execute: async () => ({matched: false}),
+  execute: async ({inputData, requestContext}) => {
+    const data = inputData as {prompt?: string; isImprovement?: boolean};
+    if ((data.isImprovement ?? false) || !data.prompt) return {matched: false};
+    const lb4Ctx = requestContext?.get('lb4Ctx') as Context | undefined;
+    const chatLlm = requestContext?.get('chatLlm') as LanguageModel | undefined;
+    if (!lb4Ctx) return {matched: false};
+    const cache = await lb4Ctx.get<{
+      invoke: (
+        input: string,
+      ) => Promise<Array<{pageContent: string; metadata: {id?: string}}>>;
+    }>(DbQueryAIExtensionBindings.TemplateCache, {optional: true});
+    if (!cache || !chatLlm) return {matched: false};
+    let docs: Array<{pageContent: string; metadata: {id?: string}}> = [];
+    try {
+      docs = await cache.invoke(data.prompt);
+    } catch {
+      return {matched: false};
+    }
+    if (docs.length === 0) return {matched: false};
+    const templates = docs
+      .map((d, i) => `${i + 1}. ${d.pageContent}`)
+      .join('\n');
+    const judgePrompt = `You are an expert at matching user prompts to query templates. A template matches ONLY when its purpose and result are EXACTLY what the user asked — no extra columns, no missing filters, only placeholder values differ.
+
+User prompt: ${data.prompt}
+Templates:
+${templates}
+
+Return 'match <index>' for an exact match or 'no_match'. No other text.`;
+    try {
+      const verdict = await generateText({model: chatLlm, prompt: judgePrompt});
+      const text = verdict.text.trim();
+      const match = text.match(/match\s+(\d+)/i);
+      if (match) {
+        const idx = parseInt(match[1], 10) - 1;
+        const doc = docs[idx];
+        if (doc?.metadata?.id) {
+          return {matched: true, templateId: doc.metadata.id};
+        }
+      }
+    } catch {
+      // judge LLM failed — degrade to matched=false.
+    }
+    return {matched: false};
+  },
 });
 
 /**
@@ -223,11 +334,100 @@ const returnCachedStep = createStep({
   },
 });
 
+/**
+ * save-dataset-from-template — wired. Fetches the matched template via
+ * IQueryTemplateStore.findById, runs TemplateHelper.resolveTemplate to
+ * extract placeholder values from the user's prompt + substitute them
+ * into the template SQL, then persists the result as a new dataset
+ * row. Mirrors the v2 graph's `FromTemplate` branch path.
+ */
 const saveDatasetFromTemplateStep = createStep({
   id: 'save-dataset-from-template',
   inputSchema: z.any(),
   outputSchema,
-  execute: async () => ({datasetId: '', sql: '', rowCount: 0}),
+  execute: async ({inputData, requestContext}) => {
+    const data = inputData as {
+      templateId?: string;
+      prompt?: string;
+      tables?: string[];
+    };
+    const fallback = {datasetId: '', sql: '', rowCount: 0};
+    if (!data.templateId || !data.prompt) return fallback;
+    const lb4Ctx = requestContext?.get('lb4Ctx') as Context | undefined;
+    if (!lb4Ctx) return fallback;
+    const templateStore = await lb4Ctx.get<IQueryTemplateStore>(
+      DbQueryAIExtensionBindings.TemplateStore,
+      {optional: true},
+    );
+    const datasetStore = await lb4Ctx.get<IDataSetStore>(
+      DbQueryAIExtensionBindings.DatasetStore,
+      {optional: true},
+    );
+    const templateHelper = await lb4Ctx.get<TemplateHelper>(
+      'services.TemplateHelper',
+      {optional: true},
+    );
+    const schemaStore = await lb4Ctx.get<SchemaStore>('services.SchemaStore', {
+      optional: true,
+    });
+    const user = await lb4Ctx.get<IAuthUserWithPermissions>(
+      AuthenticationBindings.CURRENT_USER,
+      {optional: true},
+    );
+    if (!templateStore || !datasetStore || !templateHelper || !user?.tenantId) {
+      return fallback;
+    }
+    let resolved: {sql: string; description?: string};
+    try {
+      const template = await templateStore.findById(data.templateId);
+      const schema = (() => {
+        try {
+          return schemaStore?.get();
+        } catch {
+          return undefined;
+        }
+      })();
+      resolved = await templateHelper.resolveTemplate(
+        template,
+        data.prompt,
+        {} as never,
+        schema,
+        async id => {
+          try {
+            return await templateStore.findById(id);
+          } catch {
+            return undefined;
+          }
+        },
+      );
+    } catch {
+      return fallback;
+    }
+    if (!resolved.sql) return fallback;
+    const schemaHelper = await lb4Ctx.get<DbSchemaHelperService>(
+      'services.DbSchemaHelperService',
+      {optional: true},
+    );
+    let schemaHash = '';
+    try {
+      const schema = schemaStore?.get();
+      if (schema && schemaHelper) {
+        schemaHash = schemaHelper.computeHash(schema);
+      }
+    } catch {
+      // schema not loaded
+    }
+    const dataset = await datasetStore.create({
+      tenantId: user.tenantId,
+      query: resolved.sql,
+      description: resolved.description ?? '',
+      prompt: data.prompt,
+      tables: data.tables ?? [],
+      schemaHash,
+      votes: 0,
+    });
+    return {datasetId: dataset.id ?? '', sql: resolved.sql, rowCount: 0};
+  },
 });
 
 const failedStep = createStep({
