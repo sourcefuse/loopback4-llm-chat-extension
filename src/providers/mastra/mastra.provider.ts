@@ -4,6 +4,7 @@ import {Agent} from '@mastra/core/agent';
 import {Memory} from '@mastra/memory';
 import type {MastraCompositeStore} from '@mastra/core/storage';
 import type {MastraEmbeddingModel, MastraVector} from '@mastra/core/vector';
+import type {Observability} from '@mastra/observability';
 import {AiIntegrationBindings} from '../../keys';
 import {generateQueryWorkflow} from '../../mastra/workflows/db-query/generate.workflow';
 import {improveQueryWorkflow} from '../../mastra/workflows/db-query/improve.workflow';
@@ -33,6 +34,8 @@ export class MastraProvider implements Provider<Mastra> {
     private embedder?: MastraEmbeddingModel<string>,
     @inject(AiIntegrationBindings.SystemContext, {optional: true})
     private systemContext?: string[],
+    @inject(AiIntegrationBindings.MastraObservability, {optional: true})
+    private observability?: Observability,
   ) {}
 
   async value(): Promise<Mastra> {
@@ -78,6 +81,7 @@ export class MastraProvider implements Provider<Mastra> {
       },
       storage: this.storage,
       vectors: this.vector ? {default: this.vector} : undefined,
+      observability: this.observability,
     });
   }
 }

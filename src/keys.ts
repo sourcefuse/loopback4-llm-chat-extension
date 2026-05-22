@@ -4,6 +4,7 @@ import type {Mastra} from '@mastra/core';
 import type {MastraModelConfig} from '@mastra/core/llm';
 import type {MastraCompositeStore} from '@mastra/core/storage';
 import type {MastraVector, MastraEmbeddingModel} from '@mastra/core/vector';
+import type {Observability} from '@mastra/observability';
 import type {MastraToolStore} from './graphs/types';
 import {BindingKey} from '@loopback/context';
 import {ITransport} from './transports/types';
@@ -96,6 +97,13 @@ export namespace AiIntegrationBindings {
   // alive; replaced cleanly in P3.
   export const MastraTools = BindingKey.create<MastraToolStore>(
     'services.ai-reporting.mastraTools',
+  );
+  // Optional Mastra Observability instance — when bound, MastraProvider
+  // wires it onto the Mastra singleton so every agent / workflow / tool
+  // span flows through the configured exporter (Langfuse, LangSmith,
+  // OTel, etc.). Consumer-side wiring picks the exporter; default unbound.
+  export const MastraObservability = BindingKey.create<Observability>(
+    'services.ai-reporting.mastraObservability',
   );
   // ResourceId — tenant-scoped identity string resolved per-request via
   // toDynamicValue (Section 13.7). Format: `${tenantId}:${userId}`.
