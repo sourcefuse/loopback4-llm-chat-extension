@@ -75,11 +75,15 @@ It does not return anything, instead it fires an event internally that renders t
             },
             requestContext: ctx?.requestContext,
           } as never);
-          if (result.status !== 'success') {
+          if (result.status === 'suspended') {
+            // HITL — emit AwaitingApproval, return empty. Resume in v3.1.
             writer?.({
               type: LLMStreamEventType.ToolStatus,
-              data: {id: toolCallId, status: ToolStatus.Failed},
+              data: {id: toolCallId, status: ToolStatus.AwaitingApproval},
             });
+            return {};
+          }
+          if (result.status !== 'success') {
             throw new Error(`Visualization failed: ${result.status}`);
           }
           writer?.({
@@ -88,6 +92,7 @@ It does not return anything, instead it fires an event internally that renders t
           });
           return (result as {result?: unknown}).result ?? {};
         } catch (err) {
+          // Single Failed emit.
           writer?.({
             type: LLMStreamEventType.ToolStatus,
             data: {id: toolCallId, status: ToolStatus.Failed},

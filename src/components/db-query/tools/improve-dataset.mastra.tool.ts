@@ -58,11 +58,15 @@ export class MastraImproveDatasetTool implements IMastraGraphTool {
             inputData,
             requestContext: ctx?.requestContext,
           } as never);
-          if (result.status !== 'success') {
+          if (result.status === 'suspended') {
+            // HITL — emit AwaitingApproval, return empty. Resume in v3.1.
             writer?.({
               type: LLMStreamEventType.ToolStatus,
-              data: {id: toolCallId, status: ToolStatus.Failed},
+              data: {id: toolCallId, status: ToolStatus.AwaitingApproval},
             });
+            return {};
+          }
+          if (result.status !== 'success') {
             throw new Error(`Improve dataset failed: ${result.status}`);
           }
           writer?.({
@@ -71,6 +75,7 @@ export class MastraImproveDatasetTool implements IMastraGraphTool {
           });
           return (result as {result?: unknown}).result ?? {};
         } catch (err) {
+          // Single Failed emit — non-success branch throws above.
           writer?.({
             type: LLMStreamEventType.ToolStatus,
             data: {id: toolCallId, status: ToolStatus.Failed},

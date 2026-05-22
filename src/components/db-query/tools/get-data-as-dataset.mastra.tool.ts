@@ -64,11 +64,17 @@ export class MastraGetDataAsDatasetTool implements IMastraGraphTool {
             inputData,
             requestContext: ctx?.requestContext,
           } as never);
-          if (result.status !== 'success') {
+          if (result.status === 'suspended') {
+            // HITL — emit AwaitingApproval, return empty so the Agent
+            // pauses. Resume flow lands with the ApprovalController in
+            // v3.1 (Phase 4 of the migration plan).
             writer?.({
               type: LLMStreamEventType.ToolStatus,
-              data: {id: toolCallId, status: ToolStatus.Failed},
+              data: {id: toolCallId, status: ToolStatus.AwaitingApproval},
             });
+            return {};
+          }
+          if (result.status !== 'success') {
             throw new Error(`Query generation failed: ${result.status}`);
           }
           writer?.({
@@ -77,6 +83,8 @@ export class MastraGetDataAsDatasetTool implements IMastraGraphTool {
           });
           return (result as {result?: unknown}).result ?? {};
         } catch (err) {
+          // Single Failed emit. Status-not-success path throws above
+          // without emitting; this catch is the only Failed source.
           writer?.({
             type: LLMStreamEventType.ToolStatus,
             data: {id: toolCallId, status: ToolStatus.Failed},

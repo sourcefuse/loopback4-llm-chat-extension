@@ -1,10 +1,8 @@
-import type {Context} from '@loopback/core';
 import type {RequestContext} from '@mastra/core/request-context';
 import type {IAuthUserWithPermissions} from '@sourceloop/core';
 import {generateText} from 'ai';
 import type {LanguageModel} from 'ai';
-import {AuthenticationBindings} from 'loopback4-authentication';
-import {DbQueryAIExtensionBindings} from '../../../components/db-query/keys';
+import type {LLMStreamEvent} from '../../../graphs/event.types';
 import type {
   DbSchemaHelperService,
   TemplateHelper,
@@ -15,31 +13,89 @@ import type {
   IDbConnector,
   IQueryTemplateStore,
 } from '../../../components/db-query/types';
-
-const SCHEMA_STORE_KEY = 'services.SchemaStore';
-const SCHEMA_HELPER_KEY = 'services.DbSchemaHelperService';
-const TEMPLATE_HELPER_KEY = 'services.TemplateHelper';
+import type {IVisualizer} from '../../../components/visualization/types';
 
 /**
- * Shared helpers for the db-query workflows. Pulled out of inlined
- * step bodies to keep individual `createStep({execute})` blocks below
- * SonarQube's cyclomatic + cognitive complexity thresholds.
+ * Bounded contract for what workflow steps may read from Mastra's
+ * RequestContext. Replaces the previous full-LB4-Context exposure
+ * (least-privilege violation per migration plan Section 3.4). Every
+ * field is optional so workflow steps stay runnable when the consumer
+ * has not bound the relevant component.
  *
- * The helpers preserve the previous defensive-fallback semantics:
- * every one returns a "safe" value when a binding / dependency is
- * missing so the workflow stays runnable in partial configurations.
+ * WorkflowRunner.run() resolves each binding once at request entry +
+ * sets every key. Step bodies use the typed accessors below — no
+ * `lb4Ctx.get(...)` lookups inside step execute().
  */
-
-export function getLb4Ctx(
-  rc: RequestContext<Record<string, unknown>> | undefined,
-): Context | undefined {
-  return rc?.get('lb4Ctx') as Context | undefined;
+export interface MastraRcShape {
+  resourceId: string;
+  eventWriter: (event: LLMStreamEvent) => void;
+  chatLlm?: LanguageModel;
+  dbConnector?: IDbConnector;
+  authUser?: IAuthUserWithPermissions;
+  datasetStore?: IDataSetStore;
+  templateStore?: IQueryTemplateStore;
+  schemaStore?: SchemaStore;
+  schemaHelper?: DbSchemaHelperService;
+  templateHelper?: TemplateHelper;
+  dataSetHelper?: unknown;
+  queryCache?: {
+    invoke: (
+      input: string,
+    ) => Promise<Array<{pageContent: string; metadata: {id?: string}}>>;
+  };
+  templateCache?: {
+    invoke: (
+      input: string,
+    ) => Promise<Array<{pageContent: string; metadata: {id?: string}}>>;
+  };
+  visualizers?: IVisualizer[];
 }
 
-export function getChatLlm(
-  rc: RequestContext<Record<string, unknown>> | undefined,
-): LanguageModel | undefined {
-  return rc?.get('chatLlm') as LanguageModel | undefined;
+export type MastraRc = RequestContext<MastraRcShape>;
+
+export function getChatLlm(rc?: MastraRc): LanguageModel | undefined {
+  return rc?.get('chatLlm');
+}
+export function getDbConnector(rc?: MastraRc): IDbConnector | undefined {
+  return rc?.get('dbConnector');
+}
+export function getAuthUser(
+  rc?: MastraRc,
+): IAuthUserWithPermissions | undefined {
+  return rc?.get('authUser');
+}
+export function getDatasetStore(rc?: MastraRc): IDataSetStore | undefined {
+  return rc?.get('datasetStore');
+}
+export function getTemplateStore(
+  rc?: MastraRc,
+): IQueryTemplateStore | undefined {
+  return rc?.get('templateStore');
+}
+export function getSchemaStore(rc?: MastraRc): SchemaStore | undefined {
+  return rc?.get('schemaStore');
+}
+export function getSchemaHelper(
+  rc?: MastraRc,
+): DbSchemaHelperService | undefined {
+  return rc?.get('schemaHelper');
+}
+export function getTemplateHelper(rc?: MastraRc): TemplateHelper | undefined {
+  return rc?.get('templateHelper');
+}
+export function getDataSetHelper(rc?: MastraRc): unknown {
+  return rc?.get('dataSetHelper');
+}
+export function getQueryCache(rc?: MastraRc): MastraRcShape['queryCache'] {
+  return rc?.get('queryCache');
+}
+export function getTemplateCache(
+  rc?: MastraRc,
+): MastraRcShape['templateCache'] {
+  return rc?.get('templateCache');
+}
+export function getVisualizers(rc?: MastraRc): IVisualizer[] {
+  return rc?.get('visualizers') ?? [];
 }
 
 const SQL_FENCE = '```';
@@ -123,13 +179,13 @@ async function runGenerationStage(args: {
 async function runValidationStage(args: {
   sql: string;
   chatLlm: LanguageModel | undefined;
-  lb4Ctx: Context | undefined;
+  dbConnector: IDbConnector | undefined;
   prompt: string;
   checklist?: string;
 }): Promise<{passed: boolean; feedback?: string}> {
   const {sql} = args;
   if (!sql) return {passed: true};
-  const syntactic = await validateSqlSyntactic(sql, args.lb4Ctx);
+  const syntactic = await validateSqlSyntactic(sql, args.dbConnector);
   if (!syntactic.passed) return syntactic;
   return validateSqlSemantic({
     sql,
@@ -146,7 +202,7 @@ async function runValidationStage(args: {
  */
 export async function runSqlAttempt(args: {
   chatLlm: LanguageModel | undefined;
-  lb4Ctx: Context | undefined;
+  dbConnector: IDbConnector | undefined;
   prompt: string;
   tables: string[];
   checklist?: string;
@@ -162,7 +218,7 @@ export async function runSqlAttempt(args: {
   const verdict = await runValidationStage({
     sql: stage.sql,
     chatLlm: args.chatLlm,
-    lb4Ctx: args.lb4Ctx,
+    dbConnector: args.dbConnector,
     prompt: args.prompt,
     checklist: args.checklist,
   });
@@ -241,14 +297,9 @@ Return ONLY the improved SQL statement. No explanation, no markdown fences, no c
  */
 export async function validateSqlSyntactic(
   sql: string,
-  lb4Ctx: Context | undefined,
+  dbConnector: IDbConnector | undefined,
 ): Promise<{passed: boolean; feedback?: string}> {
-  if (!lb4Ctx || !sql) return {passed: true};
-  const dbConnector = await lb4Ctx.get<IDbConnector>(
-    DbQueryAIExtensionBindings.Connector,
-    {optional: true},
-  );
-  if (!dbConnector) return {passed: true};
+  if (!sql || !dbConnector) return {passed: true};
   try {
     await dbConnector.validate(sql);
     return {passed: true};
@@ -295,28 +346,27 @@ Do not return any other text.`;
       passed: false,
       feedback: `Semantic error: ${match?.[1]?.trim() ?? text}`,
     };
-  } catch {
-    // Verdict LLM failed — treat as pass to avoid blocking on a flaky
-    // judge model. Mastra observability captures the error span.
-    return {passed: true};
+  } catch (err) {
+    // Verdict LLM rejected. Return passed=false with retry feedback so
+    // the dountil loop tries again up to MAX_VALIDATION_ATTEMPTS. The
+    // post-loop branch then routes to failedStep with a real reason if
+    // every attempt fails. Treating a flaky judge as PASS would let
+    // wrong-result SQL persist to saveDatasetStep.
+    return {
+      passed: false,
+      feedback: `Validator unavailable: ${(err as Error).message ?? 'unknown'}`,
+    };
   }
 }
 
 /**
- * Read the cached schema hash, returning '' when the SchemaStore is
- * unbound or empty. Extracted so saveDatasetStep + saveDatasetFromTemplateStep
- * stay simple.
+ * Read the cached schema hash, returning '' when the SchemaStore /
+ * SchemaHelper aren't bound or the schema isn't loaded yet.
  */
-export async function computeSchemaHash(
-  lb4Ctx: Context,
-): Promise<{schemaHash: string; tablesFromSchema: string[]}> {
-  const schemaHelper = await lb4Ctx.get<DbSchemaHelperService>(
-    SCHEMA_HELPER_KEY,
-    {optional: true},
-  );
-  const schemaStore = await lb4Ctx.get<SchemaStore>(SCHEMA_STORE_KEY, {
-    optional: true,
-  });
+export function computeSchemaHash(
+  schemaHelper: DbSchemaHelperService | undefined,
+  schemaStore: SchemaStore | undefined,
+): {schemaHash: string; tablesFromSchema: string[]} {
   if (!schemaHelper || !schemaStore) {
     return {schemaHash: '', tablesFromSchema: []};
   }
@@ -332,23 +382,17 @@ export async function computeSchemaHash(
 }
 
 /**
- * Resolve the bindings saveDataset / saveDatasetFromTemplate need
- * together. Any missing dep produces a `null` so callers can short-
- * circuit to the inert default without dragging defensive ?. through
- * the body.
+ * Verify the bindings save-dataset / save-dataset-from-template need.
+ * Returns null when either is missing so the caller can short-circuit
+ * to its fallback shape.
  */
-export async function resolvePersistDeps(lb4Ctx: Context): Promise<{
+export function resolvePersistDeps(
+  store: IDataSetStore | undefined,
+  user: IAuthUserWithPermissions | undefined,
+): {
   store: IDataSetStore;
   user: IAuthUserWithPermissions & {tenantId: string};
-} | null> {
-  const store = await lb4Ctx.get<IDataSetStore>(
-    DbQueryAIExtensionBindings.DatasetStore,
-    {optional: true},
-  );
-  const user = await lb4Ctx.get<IAuthUserWithPermissions>(
-    AuthenticationBindings.CURRENT_USER,
-    {optional: true},
-  );
+} | null {
   if (!store || !user?.tenantId) return null;
   return {store, user: user as IAuthUserWithPermissions & {tenantId: string}};
 }
@@ -392,13 +436,10 @@ Return ONLY valid JSON. Include primary-key and foreign-key columns even if not 
  * Read SchemaStore.filteredSchema(tables) into a {table: columns[]}
  * blob; returns {} when the SchemaStore is unbound or schema is empty.
  */
-export async function getTablesWithColumns(
-  lb4Ctx: Context,
+export function getTablesWithColumns(
+  schemaStore: SchemaStore | undefined,
   tables: string[],
-): Promise<Record<string, string[]>> {
-  const schemaStore = await lb4Ctx.get<SchemaStore>(SCHEMA_STORE_KEY, {
-    optional: true,
-  });
+): Record<string, string[]> {
   if (!schemaStore) return {};
   try {
     const schema = schemaStore.filteredSchema(tables);
@@ -420,21 +461,13 @@ export async function getTablesWithColumns(
  * the template helper rejects.
  */
 export async function resolveTemplateById(args: {
-  lb4Ctx: Context;
+  templateStore: IQueryTemplateStore | undefined;
+  templateHelper: TemplateHelper | undefined;
+  schemaStore: SchemaStore | undefined;
   templateId: string;
   prompt: string;
 }): Promise<{sql: string; description?: string} | null> {
-  const {lb4Ctx, templateId, prompt} = args;
-  const templateStore = await lb4Ctx.get<IQueryTemplateStore>(
-    DbQueryAIExtensionBindings.TemplateStore,
-    {optional: true},
-  );
-  const templateHelper = await lb4Ctx.get<TemplateHelper>(TEMPLATE_HELPER_KEY, {
-    optional: true,
-  });
-  const schemaStore = await lb4Ctx.get<SchemaStore>(SCHEMA_STORE_KEY, {
-    optional: true,
-  });
+  const {templateStore, templateHelper, schemaStore, templateId, prompt} = args;
   if (!templateStore || !templateHelper) return null;
   try {
     const template = await templateStore.findById(templateId);

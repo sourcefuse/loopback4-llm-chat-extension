@@ -65,12 +65,19 @@ export class MastraAskAboutDatasetTool implements IMastraGraphTool {
           `and here is the user's question - ${question}`,
         ].join('\n');
 
+        const model = this.chatLlm ?? process.env.MASTRA_DEFAULT_CHAT_MODEL;
+        if (!model) {
+          throw new Error(
+            'ask-about-dataset: bind AiIntegrationBindings.MastraChatLLM ' +
+              'or set MASTRA_DEFAULT_CHAT_MODEL. No silent OpenAI fallback.',
+          );
+        }
         const agent = new Agent({
           id: 'ask-about-dataset-agent',
           name: 'AskAboutDatasetAgent',
           instructions:
             'Answer the user question concisely. Do not reveal the underlying SQL.',
-          model: this.chatLlm ?? 'openai/gpt-4o-mini',
+          model,
         });
         const result = await agent.generate(prompt);
         return result.text ?? '';

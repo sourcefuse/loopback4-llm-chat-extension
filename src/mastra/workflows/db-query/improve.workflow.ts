@@ -1,12 +1,10 @@
-import type {Context} from '@loopback/core';
 import {createStep, createWorkflow} from '@mastra/core/workflows';
 import {z} from 'zod';
-import {DbQueryAIExtensionBindings} from '../../../components/db-query/keys';
-import type {IDataSetStore} from '../../../components/db-query/types';
 import {
   buildImproveSqlPrompt,
   getChatLlm,
-  getLb4Ctx,
+  getDatasetStore,
+  getDbConnector,
   runSqlAttempt,
 } from './_helpers';
 
@@ -53,9 +51,9 @@ const loadExistingStep = createStep({
     tables: z.array(z.string()),
     checklist: z.string(),
     attempts: z.number(),
+    loadError: z.boolean().optional(),
   }),
   execute: async ({inputData, requestContext}) => {
-    const lb4Ctx = requestContext?.get('lb4Ctx') as Context | undefined;
     const base = {
       datasetId: inputData.datasetId,
       prompt: inputData.prompt,
@@ -64,13 +62,10 @@ const loadExistingStep = createStep({
       tables: [] as string[],
       checklist: '',
       attempts: 0,
+      loadError: false,
     };
-    if (!lb4Ctx) return base;
-    const store = await lb4Ctx.get<IDataSetStore>(
-      DbQueryAIExtensionBindings.DatasetStore,
-      {optional: true},
-    );
-    if (!store) return base;
+    const store = getDatasetStore(requestContext);
+    if (!store) return {...base, loadError: true};
     try {
       const dataset = await store.findById(inputData.datasetId);
       return {
@@ -81,7 +76,10 @@ const loadExistingStep = createStep({
         prompt: `${dataset.prompt}\n also consider following feedback given by user -\n ${inputData.prompt}\n`,
       };
     } catch {
-      return base;
+      // findById rejected — 404 / RLS deny / connection drop indistinguishable
+      // here. Flag loadError so the fixQuery loop short-circuits to failedStep
+      // instead of asking the LLM to "improve" an empty originalSql.
+      return {...base, loadError: true};
     }
   },
 });
@@ -118,12 +116,29 @@ const fixQueryStep = createStep({
       checklist?: string;
       feedback?: string;
       attempts?: number;
+      loadError?: boolean;
     };
+    if (data.loadError) {
+      // Upstream load-existing flagged a dataset-not-found or binding
+      // failure. Short-circuit the loop with passed=false so dountil
+      // exits and the branch routes to failedStep.
+      return {
+        datasetId: data.datasetId ?? '',
+        sql: '',
+        passed: false,
+        attempts: (data.attempts ?? 0) + 1,
+        feedback: 'Unable to load source dataset for improvement',
+        description: undefined,
+        prompt: data.prompt ?? '',
+        tables: data.tables ?? [],
+        checklist: data.checklist ?? '',
+      };
+    }
     const prompt = data.prompt ?? '';
     const tables = data.tables ?? [];
     const attempt = await runSqlAttempt({
       chatLlm: getChatLlm(requestContext),
-      lb4Ctx: getLb4Ctx(requestContext),
+      dbConnector: getDbConnector(requestContext),
       prompt,
       tables,
       checklist: data.checklist,
@@ -161,25 +176,22 @@ const saveImprovedStep = createStep({
       sql?: string;
       description?: string;
     };
-    const fallback = {
-      datasetId: data.datasetId ?? '',
-      sql: data.sql ?? '',
-      rowCount: 0,
-    };
-    const lb4Ctx = requestContext?.get('lb4Ctx') as Context | undefined;
-    if (!lb4Ctx || !data.datasetId || !data.sql) return fallback;
-    const store = await lb4Ctx.get<IDataSetStore>(
-      DbQueryAIExtensionBindings.DatasetStore,
-      {optional: true},
-    );
-    if (!store) return fallback;
+    // FAIL shape: empty datasetId + empty sql. Consumers (UI, SSE
+    // ToolStatus.Failed handlers) distinguish success from silent-
+    // update-failure by checking datasetId presence.
+    const failResult = {datasetId: '', sql: '', rowCount: 0};
+    if (!data.datasetId || !data.sql) return failResult;
+    const store = getDatasetStore(requestContext);
+    if (!store) return failResult;
     try {
       await store.updateById(data.datasetId, {
         query: data.sql,
         description: data.description ?? undefined,
       });
     } catch {
-      return fallback;
+      // Persisted update rejected. Return fail-shape so the SSE layer
+      // surfaces it instead of echoing the requested sql as if saved.
+      return failResult;
     }
     return {datasetId: data.datasetId, sql: data.sql, rowCount: 0};
   },

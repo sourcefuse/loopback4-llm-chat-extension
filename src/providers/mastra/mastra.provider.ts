@@ -54,19 +54,21 @@ export class MastraProvider implements Provider<Mastra> {
       },
     });
 
-    // Placeholder model for the singleton ChatAgent. WorkflowRunner
-    // builds its own per-request Agent with the consumer-bound
-    // MastraChatLLM, so the singleton's model is only consulted on
-    // out-of-band paths (Mastra Studio, MCP exposure, observability
-    // probes). Consumers may override the placeholder by binding
-    // `AiIntegrationBindings.MastraChatLLM` to a known model
-    // (recommended) — if OPENAI_API_KEY is present in the
-    // environment AND the singleton agent is invoked through one of
-    // those out-of-band paths, the literal 'openai/gpt-4o-mini' default
-    // here WILL bill against the consumer's OpenAI account. To avoid
-    // surprise spend, set OPENAI_API_KEY only when you intentionally
-    // route to OpenAI, or pin a non-OpenAI model id here via a
-    // consumer-side MastraProvider override.
+    // Fail-closed model resolution. WorkflowRunner builds a per-request
+    // Agent with the consumer-bound MastraChatLLM; the singleton agent's
+    // model is consulted only on out-of-band paths (Mastra Studio, MCP
+    // exposure, observability probes). Requiring an explicit
+    // MASTRA_DEFAULT_CHAT_MODEL env var prevents silent OpenAI billing
+    // when OPENAI_API_KEY happens to be present in the consumer env.
+    const defaultModel = process.env.MASTRA_DEFAULT_CHAT_MODEL;
+    if (!defaultModel) {
+      throw new Error(
+        'MastraProvider: set MASTRA_DEFAULT_CHAT_MODEL env var ' +
+          '(e.g. "google/gemini-1.5-flash", "anthropic/claude-3-5-sonnet-20241022") ' +
+          'or override MastraProvider entirely. The singleton ChatAgent has no ' +
+          'silent default model — refusing to ship a billable OpenAI fallback.',
+      );
+    }
     const chatAgent = new Agent({
       id: 'chat-agent',
       name: 'ChatAgent',
@@ -74,7 +76,7 @@ export class MastraProvider implements Provider<Mastra> {
         'You are a helpful AI assistant. Always use one of the available tools if applicable.',
         ...(this.systemContext ?? []),
       ].join('\n'),
-      model: process.env.MASTRA_DEFAULT_CHAT_MODEL ?? 'openai/gpt-4o-mini',
+      model: defaultModel,
       tools: {},
       memory,
     });

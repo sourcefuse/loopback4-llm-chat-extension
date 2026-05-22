@@ -7,6 +7,10 @@ import {UsageAccumulator} from '../../services/usage-accumulator.service';
 import {LLMStreamEvent, LLMStreamEventType} from '../../graphs/event.types';
 import {ToolStatus} from '../../graphs/types';
 
+// Satisfy WorkflowRunner.buildAgent fail-closed check. Real LLM calls
+// in this suite are stubbed via Agent.prototype overrides.
+process.env.MASTRA_DEFAULT_CHAT_MODEL ??= 'mock/test-model';
+
 type Chunk =
   | {type: 'text-delta'; payload: {text: string}}
   | {
@@ -261,7 +265,10 @@ describe('WorkflowRunner Unit', () => {
     expect(err!.data.message).to.match(/email leak/);
   });
 
-  it('persists runId in the RunRegistry on suspended finish', async () => {
+  it('does NOT write to RunRegistry on suspended finish (HITL resume lands in v3.1)', async () => {
+    // ApprovalController is scoped to v3.1 (Phase 4 of the migration
+    // plan). Writing to RunRegistry here without a consumer would
+    // accumulate unread TTL entries; the dead path is removed in v3.0.
     createThread.resolves({id: 'thread-suspend'});
     stubStreamWith([
       {
@@ -274,7 +281,7 @@ describe('WorkflowRunner Unit', () => {
       makeRunner().run('q', undefined, new AbortController().signal),
     );
 
-    expect(await runRegistry.get('thread-suspend')).to.equal('run-42');
+    expect(await runRegistry.get('thread-suspend')).to.be.undefined();
   });
 
   it('emits Status events for each uploaded file before streaming', async () => {

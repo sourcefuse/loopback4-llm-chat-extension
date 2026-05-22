@@ -1,11 +1,13 @@
-import type {Context} from '@loopback/core';
 import {createStep, createWorkflow} from '@mastra/core/workflows';
 import {z} from 'zod';
-import {DbQueryAIExtensionBindings} from '../../components/db-query/keys';
 import type {DataSetHelper} from '../../components/db-query/services';
 import type {IDataSetStore} from '../../components/db-query/types';
-import {VISUALIZATION_KEY} from '../../components/visualization/keys';
 import type {IVisualizer} from '../../components/visualization/types';
+import {
+  getDataSetHelper,
+  getDatasetStore,
+  getVisualizers,
+} from './db-query/_helpers';
 
 const DEFAULT_CHART_TYPE = 'bar';
 
@@ -26,17 +28,12 @@ function pickFromBranch<T extends Record<string, unknown>>(
 }
 
 async function fetchDatasetDescriptor(
-  lb4Ctx: Context,
+  store: IDataSetStore | undefined,
   datasetId: string,
 ): Promise<{sql?: string; description?: string}> {
-  if (!datasetId) return {};
-  const datasetStore = await lb4Ctx.get<IDataSetStore>(
-    DbQueryAIExtensionBindings.DatasetStore,
-    {optional: true},
-  );
-  if (!datasetStore) return {};
+  if (!datasetId || !store) return {};
   try {
-    const ds = await datasetStore.findById(datasetId);
+    const ds = await store.findById(datasetId);
     return {sql: ds.query, description: ds.description};
   } catch {
     return {};
@@ -44,12 +41,9 @@ async function fetchDatasetDescriptor(
 }
 
 async function fetchDatasetRows(
-  lb4Ctx: Context,
+  helper: DataSetHelper | undefined,
   datasetId: string,
 ): Promise<unknown[]> {
-  const helper = await lb4Ctx.get<DataSetHelper>('services.DataSetHelper', {
-    optional: true,
-  });
   if (!helper || !datasetId) return [];
   try {
     return ((await helper.getDataFromDataset(datasetId)) as unknown[]) ?? [];
@@ -58,15 +52,11 @@ async function fetchDatasetRows(
   }
 }
 
-async function pickVisualizer(
-  lb4Ctx: Context,
+function pickVisualizer(
+  visualizers: IVisualizer[],
   chartType: string,
-): Promise<IVisualizer | undefined> {
-  const bindings = lb4Ctx.findByTag({[VISUALIZATION_KEY]: true});
-  if (bindings.length === 0) return undefined;
-  const visualizers = await Promise.all(
-    bindings.map(b => lb4Ctx.get<IVisualizer>(b.key)),
-  );
+): IVisualizer | undefined {
+  if (visualizers.length === 0) return undefined;
   return visualizers.find(v => v.name === chartType) ?? visualizers[0];
 }
 
@@ -117,14 +107,10 @@ const selectVisualisationStep = createStep({
     userQuery: z.string(),
   }),
   execute: async ({inputData, requestContext}) => {
-    const lb4Ctx = requestContext?.get('lb4Ctx') as Context | undefined;
-    let chartType = inputData.type ?? 'bar';
-    if (lb4Ctx && !inputData.type) {
-      const bindings = lb4Ctx.findByTag({[VISUALIZATION_KEY]: true});
-      if (bindings.length > 0) {
-        const first = await lb4Ctx.get<IVisualizer>(bindings[0].key);
-        chartType = first.name;
-      }
+    let chartType = inputData.type ?? DEFAULT_CHART_TYPE;
+    if (!inputData.type) {
+      const visualizers = getVisualizers(requestContext);
+      if (visualizers.length > 0) chartType = visualizers[0].name;
     }
     return {
       datasetId: inputData.datasetId,
@@ -223,12 +209,14 @@ const getDatasetDataStep = createStep({
     const datasetId = upstream.datasetId ?? '';
     const chartType = upstream.chartType ?? DEFAULT_CHART_TYPE;
     const userQuery = upstream.userQuery ?? '';
-    const lb4Ctx = requestContext?.get('lb4Ctx') as Context | undefined;
-    if (!lb4Ctx) {
-      return {datasetId, rows: [], chartType, userQuery};
-    }
-    const {sql, description} = await fetchDatasetDescriptor(lb4Ctx, datasetId);
-    const rows = await fetchDatasetRows(lb4Ctx, datasetId);
+    const {sql, description} = await fetchDatasetDescriptor(
+      getDatasetStore(requestContext),
+      datasetId,
+    );
+    const rows = await fetchDatasetRows(
+      getDataSetHelper(requestContext) as DataSetHelper | undefined,
+      datasetId,
+    );
     return {datasetId, rows, chartType, userQuery, sql, description};
   },
 });
@@ -258,9 +246,7 @@ const renderVisualizationStep = createStep({
     const sql = upstream.sql;
     const description = upstream.description;
     const datasetId = upstream.datasetId ?? '';
-    const lb4Ctx = requestContext?.get('lb4Ctx') as Context | undefined;
-    if (!lb4Ctx) return {chartConfig: {}};
-    const chosen = await pickVisualizer(lb4Ctx, chartType);
+    const chosen = pickVisualizer(getVisualizers(requestContext), chartType);
     if (!chosen) return {chartConfig: {}};
     try {
       const config = await chosen.getConfig({

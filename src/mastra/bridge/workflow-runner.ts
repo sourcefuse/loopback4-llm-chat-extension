@@ -17,7 +17,21 @@ import type {Tool} from '@mastra/core/tools';
 import {UsageAccumulator} from '../../services/usage-accumulator.service';
 import {AsyncEventQueue} from './async-event-queue';
 import {DbQueryAIExtensionBindings} from '../../components/db-query/keys';
-import type {IDbConnector} from '../../components/db-query/types';
+import type {
+  IDataSetStore,
+  IDbConnector,
+  IQueryTemplateStore,
+} from '../../components/db-query/types';
+import type {
+  DbSchemaHelperService,
+  TemplateHelper,
+} from '../../components/db-query/services';
+import type {SchemaStore} from '../../components/db-query/services/schema.store';
+import {VISUALIZATION_KEY} from '../../components/visualization/keys';
+import type {IVisualizer} from '../../components/visualization/types';
+import {AuthenticationBindings} from 'loopback4-authentication';
+import type {IAuthUserWithPermissions} from '@sourceloop/core';
+import type {MastraRcShape} from '../workflows/db-query/_helpers';
 
 /**
  * Safe conversion of any thrown value to a non-empty error message.
@@ -198,25 +212,17 @@ export class WorkflowRunner {
       }
     }
 
-    // Pull bounded LB4 service refs dynamically from the REQUEST-scoped
-    // context. Optional — each is undefined if the consumer hasn't bound
-    // the DbQuery component. Workflow steps destructure defensively.
-    const dbConnector = await this.lb4Ctx.get<IDbConnector>(
-      DbQueryAIExtensionBindings.Connector,
-      {optional: true},
+    // Bounded service resolution per migration plan Section 3.4
+    // ("least-privilege — pass bounded service references, NOT the
+    // whole LB4 Context"). Each binding is optional so the workflow
+    // stays runnable under partial configuration.
+    const rcShape = await this.resolveRequestContextShape({
+      resourceId,
+      eventWriter: e => queue.push(e),
+    });
+    const ctx = new RequestContext<MastraRcShape>(
+      Object.entries(rcShape) as never,
     );
-
-    const ctx = new RequestContext<Record<string, unknown>>([
-      ['resourceId', resourceId],
-      ['eventWriter', (e: LLMStreamEvent) => queue.push(e)],
-      ['dbConnector', dbConnector],
-      ['chatLlm', this.chatLlm],
-      // Expose the LB4 Context to step bodies that need to resolve
-      // additional helpers (DbSchemaHelperService, SchemaStore,
-      // TableSearchService, etc.) lazily. Workflow steps that need
-      // helpers do `requestContext.get<Context>('lb4Ctx').get(key)`.
-      ['lb4Ctx', this.lb4Ctx],
-    ]);
 
     // Pump fullStream chunks into the queue. The pre-processing block above
     // and any tool-side eventWriter calls push onto the same queue; total
@@ -231,7 +237,7 @@ export class WorkflowRunner {
     // Pump task is fire-and-forget; completion is signalled by queue.close()
     // inside the inner finally. The inner try/catch maps any thrown error to
     // an SSE Error event before closing, so this promise never rejects.
-    this.pumpStream(streamPromise, queue, thread.id).catch(() => {
+    this.pumpStream(streamPromise, queue).catch(() => {
       /* errors handled inside pumpStream; guard satisfies no-floating-promises. */
     });
 
@@ -248,18 +254,16 @@ export class WorkflowRunner {
   private async pumpStream(
     streamPromise: Promise<unknown>,
     queue: AsyncEventQueue<LLMStreamEvent>,
-    threadId: string,
   ): Promise<void> {
     type ChunkLike = {type: string; payload: unknown};
     type StreamLike = {
       fullStream: AsyncIterable<ChunkLike>;
       usage: Promise<{inputTokens?: number; outputTokens?: number}>;
-      runId?: string | Promise<string>;
     };
     try {
       const stream = (await streamPromise) as unknown as StreamLike;
       for await (const chunk of stream.fullStream) {
-        await this.handleChunk(chunk, queue, stream, threadId);
+        this.handleChunk(chunk, queue);
       }
       await this.emitUsage(stream, queue);
     } catch (err) {
@@ -274,39 +278,16 @@ export class WorkflowRunner {
     }
   }
 
-  private async handleChunk(
+  private handleChunk(
     chunk: {type: string; payload: unknown},
     queue: AsyncEventQueue<LLMStreamEvent>,
-    stream: {runId?: string | Promise<string>},
-    threadId: string,
-  ): Promise<void> {
+  ): void {
     const event = mapChunkToEvent(chunk);
-    if (event) {
-      queue.push(event);
-      return;
-    }
-    if (chunk.type === 'finish') {
-      await this.maybePersistSuspendedRun(chunk.payload, stream, threadId);
-    }
-  }
-
-  /**
-   * When a finish chunk reports finishReason='suspended', persist the
-   * runId on the registry so ApprovalController can resume the run on
-   * the next request.
-   */
-  private async maybePersistSuspendedRun(
-    payload: unknown,
-    stream: {runId?: string | Promise<string>},
-    threadId: string,
-  ): Promise<void> {
-    const finishReason = (payload as {output?: {finishReason?: string}})?.output
-      ?.finishReason;
-    if (finishReason !== 'suspended') return;
-    const runId = (payload as {runId?: string})?.runId ?? (await stream?.runId);
-    if (runId && this.runRegistry) {
-      await this.runRegistry.set(threadId, runId);
-    }
+    if (event) queue.push(event);
+    // 'finish' chunks: nothing to do in P3. HITL resume path
+    // (ApprovalController + RunRegistry consumer) lands in v3.1
+    // (Phase 4 of the migration plan). Persisting runId without a
+    // consumer would accumulate unread TTL entries.
   }
 
   private async emitUsage(
@@ -350,14 +331,25 @@ export class WorkflowRunner {
         ? (singleton as {getMemory: () => unknown}).getMemory()
         : (singleton as {memory?: unknown}).memory;
 
+    // Fail-closed: WorkflowRunner refuses to fall back to a billable
+    // OpenAI default. Consumers must either bind MastraChatLLM or set
+    // MASTRA_DEFAULT_CHAT_MODEL (the singleton ChatAgent reads the env
+    // var at boot). The env-var read happens once here so a misconfigured
+    // chat turn fails fast with a clear message rather than silently
+    // routing to whichever provider OPENAI_API_KEY belongs to.
+    const model = this.chatLlm ?? process.env.MASTRA_DEFAULT_CHAT_MODEL;
+    if (!model) {
+      throw new Error(
+        'WorkflowRunner: bind AiIntegrationBindings.MastraChatLLM in your ' +
+          'component OR set MASTRA_DEFAULT_CHAT_MODEL env var (e.g. ' +
+          '"google/gemini-1.5-flash"). No silent OpenAI fallback.',
+      );
+    }
     return new Agent({
       id: 'chat-agent',
       name: 'ChatAgent',
       instructions: this.buildInstructions(),
-      // Fall back to the singleton's placeholder model when no consumer-bound
-      // MastraChatLLM is available (e.g. local tests). At runtime, consumers
-      // are expected to bind a concrete LanguageModelV2 instance.
-      model: this.chatLlm ?? 'openai/gpt-4o-mini',
+      model,
       tools: this.buildToolMap(),
       memory: memory as ConstructorParameters<typeof Agent>[0]['memory'],
     });
@@ -375,5 +367,80 @@ export class WorkflowRunner {
       'You are a helpful AI assistant. Always use one of the available tools if applicable.',
       ...(this.systemContext ?? []),
     ].join('\n');
+  }
+
+  /**
+   * Resolve every binding workflow steps may read from RequestContext.
+   * The set is fixed + bounded (least-privilege per migration plan
+   * Section 3.4). Each lookup is `{optional: true}` so deployments that
+   * mount AiIntegrationsComponent without the DbQuery / Visualizer
+   * sub-components still get a runnable RequestContext.
+   */
+  private async resolveRequestContextShape(args: {
+    resourceId: string;
+    eventWriter: (event: LLMStreamEvent) => void;
+  }): Promise<MastraRcShape> {
+    const opt = {optional: true} as const;
+    const [
+      dbConnector,
+      authUser,
+      datasetStore,
+      templateStore,
+      schemaStore,
+      schemaHelper,
+      templateHelper,
+      dataSetHelper,
+      queryCache,
+      templateCache,
+    ] = await Promise.all([
+      this.lb4Ctx.get<IDbConnector>(DbQueryAIExtensionBindings.Connector, opt),
+      this.lb4Ctx.get<IAuthUserWithPermissions>(
+        AuthenticationBindings.CURRENT_USER,
+        opt,
+      ),
+      this.lb4Ctx.get<IDataSetStore>(
+        DbQueryAIExtensionBindings.DatasetStore,
+        opt,
+      ),
+      this.lb4Ctx.get<IQueryTemplateStore>(
+        DbQueryAIExtensionBindings.TemplateStore,
+        opt,
+      ),
+      this.lb4Ctx.get<SchemaStore>('services.SchemaStore', opt),
+      this.lb4Ctx.get<DbSchemaHelperService>(
+        'services.DbSchemaHelperService',
+        opt,
+      ),
+      this.lb4Ctx.get<TemplateHelper>('services.TemplateHelper', opt),
+      this.lb4Ctx.get<unknown>('services.DataSetHelper', opt),
+      this.lb4Ctx.get<MastraRcShape['queryCache']>(
+        DbQueryAIExtensionBindings.QueryCache,
+        opt,
+      ),
+      this.lb4Ctx.get<MastraRcShape['templateCache']>(
+        DbQueryAIExtensionBindings.TemplateCache,
+        opt,
+      ),
+    ]);
+    const visBindings = this.lb4Ctx.findByTag({[VISUALIZATION_KEY]: true});
+    const visualizers = await Promise.all(
+      visBindings.map(b => this.lb4Ctx.get<IVisualizer>(b.key)),
+    );
+    return {
+      resourceId: args.resourceId,
+      eventWriter: args.eventWriter,
+      chatLlm: this.chatLlm as MastraRcShape['chatLlm'],
+      dbConnector,
+      authUser,
+      datasetStore,
+      templateStore,
+      schemaStore,
+      schemaHelper,
+      templateHelper,
+      dataSetHelper,
+      queryCache,
+      templateCache,
+      visualizers,
+    };
   }
 }

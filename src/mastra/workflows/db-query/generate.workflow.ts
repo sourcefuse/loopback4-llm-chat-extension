@@ -1,23 +1,27 @@
 import {createStep, createWorkflow} from '@mastra/core/workflows';
 import {generateText} from 'ai';
 import {z} from 'zod';
-import type {SchemaStore} from '../../../components/db-query/services/schema.store';
-import type {IDataSetStore} from '../../../components/db-query/types';
 import {
   buildGenerateSqlPrompt,
   computeSchemaHash,
+  getAuthUser,
   getChatLlm,
-  getLb4Ctx,
+  getDatasetStore,
+  getDbConnector,
+  getQueryCache,
+  getSchemaHelper,
+  getSchemaStore,
   getTablesWithColumns,
+  getTemplateCache,
+  getTemplateHelper,
+  getTemplateStore,
   pickRelevantTables,
   resolvePersistDeps,
   resolveTemplateById,
   runSqlAttempt,
 } from './_helpers';
-import {DbQueryAIExtensionBindings} from '../../../components/db-query/keys';
 
 const MAX_VALIDATION_ATTEMPTS = 3;
-const SCHEMA_STORE_KEY = 'services.SchemaStore';
 
 /** Workflow status enum exported so the post-cache step's union type
  * stays under SonarQube's S4622 threshold (max 2 unions inline). */
@@ -93,14 +97,8 @@ const checkCacheStep = createStep({
   execute: async ({inputData, requestContext}) => {
     const data = inputData as {prompt?: string; isImprovement?: boolean};
     if ((data.isImprovement ?? false) || !data.prompt) return {cacheHit: false};
-    const lb4Ctx = getLb4Ctx(requestContext);
+    const cache = getQueryCache(requestContext);
     const chatLlm = getChatLlm(requestContext);
-    if (!lb4Ctx) return {cacheHit: false};
-    const cache = await lb4Ctx.get<{
-      invoke: (
-        input: string,
-      ) => Promise<Array<{pageContent: string; metadata: {id?: string}}>>;
-    }>(DbQueryAIExtensionBindings.QueryCache, {optional: true});
     if (!cache || !chatLlm) return {cacheHit: false};
     let docs: Array<{pageContent: string; metadata: {id?: string}}> = [];
     try {
@@ -156,18 +154,14 @@ const getTablesStep = createStep({
   inputSchema: parallelInput,
   outputSchema: z.object({tables: z.array(z.string())}),
   execute: async ({requestContext}) => {
-    const lb4Ctx = getLb4Ctx(requestContext);
-    if (!lb4Ctx) return {tables: []};
-    const schemaStore = await lb4Ctx.get<SchemaStore>(SCHEMA_STORE_KEY, {
-      optional: true,
-    });
+    const schemaStore = getSchemaStore(requestContext);
     if (!schemaStore) return {tables: []};
     try {
       const schema = schemaStore.get();
       return {tables: Object.keys(schema.tables)};
     } catch {
-      // schema not yet loaded — caller (or a follow-up loadSchemaStep)
-      // must populate SchemaStore before the workflow runs.
+      // schema not yet loaded — caller must populate SchemaStore
+      // before the workflow runs.
       return {tables: []};
     }
   },
@@ -193,14 +187,8 @@ const checkTemplatesStep = createStep({
   execute: async ({inputData, requestContext}) => {
     const data = inputData as {prompt?: string; isImprovement?: boolean};
     if ((data.isImprovement ?? false) || !data.prompt) return {matched: false};
-    const lb4Ctx = getLb4Ctx(requestContext);
+    const cache = getTemplateCache(requestContext);
     const chatLlm = getChatLlm(requestContext);
-    if (!lb4Ctx) return {matched: false};
-    const cache = await lb4Ctx.get<{
-      invoke: (
-        input: string,
-      ) => Promise<Array<{pageContent: string; metadata: {id?: string}}>>;
-    }>(DbQueryAIExtensionBindings.TemplateCache, {optional: true});
     if (!cache || !chatLlm) return {matched: false};
     let docs: Array<{pageContent: string; metadata: {id?: string}}> = [];
     try {
@@ -325,13 +313,8 @@ const returnCachedStep = createStep({
   execute: async ({inputData, requestContext}) => {
     const data = inputData as {datasetId?: string};
     const fallback = {datasetId: data.datasetId ?? '', sql: '', rowCount: 0};
-    const lb4Ctx = getLb4Ctx(requestContext);
-    if (!lb4Ctx || !data.datasetId) return fallback;
-    const store = await lb4Ctx.get<IDataSetStore>(
-      DbQueryAIExtensionBindings.DatasetStore,
-      {optional: true},
-    );
-    if (!store) return fallback;
+    const store = getDatasetStore(requestContext);
+    if (!store || !data.datasetId) return fallback;
     try {
       const dataset = await store.findById(data.datasetId);
       return {
@@ -364,17 +347,23 @@ const saveDatasetFromTemplateStep = createStep({
     };
     const fallback = {datasetId: '', sql: '', rowCount: 0};
     if (!data.templateId || !data.prompt) return fallback;
-    const lb4Ctx = getLb4Ctx(requestContext);
-    if (!lb4Ctx) return fallback;
-    const persist = await resolvePersistDeps(lb4Ctx);
+    const persist = resolvePersistDeps(
+      getDatasetStore(requestContext),
+      getAuthUser(requestContext),
+    );
     if (!persist) return fallback;
     const resolved = await resolveTemplateById({
-      lb4Ctx,
+      templateStore: getTemplateStore(requestContext),
+      templateHelper: getTemplateHelper(requestContext),
+      schemaStore: getSchemaStore(requestContext),
       templateId: data.templateId,
       prompt: data.prompt,
     });
     if (!resolved) return fallback;
-    const {schemaHash} = await computeSchemaHash(lb4Ctx);
+    const {schemaHash} = computeSchemaHash(
+      getSchemaHelper(requestContext),
+      getSchemaStore(requestContext),
+    );
     const dataset = await persist.store.create({
       tenantId: persist.user.tenantId,
       query: resolved.sql,
@@ -423,12 +412,14 @@ const getColumnsStep = createStep({
     const prompt = data.prompt ?? '';
     const tables = data.tables ?? [];
     const templateId = data.templateId;
-    const lb4Ctx = getLb4Ctx(requestContext);
     const chatLlm = getChatLlm(requestContext);
-    if (!lb4Ctx || !chatLlm || tables.length === 0) {
+    if (!chatLlm || tables.length === 0) {
       return {prompt, tables, templateId};
     }
-    const tablesWithColumns = await getTablesWithColumns(lb4Ctx, tables);
+    const tablesWithColumns = getTablesWithColumns(
+      getSchemaStore(requestContext),
+      tables,
+    );
     const narrowed = await pickRelevantTables({
       chatLlm,
       prompt,
@@ -528,7 +519,7 @@ const sqlAndValidateStep = createStep({
     const tables = data.tables ?? [];
     const attempt = await runSqlAttempt({
       chatLlm: getChatLlm(requestContext),
-      lb4Ctx: getLb4Ctx(requestContext),
+      dbConnector: getDbConnector(requestContext),
       prompt,
       tables,
       checklist: data.checklist,
@@ -569,11 +560,16 @@ const saveDatasetStep = createStep({
       tables?: string[];
     };
     const fallback = {datasetId: '', sql: data.sql ?? '', rowCount: 0};
-    const lb4Ctx = getLb4Ctx(requestContext);
-    if (!lb4Ctx || !data.sql) return fallback;
-    const persist = await resolvePersistDeps(lb4Ctx);
+    if (!data.sql) return fallback;
+    const persist = resolvePersistDeps(
+      getDatasetStore(requestContext),
+      getAuthUser(requestContext),
+    );
     if (!persist) return fallback;
-    const {schemaHash, tablesFromSchema} = await computeSchemaHash(lb4Ctx);
+    const {schemaHash, tablesFromSchema} = computeSchemaHash(
+      getSchemaHelper(requestContext),
+      getSchemaStore(requestContext),
+    );
     const tableList = data.tables?.length ? data.tables : tablesFromSchema;
     const dataset = await persist.store.create({
       tenantId: persist.user.tenantId,
