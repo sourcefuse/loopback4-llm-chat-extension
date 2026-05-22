@@ -4,7 +4,7 @@ import {IRunRegistry} from '../../keys';
 /**
  * Default in-process RunRegistry — single-pod safe. Multi-pod deployments
  * must bind a Redis-backed variant against AiIntegrationBindings.RunRegistry.
- * Section 8.2.1.
+ *
  */
 @injectable({scope: BindingScope.SINGLETON})
 export class InProcessRunRegistry implements IRunRegistry {

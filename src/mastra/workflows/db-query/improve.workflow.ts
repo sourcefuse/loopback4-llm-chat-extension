@@ -13,7 +13,7 @@ import type {
  * `improveQueryWorkflow` — improvement variant of `generateQueryWorkflow`.
  * Enters with an existing datasetId and a delta prompt, skips the
  * cache/templates fan-out, and dives straight into the validate-retry
- * loop. See MIGRATION-STRATEGY.md Section 9.2.
+ * loop. See the migration plan.
  *
  * Restore strategy for remaining stub bodies: lift v2 IsImprovement +
  * FixQuery + SaveDataset node bodies from

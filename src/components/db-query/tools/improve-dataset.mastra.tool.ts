@@ -50,7 +50,7 @@ export class MastraImproveDatasetTool implements IMastraGraphTool {
           );
           if (!workflow) {
             throw new Error(
-              "improveQueryWorkflow not registered in Mastra — check MastraProvider's workflows config (Section 9.4a)",
+              "improveQueryWorkflow not registered in Mastra — check MastraProvider's workflows config",
             );
           }
           const run = await workflow.createRun();

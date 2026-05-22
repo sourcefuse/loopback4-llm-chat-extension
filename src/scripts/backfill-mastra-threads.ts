@@ -5,8 +5,8 @@
  * `AiIntegrationBindings.MastraStorage`.
  *
  * Usage from a consumer app:
- *   APP_MODULE=./dist/application npx backfill-mastra-threads --dry-run
- *   APP_MODULE=./dist/application npx backfill-mastra-threads
+ * APP_MODULE=./dist/application npx backfill-mastra-threads --dry-run
+ * APP_MODULE=./dist/application npx backfill-mastra-threads
  *
  * The script boots the consumer's LB4 Application so it inherits the
  * exact ChatRepository / MessageRepository / MastraStorage bindings the
@@ -15,7 +15,7 @@
  * Idempotency: each chat is skipped if a Mastra thread with the same id
  * already exists. Re-running the script is safe.
  *
- * Refs: MIGRATION-STRATEGY.md sections 7.9, 13.6a.
+ * Refs: the migration plan.
  */
 import type {Application as CoreApplication} from '@loopback/core';
 import {AiIntegrationBindings} from '../keys';
@@ -56,9 +56,9 @@ const DRY_RUN = process.argv.includes('--dry-run');
  * them at Memory.scope='resource').
  *
  * Default mirrors the recommended single-tenant-safe format from
- * Section 13.7. Override via the BACKFILL_RESOURCE_ID_FORMAT env var:
- *   - 'tenant-user' (default): `${tenantId}:${userId}` with userId fallback
- *   - 'user-only': bare `userId`, single-tenant only
+ *. Override via the BACKFILL_RESOURCE_ID_FORMAT env var:
+ * - 'tenant-user' (default): `${tenantId}:${userId}` with userId fallback
+ * - 'user-only': bare `userId`, single-tenant only
  */
 function formatResourceId(chat: Chat): string {
   const mode = process.env.BACKFILL_RESOURCE_ID_FORMAT ?? 'tenant-user';

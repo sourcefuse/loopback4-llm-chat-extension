@@ -23,7 +23,7 @@ import type {MastraVector} from '@mastra/core/vector';
  * the legacy provider so vector tables land in the same schema consumers
  * already provisioned. Set `MASTRA_PGVECTOR_SCHEMA` to override.
  *
- * Refs: MIGRATION-STRATEGY.md sections 13.8, 13.8a.
+ * Refs: the migration plan.
  */
 @injectable({scope: BindingScope.SINGLETON})
 export class MastraPgVectorStore implements Provider<MastraVector> {

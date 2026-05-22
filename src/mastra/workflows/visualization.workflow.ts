@@ -12,7 +12,7 @@ import type {IVisualizer} from '../../components/visualization/types';
  * it pulls cached dataset rows directly. Either branch then dispatches
  * to the visualizer registry via renderVisualizationStep.
  *
- * See MIGRATION-STRATEGY.md Section 9.3. Restore strategy: lift v2
+ * See the migration plan. Restore strategy: lift v2
  * SelectVisualizationNode + CallQueryGenerationNode +
  * GetDatasetDataNode + RenderVisualizationNode bodies from
  * `git show 4be9767^:src/components/visualization/nodes/<name>.node.ts`.

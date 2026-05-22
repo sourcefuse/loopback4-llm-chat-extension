@@ -20,7 +20,7 @@ import type {
 /**
  * `generateQueryWorkflow` — Mastra port of the 17-node LangGraph
  * DbQueryGraph that builds a SQL dataset from a natural-language prompt.
- * See MIGRATION-STRATEGY.md Section 9.1.
+ * See the migration plan.
  *
  * P3 scope: structural DAG only. WorkflowRunner enriches RequestContext
  * with `lb4Ctx` (full LB4 Context), `dbConnector`, `chatLlm` and
@@ -526,7 +526,7 @@ Return ONLY valid JSON. Include primary-key and foreign-key columns even if not 
  * minus the structured-output coercion.
  *
  * After `.branch()` Mastra wraps the matched branch's output under the
- * branch step's id (mirroring the .parallel() fan-in shape). The body
+ * branch step's id (mirroring the.parallel() fan-in shape). The body
  * unwraps defensively so the step runs regardless of which branch
  * fired.
  */

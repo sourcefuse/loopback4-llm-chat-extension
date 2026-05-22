@@ -43,7 +43,7 @@ export class DbQueryComponent implements Component {
     this.lifeCycleObservers = [TableSeedObserver];
     this.services = [
       // db helpers — still consumed by generateQueryWorkflow / improveQueryWorkflow
-      // step bodies (Section 16A.4 explicitly preserves these).
+      // step bodies.
       DbSchemaHelperService,
       PermissionHelper,
       DataSetHelper,

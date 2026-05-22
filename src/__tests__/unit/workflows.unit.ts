@@ -5,7 +5,7 @@ import {visualizationWorkflow} from '../../mastra/workflows/visualization.workfl
 
 /**
  * Smoke tests for the P3 workflow skeletons. Each workflow's step bodies
- * are stubs (Section 9.1-9.3), so the assertions here verify the DAG
+ * are stubs, so the assertions here verify the DAG
  * topology and end-to-end success path — not yet the SQL / chart logic
  * which lands in a follow-up commit.
  */

@@ -12,7 +12,7 @@ import {parseSampleRate} from './util';
  * Required env: LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY.
  * Optional env: LANGFUSE_BASE_URL (defaults to Langfuse Cloud).
  *
- * Refs: MIGRATION-STRATEGY.md sections 10.1, 16A.6.
+ * Refs: the migration plan.
  */
 @injectable({scope: BindingScope.SINGLETON})
 export class MastraLangfuseObservability implements Provider<Observability> {

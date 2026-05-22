@@ -26,7 +26,7 @@ export class VisualizerComponent implements Component {
     this.services = [
       // visualizers (consumer-extensible via @visualizer() — the Mastra
       // visualizationWorkflow's render step dispatches to these via
-      // RequestContext, see Section 9.3)
+      // RequestContext, see)
       PieVisualizer,
       BarVisualizer,
       LineVisualizer,

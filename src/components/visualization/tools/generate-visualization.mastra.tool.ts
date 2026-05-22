@@ -64,7 +64,7 @@ It does not return anything, instead it fires an event internally that renders t
           );
           if (!workflow) {
             throw new Error(
-              "visualizationWorkflow not registered in Mastra — check MastraProvider's workflows config (Section 9.4a)",
+              "visualizationWorkflow not registered in Mastra — check MastraProvider's workflows config",
             );
           }
           const run = await workflow.createRun();

@@ -16,7 +16,7 @@ import {
 } from './types';
 import {ILimitStrategy} from './services/limit-strategies/types';
 
-// Swappable run registry for HITL approval flow (Section 8.2.1). Default impl is
+// Swappable run registry for HITL approval flow. Default impl is
 // in-process; consumers may bind a Redis-backed variant for multi-pod deployments.
 export interface IRunRegistry {
   set(sessionId: string, runId: string): Promise<void>;
@@ -102,7 +102,7 @@ export namespace AiIntegrationBindings {
     'services.ai-reporting.mastraObservability',
   );
   // ResourceId — tenant-scoped identity string resolved per-request via
-  // toDynamicValue (Section 13.7). Format: `${tenantId}:${userId}`.
+  // toDynamicValue. Format: `${tenantId}:${userId}`.
   export const ResourceId = BindingKey.create<string>(
     'services.ai-reporting.resourceId',
   );

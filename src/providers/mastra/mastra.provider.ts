@@ -21,7 +21,7 @@ import {visualizationWorkflow} from '../../mastra/workflows/visualization.workfl
  * Tools are wired in P1.11 once the 4 internal tools migrate to createTool;
  * during P1 setup the agent boots with an empty tool map.
  *
- * Section 3.3 + 7.4.
+ * + 7.4.
  */
 @injectable({scope: BindingScope.SINGLETON})
 export class MastraProvider implements Provider<Mastra> {

@@ -8,10 +8,10 @@ import {IMastraGraphTool, ToolStatus} from '../../../graphs/types';
 import {AiIntegrationBindings} from '../../../keys';
 
 /**
- * Mastra-shaped NL2SQL tool. Final form per Section 8.1 — calls
+ * Mastra-shaped NL2SQL tool. Final form — calls
  * `mastra.getWorkflow('generateQueryWorkflow').createRun().start()`
  * directly; no more legacy IGraphTool delegation. The workflow itself
- * still has stub step bodies (Section 9.1) until real DbQueryService
+ * still has stub step bodies until real DbQueryService
  * helpers are wired into each step.
  */
 export class MastraGetDataAsDatasetTool implements IMastraGraphTool {
@@ -56,7 +56,7 @@ export class MastraGetDataAsDatasetTool implements IMastraGraphTool {
           );
           if (!workflow) {
             throw new Error(
-              "generateQueryWorkflow not registered in Mastra — check MastraProvider's workflows config (Section 9.4a)",
+              "generateQueryWorkflow not registered in Mastra — check MastraProvider's workflows config",
             );
           }
           const run = await workflow.createRun();

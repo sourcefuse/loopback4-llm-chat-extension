@@ -2,14 +2,14 @@
  * Single-producer-or-multiple-producer / single-consumer async queue used to
  * funnel SSE events from the WorkflowRunner pre-processing block, the Mastra
  * agent fullStream pump task, and tool-side eventWriter calls into a single
- * ordered iterator that the controller consumes (Section 7.7).
+ * ordered iterator that the controller consumes.
  *
  * Critical properties:
  * - Push order is preserved across concurrent producers (atomic shift/push).
  * - `maxSize` provides hard backpressure: overflow throws rather than dropping
- *   events silently, which would corrupt the SSE wire contract.
+ * events silently, which would corrupt the SSE wire contract.
  * - Array-of-resolvers (NOT single slot): waiters queue up so 1000 concurrent
- *   pushes followed by a single consumer observe exactly 1000 values in order.
+ * pushes followed by a single consumer observe exactly 1000 values in order.
  */
 export class AsyncEventQueue<T> implements AsyncIterable<T> {
   private readonly queue: T[] = [];

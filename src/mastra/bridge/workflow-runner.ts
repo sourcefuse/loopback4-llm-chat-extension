@@ -28,7 +28,7 @@ import type {IDbConnector} from '../../components/db-query/types';
  * P1 scope: chat flow + Memory thread management + SSE pump. File summarisation
  * (v2 SummariseFileNode) and live tool wiring are added later in P1.11.
  *
- * Refs: MIGRATION-STRATEGY.md sections 7.6, 12.3, 13.7.
+ * Refs: the migration plan.
  */
 @injectable({scope: BindingScope.REQUEST})
 export class WorkflowRunner {
@@ -243,7 +243,7 @@ export class WorkflowRunner {
         }
       } catch (err) {
         // Safe conversion: handle non-Error throws and missing
-        // .message so the SSE Error event never carries an empty
+        //.message so the SSE Error event never carries an empty
         // payload, mirroring the chunk 'error' branch above.
         const message =
           err instanceof Error
@@ -266,7 +266,7 @@ export class WorkflowRunner {
   /**
    * Build a per-request Agent. Memory is reused from the singleton ChatAgent
    * so storage pools are shared; only the Agent + tool registry shape is
-   * per-request (Section 3.3 + 7.6).
+   * per-request.
    */
   private buildAgent(): Agent {
     const singleton = this.mastra.getAgent('chatAgent');

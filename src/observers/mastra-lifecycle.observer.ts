@@ -15,7 +15,7 @@ import {AiIntegrationBindings} from '../keys';
  *
  * SINGLETON cannot inject REQUEST-scoped services — in-flight stream draining
  * is handled at the controller layer via `response.on('close')` and
- * AbortSignal propagation (Section 7.5 + 16A.7), not here.
+ * AbortSignal propagation, not here.
  */
 @lifeCycleObserver('mastra')
 @injectable({scope: BindingScope.SINGLETON})
@@ -23,7 +23,7 @@ export class MastraLifecycleObserver implements LifeCycleObserver {
   constructor(@inject(AiIntegrationBindings.Mastra) private mastra: Mastra) {}
 
   async start(): Promise<void> {
-    // Reserved for vector-index preflight, RLS check, etc. (Section 13.7
+    // Reserved for vector-index preflight, RLS check, etc. (
     // recommended boot-time safety gate for workingMemory + ResourceId).
   }
 
