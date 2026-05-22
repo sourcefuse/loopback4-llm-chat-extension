@@ -88,12 +88,63 @@ export type SqlAttemptResult = {
   description?: string;
 };
 
+type SqlGenStage = {sql: string; description?: string; error?: string};
+
+async function runGenerationStage(args: {
+  chatLlm: LanguageModel | undefined;
+  prompt: string;
+  tables: string[];
+  checklist?: string;
+  feedback?: string;
+  initialSql?: string;
+  buildPrompt: (input: SqlGenInput) => string;
+  buildDescription?: (sql: string, prompt: string) => string;
+}): Promise<SqlGenStage> {
+  const {chatLlm, prompt, initialSql, buildPrompt, buildDescription} = args;
+  if (!chatLlm || !prompt) {
+    return {sql: initialSql ?? ''};
+  }
+  const gen = await generateSqlOnce(
+    chatLlm,
+    buildPrompt({
+      prompt,
+      tables: args.tables,
+      checklist: args.checklist,
+      feedback: args.feedback,
+      originalSql: initialSql,
+    }),
+  );
+  if (gen.error) return {sql: initialSql ?? '', error: gen.error};
+  if (!gen.sql) return {sql: initialSql ?? ''};
+  return {
+    sql: gen.sql,
+    description: buildDescription?.(gen.sql, prompt),
+  };
+}
+
+async function runValidationStage(args: {
+  sql: string;
+  chatLlm: LanguageModel | undefined;
+  lb4Ctx: Context | undefined;
+  prompt: string;
+  checklist?: string;
+}): Promise<{passed: boolean; feedback?: string}> {
+  const {sql} = args;
+  if (!sql) return {passed: true};
+  const syntactic = await validateSqlSyntactic(sql, args.lb4Ctx);
+  if (!syntactic.passed) return syntactic;
+  return validateSqlSemantic({
+    sql,
+    chatLlm: args.chatLlm,
+    prompt: args.prompt,
+    checklist: args.checklist,
+  });
+}
+
 /**
  * Run one full SQL attempt: generation -> syntactic validation ->
  * semantic validation. Returns the final attempt result with passed
- * flag + optional feedback to feed back into the dountil loop. The
- * step body that wraps this stays under SonarQube's complexity
- * threshold; all branching lives here.
+ * flag + optional feedback to feed back into the dountil loop.
  */
 export async function runSqlAttempt(args: {
   chatLlm: LanguageModel | undefined;
@@ -106,61 +157,23 @@ export async function runSqlAttempt(args: {
   initialSql?: string;
   buildDescription?: (sql: string, prompt: string) => string;
 }): Promise<SqlAttemptResult> {
-  const {
-    chatLlm,
-    lb4Ctx,
-    prompt,
-    tables,
-    checklist,
-    feedback,
-    buildPrompt,
-    initialSql,
-    buildDescription,
-  } = args;
-
-  let sql = initialSql ?? '';
-  let description: string | undefined;
-
-  if (chatLlm && prompt) {
-    const gen = await generateSqlOnce(
-      chatLlm,
-      buildPrompt({
-        prompt,
-        tables,
-        checklist,
-        feedback,
-        originalSql: initialSql,
-      }),
-    );
-    if (gen.error) {
-      return {sql: initialSql ?? '', passed: false, feedback: gen.error};
-    }
-    if (gen.sql) {
-      sql = gen.sql;
-      description = buildDescription?.(sql, prompt);
-    }
+  const stage = await runGenerationStage(args);
+  if (stage.error) {
+    return {sql: stage.sql, passed: false, feedback: stage.error};
   }
-
-  if (sql) {
-    const syntactic = await validateSqlSyntactic(sql, lb4Ctx);
-    if (!syntactic.passed) {
-      return {sql, passed: false, feedback: syntactic.feedback, description};
-    }
-  }
-
-  if (sql) {
-    const semantic = await validateSqlSemantic({
-      sql,
-      chatLlm,
-      prompt,
-      checklist,
-    });
-    if (!semantic.passed) {
-      return {sql, passed: false, feedback: semantic.feedback, description};
-    }
-  }
-
-  return {sql, passed: true, description};
+  const verdict = await runValidationStage({
+    sql: stage.sql,
+    chatLlm: args.chatLlm,
+    lb4Ctx: args.lb4Ctx,
+    prompt: args.prompt,
+    checklist: args.checklist,
+  });
+  return {
+    sql: stage.sql,
+    passed: verdict.passed,
+    feedback: verdict.feedback,
+    description: stage.description,
+  };
 }
 
 /**
