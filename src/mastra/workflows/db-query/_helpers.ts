@@ -100,25 +100,23 @@ async function runGenerationStage(args: {
   buildPrompt: (input: SqlGenInput) => string;
   buildDescription?: (sql: string, prompt: string) => string;
 }): Promise<SqlGenStage> {
-  const {chatLlm, prompt, initialSql, buildPrompt, buildDescription} = args;
-  if (!chatLlm || !prompt) {
-    return {sql: initialSql ?? ''};
-  }
+  const fallback: SqlGenStage = {sql: args.initialSql ?? ''};
+  if (!args.chatLlm || !args.prompt) return fallback;
   const gen = await generateSqlOnce(
-    chatLlm,
-    buildPrompt({
-      prompt,
+    args.chatLlm,
+    args.buildPrompt({
+      prompt: args.prompt,
       tables: args.tables,
       checklist: args.checklist,
       feedback: args.feedback,
-      originalSql: initialSql,
+      originalSql: args.initialSql,
     }),
   );
-  if (gen.error) return {sql: initialSql ?? '', error: gen.error};
-  if (!gen.sql) return {sql: initialSql ?? ''};
+  if (gen.error) return {...fallback, error: gen.error};
+  if (!gen.sql) return fallback;
   return {
     sql: gen.sql,
-    description: buildDescription?.(gen.sql, prompt),
+    description: args.buildDescription?.(gen.sql, args.prompt),
   };
 }
 
