@@ -49,6 +49,7 @@ const selectVisualisationStep = createStep({
     datasetId: z.string(),
     needsQuery: z.boolean(),
     chartType: z.string(),
+    userQuery: z.string(),
   }),
   execute: async ({inputData, requestContext}) => {
     const lb4Ctx = requestContext?.get('lb4Ctx') as Context | undefined;
@@ -64,22 +65,62 @@ const selectVisualisationStep = createStep({
       datasetId: inputData.datasetId,
       needsQuery: !inputData.datasetId,
       chartType,
+      userQuery: inputData.userQuery,
     };
   },
 });
 
+/**
+ * call-query-generation — wired. Invokes generateQueryWorkflow
+ * recursively when the user did not supply a datasetId. Mirrors v2
+ * CallQueryGenerationNode (`git show 4be9767^:src/components/visualization/nodes/call-query-generation.node.ts`)
+ * but uses mastra.getWorkflow().createRun().start() instead of
+ * DbQueryGraph.invoke(). The wrapped prompt nudges the SQL generator
+ * to produce a result shape suitable for the chosen chart type.
+ */
 const callQueryGenerationStep = createStep({
   id: 'call-query-generation',
   inputSchema: z.object({
     datasetId: z.string(),
     needsQuery: z.boolean(),
     chartType: z.string(),
+    userQuery: z.string(),
   }),
-  outputSchema: z.object({datasetId: z.string(), chartType: z.string()}),
-  execute: async ({inputData}) => ({
-    datasetId: inputData.datasetId,
-    chartType: inputData.chartType,
+  outputSchema: z.object({
+    datasetId: z.string(),
+    needsQuery: z.boolean(),
+    chartType: z.string(),
   }),
+  execute: async ({inputData, mastra, requestContext}) => {
+    if (inputData.datasetId) {
+      return {
+        datasetId: inputData.datasetId,
+        needsQuery: false,
+        chartType: inputData.chartType,
+      };
+    }
+    const generate = mastra?.getWorkflow?.('generateQueryWorkflow' as never);
+    if (!generate) {
+      return {
+        datasetId: '',
+        needsQuery: true,
+        chartType: inputData.chartType,
+      };
+    }
+    const run = await generate.createRun();
+    const result = await run.start({
+      inputData: {
+        prompt: `Generate a query to fetch data for visualization based on the following user prompt: ${inputData.userQuery}.`,
+      },
+      requestContext,
+    } as never);
+    const out = (result as {result?: {datasetId?: string}}).result;
+    return {
+      datasetId: out?.datasetId ?? '',
+      needsQuery: false,
+      chartType: inputData.chartType,
+    };
+  },
 });
 
 /**
@@ -93,52 +134,43 @@ const callQueryGenerationStep = createStep({
  */
 const getDatasetDataStep = createStep({
   id: 'get-dataset-data',
-  inputSchema: z.object({
-    datasetId: z.string(),
-    needsQuery: z.boolean(),
-    chartType: z.string(),
-  }),
+  // Accept both shapes: direct selectVisualisation output and the
+  // branch-wrapped post-callQueryGeneration output. Body unwraps.
+  inputSchema: z.any(),
   outputSchema: z.object({
     datasetId: z.string(),
     rows: z.array(z.unknown()),
     chartType: z.string(),
   }),
   execute: async ({inputData, requestContext}) => {
+    const wrapped = inputData as Record<string, unknown>;
+    const fromCallQuery = wrapped['call-query-generation'] as
+      | {datasetId?: string; chartType?: string}
+      | undefined;
+    const direct = wrapped as {datasetId?: string; chartType?: string};
+    const inferredId = fromCallQuery?.datasetId ?? direct.datasetId ?? '';
+    const inferredChart = fromCallQuery?.chartType ?? direct.chartType ?? 'bar';
     const lb4Ctx = requestContext?.get('lb4Ctx') as Context | undefined;
     if (!lb4Ctx) {
-      return {
-        datasetId: inputData.datasetId,
-        rows: [],
-        chartType: inputData.chartType,
-      };
+      return {datasetId: inferredId, rows: [], chartType: inferredChart};
     }
     const helper = await lb4Ctx.get<DataSetHelper>('services.DataSetHelper', {
       optional: true,
     });
     if (!helper) {
-      return {
-        datasetId: inputData.datasetId,
-        rows: [],
-        chartType: inputData.chartType,
-      };
+      return {datasetId: inferredId, rows: [], chartType: inferredChart};
     }
     try {
-      const rows = (await helper.getDataFromDataset(
-        inputData.datasetId,
-      )) as unknown[];
+      const rows = (await helper.getDataFromDataset(inferredId)) as unknown[];
       return {
-        datasetId: inputData.datasetId,
+        datasetId: inferredId,
         rows: rows ?? [],
-        chartType: inputData.chartType,
+        chartType: inferredChart,
       };
     } catch {
       // permission denied / not found — empty rows let renderVisualization
       // surface an error to the user instead of crashing the workflow.
-      return {
-        datasetId: inputData.datasetId,
-        rows: [],
-        chartType: inputData.chartType,
-      };
+      return {datasetId: inferredId, rows: [], chartType: inferredChart};
     }
   },
 });
