@@ -62,9 +62,14 @@ import {AIIntegrationConfig} from './types';
 import {PgVectorStore} from './sub-modules/db/postgresql';
 import {DefaultMastraStorageProvider} from './providers/mastra/storage.provider';
 import {MastraProvider} from './providers/mastra/mastra.provider';
+import {DefaultMastraToolsProvider} from './providers/mastra/mastra-tools.provider';
 import {InProcessRunRegistry} from './mastra/bridge/run-registry';
 import {WorkflowRunner} from './mastra/bridge/workflow-runner';
 import {MastraLifecycleObserver} from './observers/mastra-lifecycle.observer';
+import {MastraGetDataAsDatasetTool} from './components/db-query/tools/get-data-as-dataset.mastra.tool';
+import {MastraImproveDatasetTool} from './components/db-query/tools/improve-dataset.mastra.tool';
+import {MastraAskAboutDatasetTool} from './components/db-query/tools/ask-about-dataset.mastra.tool';
+import {MastraGenerateVisualizationTool} from './components/visualization/tools/generate-visualization.mastra.tool';
 
 const debug = require('debug')('ai-integration:log-events:component');
 export class AiIntegrationsComponent implements Component {
@@ -95,6 +100,9 @@ export class AiIntegrationsComponent implements Component {
       createBindingFromClass(InProcessRunRegistry, {
         key: AiIntegrationBindings.RunRegistry.key,
       }).inScope(BindingScope.SINGLETON),
+      createBindingFromClass(DefaultMastraToolsProvider, {
+        key: AiIntegrationBindings.MastraTools.key,
+      }).inScope(BindingScope.SINGLETON),
     ];
 
     this.providers = {
@@ -119,6 +127,12 @@ export class AiIntegrationsComponent implements Component {
       // mastra v3 services
       UsageAccumulator,
       WorkflowRunner,
+      // mastra-flavored tool wrappers (delegate to legacy IGraphTool
+      // implementations during the P1->P3 transition)
+      MastraGetDataAsDatasetTool,
+      MastraImproveDatasetTool,
+      MastraAskAboutDatasetTool,
+      MastraGenerateVisualizationTool,
     ];
 
     this.lifeCycleObservers = [MastraLifecycleObserver];

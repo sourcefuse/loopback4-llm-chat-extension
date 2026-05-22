@@ -12,7 +12,8 @@ import {RequestContext} from '@mastra/core/request-context';
 import type {MastraModelConfig} from '@mastra/core/llm';
 import {AiIntegrationBindings, IRunRegistry} from '../../keys';
 import {LLMStreamEvent, LLMStreamEventType} from '../../graphs/event.types';
-import {ToolStatus} from '../../graphs/types';
+import {MastraToolStore, ToolStatus} from '../../graphs/types';
+import type {Tool} from '@mastra/core/tools';
 import {UsageAccumulator} from '../../services/usage-accumulator.service';
 import {AsyncEventQueue} from './async-event-queue';
 
@@ -41,6 +42,8 @@ export class WorkflowRunner {
     @inject(AiIntegrationBindings.SystemContext, {optional: true})
     private systemContext?: string[],
     @service(UsageAccumulator) private usage?: UsageAccumulator,
+    @inject(AiIntegrationBindings.MastraTools, {optional: true})
+    private mastraTools?: MastraToolStore,
   ) {}
 
   async *run(
@@ -250,10 +253,16 @@ export class WorkflowRunner {
       // MastraChatLLM is available (e.g. local tests). At runtime, consumers
       // are expected to bind a concrete LanguageModelV2 instance.
       model: this.chatLlm ?? 'openai/gpt-4o-mini',
-      // Tools wired in P1.11 once the 4 internal tools migrate to createTool.
-      tools: {},
+      tools: this.buildToolMap(),
       memory: memory as ConstructorParameters<typeof Agent>[0]['memory'],
     });
+  }
+
+  private buildToolMap(): Record<string, Tool> {
+    if (!this.mastraTools) return {};
+    return Object.fromEntries(
+      this.mastraTools.list.map(t => [t.key, t.build()]),
+    );
   }
 
   private buildInstructions(): string {

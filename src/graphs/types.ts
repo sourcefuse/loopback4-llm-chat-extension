@@ -59,3 +59,12 @@ export interface IMastraGraphTool {
   getValue?(result: Record<string, unknown>): string;
   getMetadata?(result: Record<string, unknown>): AnyObject;
 }
+
+/**
+ * Registry shape consumed by WorkflowRunner. Mirrors the legacy `ToolStore`
+ * in src/types.ts but holds IMastraGraphTool instances.
+ */
+export type MastraToolStore = {
+  list: IMastraGraphTool[];
+  map?: Record<string, IMastraGraphTool>;
+};

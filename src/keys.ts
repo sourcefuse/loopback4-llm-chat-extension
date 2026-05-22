@@ -4,6 +4,7 @@ import type {Mastra} from '@mastra/core';
 import type {MastraModelConfig} from '@mastra/core/llm';
 import type {MastraCompositeStore} from '@mastra/core/storage';
 import type {MastraVector, MastraEmbeddingModel} from '@mastra/core/vector';
+import type {MastraToolStore} from './graphs/types';
 import {BindingKey} from '@loopback/context';
 import {ITransport} from './transports/types';
 import {
@@ -89,6 +90,12 @@ export namespace AiIntegrationBindings {
   );
   export const RunRegistry = BindingKey.create<IRunRegistry>(
     'services.ai-reporting.runRegistry',
+  );
+  // Mastra-shaped tool registry consumed by WorkflowRunner. Parallel to the
+  // legacy `Tools` binding while v2 IGraphTool consumers (ChatGraph) are
+  // alive; replaced cleanly in P3.
+  export const MastraTools = BindingKey.create<MastraToolStore>(
+    'services.ai-reporting.mastraTools',
   );
   // ResourceId — tenant-scoped identity string resolved per-request via
   // toDynamicValue (Section 13.7). Format: `${tenantId}:${userId}`.
