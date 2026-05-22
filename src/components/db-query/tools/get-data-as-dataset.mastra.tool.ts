@@ -1,28 +1,25 @@
-import {service} from '@loopback/core';
+import {inject} from '@loopback/core';
+import {Mastra} from '@mastra/core';
 import {createTool} from '@mastra/core/tools';
 import type {Tool} from '@mastra/core/tools';
 import {z} from 'zod';
 import {LLMStreamEvent, LLMStreamEventType} from '../../../graphs/event.types';
 import {IMastraGraphTool, ToolStatus} from '../../../graphs/types';
-import {GetDataAsDatasetTool} from './get-data-as-dataset.tool';
+import {AiIntegrationBindings} from '../../../keys';
 
 /**
- * Mastra-shaped wrapper around the legacy NL2SQL dataset tool. During the
- * transition window it delegates to the existing LangGraph `DbQueryGraph`
- * pipeline via the legacy tool's `.build().invoke()` so behaviour stays
- * byte-identical. P3 swaps the body to call
- * `mastra.getWorkflow('generateQueryWorkflow').createRun().start()` and
- * deletes the legacy class.
- *
- * Refs: MIGRATION-STRATEGY.md sections 8.1, 9.1, 9.4a.
+ * Mastra-shaped NL2SQL tool. Final form per Section 8.1 — calls
+ * `mastra.getWorkflow('generateQueryWorkflow').createRun().start()`
+ * directly; no more legacy IGraphTool delegation. The workflow itself
+ * still has stub step bodies (Section 9.1) until real DbQueryService
+ * helpers are wired into each step.
  */
 export class MastraGetDataAsDatasetTool implements IMastraGraphTool {
   key = 'get-data-as-dataset';
   requireApproval = false;
 
   constructor(
-    @service(GetDataAsDatasetTool)
-    private readonly legacy: GetDataAsDatasetTool,
+    @inject(AiIntegrationBindings.Mastra) private readonly mastra: Mastra,
   ) {}
 
   build(): Tool {
@@ -54,17 +51,31 @@ export class MastraGetDataAsDatasetTool implements IMastraGraphTool {
           data: {id: toolCallId, status: ToolStatus.Running},
         });
         try {
-          const legacyTool = await this.legacy.build();
-          const result = (await legacyTool.invoke(
-            inputData as unknown as never,
-            // The legacy graph reads its writer from configurable.writer.
-            {configurable: {writer}} as never,
-          )) as Record<string, unknown>;
+          const workflow = this.mastra.getWorkflow(
+            'generateQueryWorkflow' as never,
+          );
+          if (!workflow) {
+            throw new Error(
+              "generateQueryWorkflow not registered in Mastra — check MastraProvider's workflows config (Section 9.4a)",
+            );
+          }
+          const run = await workflow.createRun();
+          const result = await run.start({
+            inputData,
+            requestContext: ctx?.requestContext,
+          } as never);
+          if (result.status !== 'success') {
+            writer?.({
+              type: LLMStreamEventType.ToolStatus,
+              data: {id: toolCallId, status: ToolStatus.Failed},
+            });
+            throw new Error(`Query generation failed: ${result.status}`);
+          }
           writer?.({
             type: LLMStreamEventType.ToolStatus,
             data: {id: toolCallId, status: ToolStatus.Completed},
           });
-          return result;
+          return (result as {result?: unknown}).result ?? {};
         } catch (err) {
           writer?.({
             type: LLMStreamEventType.ToolStatus,
@@ -74,13 +85,5 @@ export class MastraGetDataAsDatasetTool implements IMastraGraphTool {
         }
       },
     });
-  }
-
-  getValue(result: Record<string, unknown>): string {
-    return this.legacy.getValue(result as Record<string, string>);
-  }
-
-  getMetadata(result: Record<string, unknown>) {
-    return this.legacy.getMetadata(result as Record<string, string>);
   }
 }

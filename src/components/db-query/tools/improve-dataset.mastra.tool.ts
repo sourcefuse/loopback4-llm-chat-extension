@@ -1,23 +1,22 @@
-import {service} from '@loopback/core';
+import {inject} from '@loopback/core';
+import {Mastra} from '@mastra/core';
 import {createTool} from '@mastra/core/tools';
 import type {Tool} from '@mastra/core/tools';
 import {z} from 'zod';
 import {LLMStreamEvent, LLMStreamEventType} from '../../../graphs/event.types';
 import {IMastraGraphTool, ToolStatus} from '../../../graphs/types';
-import {ImproveDatasetTool} from './improve-dataset.tool';
+import {AiIntegrationBindings} from '../../../keys';
 
 /**
- * Mastra-shaped wrapper around the legacy dataset-improvement tool.
- * Delegates to the existing LangGraph pipeline during the transition
- * window; P3 swaps the body to call the improveQueryWorkflow.
+ * Mastra-shaped dataset-improvement tool. Final form — calls
+ * `mastra.getWorkflow('improveQueryWorkflow').createRun().start()`.
  */
 export class MastraImproveDatasetTool implements IMastraGraphTool {
   key = 'improve-dataset';
   requireApproval = false;
 
   constructor(
-    @service(ImproveDatasetTool)
-    private readonly legacy: ImproveDatasetTool,
+    @inject(AiIntegrationBindings.Mastra) private readonly mastra: Mastra,
   ) {}
 
   build(): Tool {
@@ -46,16 +45,31 @@ export class MastraImproveDatasetTool implements IMastraGraphTool {
           data: {id: toolCallId, status: ToolStatus.Running},
         });
         try {
-          const legacyTool = await this.legacy.build();
-          const result = (await legacyTool.invoke(
-            inputData as unknown as never,
-            {configurable: {writer}} as never,
-          )) as Record<string, unknown>;
+          const workflow = this.mastra.getWorkflow(
+            'improveQueryWorkflow' as never,
+          );
+          if (!workflow) {
+            throw new Error(
+              "improveQueryWorkflow not registered in Mastra — check MastraProvider's workflows config (Section 9.4a)",
+            );
+          }
+          const run = await workflow.createRun();
+          const result = await run.start({
+            inputData,
+            requestContext: ctx?.requestContext,
+          } as never);
+          if (result.status !== 'success') {
+            writer?.({
+              type: LLMStreamEventType.ToolStatus,
+              data: {id: toolCallId, status: ToolStatus.Failed},
+            });
+            throw new Error(`Improve dataset failed: ${result.status}`);
+          }
           writer?.({
             type: LLMStreamEventType.ToolStatus,
             data: {id: toolCallId, status: ToolStatus.Completed},
           });
-          return result;
+          return (result as {result?: unknown}).result ?? {};
         } catch (err) {
           writer?.({
             type: LLMStreamEventType.ToolStatus,
@@ -65,13 +79,5 @@ export class MastraImproveDatasetTool implements IMastraGraphTool {
         }
       },
     });
-  }
-
-  getValue(result: Record<string, unknown>): string {
-    return this.legacy.getValue(result as Record<string, string>);
-  }
-
-  getMetadata(result: Record<string, unknown>) {
-    return this.legacy.getMetadata(result as Record<string, string>);
   }
 }

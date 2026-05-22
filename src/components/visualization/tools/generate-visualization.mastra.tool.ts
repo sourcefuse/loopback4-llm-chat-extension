@@ -1,29 +1,25 @@
-import {service} from '@loopback/core';
+import {inject} from '@loopback/core';
+import {Mastra} from '@mastra/core';
 import {createTool} from '@mastra/core/tools';
 import type {Tool} from '@mastra/core/tools';
 import {z} from 'zod';
 import {LLMStreamEvent, LLMStreamEventType} from '../../../graphs/event.types';
 import {IMastraGraphTool, ToolStatus} from '../../../graphs/types';
-import {GenerateVisualizationTool} from './generate-visualization.tool';
+import {AiIntegrationBindings} from '../../../keys';
 
 /**
- * Mastra-shaped wrapper around the legacy visualization tool. Delegates
- * to the existing VisualizationGraph via the legacy class's
- * .build().invoke() during the transition window. P3 swaps to
- * mastra.getWorkflow('visualizationWorkflow').createRun() and deletes
- * the legacy class.
- *
- * The visualization-type enum is generated on each .build() call from
- * the @visualizer()-decorated bindings discovered by the legacy class,
- * so consumer-side chart extensions remain plugin-compatible.
+ * Mastra-shaped visualization tool. Final form — calls
+ * `mastra.getWorkflow('visualizationWorkflow').createRun().start()`.
+ * The visualizer-type enum is no longer generated dynamically from the
+ * legacy registry here; the renderVisualization step of the workflow
+ * dispatches to @visualizer() classes via RequestContext at run time.
  */
 export class MastraGenerateVisualizationTool implements IMastraGraphTool {
   key = 'generate-visualization';
   requireApproval = false;
 
   constructor(
-    @service(GenerateVisualizationTool)
-    private readonly legacy: GenerateVisualizationTool,
+    @inject(AiIntegrationBindings.Mastra) private readonly mastra: Mastra,
   ) {}
 
   build(): Tool {
@@ -63,16 +59,34 @@ It does not return anything, instead it fires an event internally that renders t
           data: {id: toolCallId, status: ToolStatus.Running},
         });
         try {
-          const legacyTool = await this.legacy.build();
-          const result = (await legacyTool.invoke(
-            inputData as unknown as never,
-            {configurable: {writer}} as never,
-          )) as Record<string, unknown>;
+          const workflow = this.mastra.getWorkflow(
+            'visualizationWorkflow' as never,
+          );
+          if (!workflow) {
+            throw new Error(
+              "visualizationWorkflow not registered in Mastra — check MastraProvider's workflows config (Section 9.4a)",
+            );
+          }
+          const run = await workflow.createRun();
+          const result = await run.start({
+            inputData: {
+              datasetId: inputData.datasetId ?? '',
+              userQuery: inputData.prompt,
+            },
+            requestContext: ctx?.requestContext,
+          } as never);
+          if (result.status !== 'success') {
+            writer?.({
+              type: LLMStreamEventType.ToolStatus,
+              data: {id: toolCallId, status: ToolStatus.Failed},
+            });
+            throw new Error(`Visualization failed: ${result.status}`);
+          }
           writer?.({
             type: LLMStreamEventType.ToolStatus,
             data: {id: toolCallId, status: ToolStatus.Completed},
           });
-          return result;
+          return (result as {result?: unknown}).result ?? {};
         } catch (err) {
           writer?.({
             type: LLMStreamEventType.ToolStatus,
@@ -82,13 +96,5 @@ It does not return anything, instead it fires an event internally that renders t
         }
       },
     });
-  }
-
-  getValue(result: Record<string, unknown>): string {
-    return this.legacy.getValue(result as Record<string, string>);
-  }
-
-  getMetadata(result: Record<string, unknown>) {
-    return this.legacy.getMetadata(result as Record<string, string>);
   }
 }
