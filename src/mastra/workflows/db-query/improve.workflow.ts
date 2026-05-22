@@ -11,6 +11,31 @@ import {
 const MAX_IMPROVE_ATTEMPTS = 3;
 
 /**
+ * Build the failure result the fix-query loop emits when load-existing
+ * flagged a missing dataset / unbound DatasetStore. Extracted to keep
+ * fixQueryStep.execute under SonarQube's cyclomatic threshold.
+ */
+function loadErrorShortCircuit(data: {
+  datasetId?: string;
+  prompt?: string;
+  tables?: string[];
+  checklist?: string;
+  attempts?: number;
+}) {
+  return {
+    datasetId: data.datasetId ?? '',
+    sql: '',
+    passed: false,
+    attempts: (data.attempts ?? 0) + 1,
+    feedback: 'Unable to load source dataset for improvement',
+    description: undefined,
+    prompt: data.prompt ?? '',
+    tables: data.tables ?? [],
+    checklist: data.checklist ?? '',
+  };
+}
+
+/**
  * `improveQueryWorkflow` — improvement variant of `generateQueryWorkflow`.
  * Enters with an existing datasetId and a delta prompt, skips the
  * cache/templates fan-out, and dives straight into the validate-retry
@@ -118,22 +143,7 @@ const fixQueryStep = createStep({
       attempts?: number;
       loadError?: boolean;
     };
-    if (data.loadError) {
-      // Upstream load-existing flagged a dataset-not-found or binding
-      // failure. Short-circuit the loop with passed=false so dountil
-      // exits and the branch routes to failedStep.
-      return {
-        datasetId: data.datasetId ?? '',
-        sql: '',
-        passed: false,
-        attempts: (data.attempts ?? 0) + 1,
-        feedback: 'Unable to load source dataset for improvement',
-        description: undefined,
-        prompt: data.prompt ?? '',
-        tables: data.tables ?? [],
-        checklist: data.checklist ?? '',
-      };
-    }
+    if (data.loadError) return loadErrorShortCircuit(data);
     const prompt = data.prompt ?? '';
     const tables = data.tables ?? [];
     const attempt = await runSqlAttempt({
