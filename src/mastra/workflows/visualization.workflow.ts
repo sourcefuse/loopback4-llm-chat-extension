@@ -7,6 +7,69 @@ import type {IDataSetStore} from '../../components/db-query/types';
 import {VISUALIZATION_KEY} from '../../components/visualization/keys';
 import type {IVisualizer} from '../../components/visualization/types';
 
+const DEFAULT_CHART_TYPE = 'bar';
+
+/**
+ * Unwrap the branch-wrapped or direct upstream input. Mastra wraps the
+ * matched branch's output under the branch step's id (mirroring the
+ * .parallel() fan-in shape), so workflow steps that follow a branch
+ * accept both shapes. Extracted to keep step bodies under SonarQube's
+ * cyclomatic threshold.
+ */
+function pickFromBranch<T extends Record<string, unknown>>(
+  inputData: unknown,
+  branchKey: string,
+): T {
+  const wrapped = inputData as Record<string, unknown>;
+  const fromBranch = wrapped[branchKey] as T | undefined;
+  return (fromBranch ?? wrapped) as T;
+}
+
+async function fetchDatasetDescriptor(
+  lb4Ctx: Context,
+  datasetId: string,
+): Promise<{sql?: string; description?: string}> {
+  if (!datasetId) return {};
+  const datasetStore = await lb4Ctx.get<IDataSetStore>(
+    DbQueryAIExtensionBindings.DatasetStore,
+    {optional: true},
+  );
+  if (!datasetStore) return {};
+  try {
+    const ds = await datasetStore.findById(datasetId);
+    return {sql: ds.query, description: ds.description};
+  } catch {
+    return {};
+  }
+}
+
+async function fetchDatasetRows(
+  lb4Ctx: Context,
+  datasetId: string,
+): Promise<unknown[]> {
+  const helper = await lb4Ctx.get<DataSetHelper>('services.DataSetHelper', {
+    optional: true,
+  });
+  if (!helper || !datasetId) return [];
+  try {
+    return ((await helper.getDataFromDataset(datasetId)) as unknown[]) ?? [];
+  } catch {
+    return [];
+  }
+}
+
+async function pickVisualizer(
+  lb4Ctx: Context,
+  chartType: string,
+): Promise<IVisualizer | undefined> {
+  const bindings = lb4Ctx.findByTag({[VISUALIZATION_KEY]: true});
+  if (bindings.length === 0) return undefined;
+  const visualizers = await Promise.all(
+    bindings.map(b => lb4Ctx.get<IVisualizer>(b.key)),
+  );
+  return visualizers.find(v => v.name === chartType) ?? visualizers[0];
+}
+
 /**
  * `visualizationWorkflow` — Mastra port of the 4-node VisualizationGraph.
  * Linear DAG with one branch: when `needsQuery` is true the workflow
@@ -152,65 +215,21 @@ const getDatasetDataStep = createStep({
     description: z.string().optional(),
   }),
   execute: async ({inputData, requestContext}) => {
-    const wrapped = inputData as Record<string, unknown>;
-    const fromCallQuery = wrapped['call-query-generation'] as
-      | {datasetId?: string; chartType?: string; userQuery?: string}
-      | undefined;
-    const direct = wrapped as {
+    const upstream = pickFromBranch<{
       datasetId?: string;
       chartType?: string;
       userQuery?: string;
-    };
-    const inferredId = fromCallQuery?.datasetId ?? direct.datasetId ?? '';
-    const inferredChart = fromCallQuery?.chartType ?? direct.chartType ?? 'bar';
-    const inferredQuery = fromCallQuery?.userQuery ?? direct.userQuery ?? '';
+    }>(inputData, 'call-query-generation');
+    const datasetId = upstream.datasetId ?? '';
+    const chartType = upstream.chartType ?? DEFAULT_CHART_TYPE;
+    const userQuery = upstream.userQuery ?? '';
     const lb4Ctx = requestContext?.get('lb4Ctx') as Context | undefined;
-    const baseline = {
-      datasetId: inferredId,
-      rows: [] as unknown[],
-      chartType: inferredChart,
-      userQuery: inferredQuery,
-      sql: undefined as string | undefined,
-      description: undefined as string | undefined,
-    };
-    if (!lb4Ctx) return baseline;
-    const helper = await lb4Ctx.get<DataSetHelper>('services.DataSetHelper', {
-      optional: true,
-    });
-    if (!helper) return baseline;
-    // Fetch the dataset row to surface sql + description for the
-    // visualizer.getConfig() call downstream — the built-in
-    // visualizers (Pie/Bar/Line) reject empty prompt/sql/description
-    // and would otherwise silently fall through to {chartConfig:{}}.
-    let sql: string | undefined;
-    let description: string | undefined;
-    const datasetStore = await lb4Ctx.get<IDataSetStore>(
-      DbQueryAIExtensionBindings.DatasetStore,
-      {optional: true},
-    );
-    if (datasetStore && inferredId) {
-      try {
-        const ds = await datasetStore.findById(inferredId);
-        sql = ds.query;
-        description = ds.description;
-      } catch {
-        // not found / permission denied — leave undefined; render step
-        // will surface the error to the user via its own try/catch.
-      }
+    if (!lb4Ctx) {
+      return {datasetId, rows: [], chartType, userQuery};
     }
-    try {
-      const rows = (await helper.getDataFromDataset(inferredId)) as unknown[];
-      return {
-        datasetId: inferredId,
-        rows: rows ?? [],
-        chartType: inferredChart,
-        userQuery: inferredQuery,
-        sql,
-        description,
-      };
-    } catch {
-      return {...baseline, sql, description};
-    }
+    const {sql, description} = await fetchDatasetDescriptor(lb4Ctx, datasetId);
+    const rows = await fetchDatasetRows(lb4Ctx, datasetId);
+    return {datasetId, rows, chartType, userQuery, sql, description};
   },
 });
 
@@ -226,39 +245,23 @@ const renderVisualizationStep = createStep({
   inputSchema: z.any(),
   outputSchema,
   execute: async ({inputData, requestContext}) => {
-    const wrapped = inputData as Record<string, unknown>;
-    const fromGetDataset = wrapped['get-dataset-data'] as
-      | {
-          datasetId?: string;
-          rows?: unknown[];
-          chartType?: string;
-          userQuery?: string;
-          sql?: string;
-          description?: string;
-        }
-      | undefined;
-    const direct = wrapped as {
+    const upstream = pickFromBranch<{
       datasetId?: string;
       rows?: unknown[];
       chartType?: string;
       userQuery?: string;
       sql?: string;
       description?: string;
-    };
-    const chartType = fromGetDataset?.chartType ?? direct.chartType ?? 'bar';
-    const userQuery = fromGetDataset?.userQuery ?? direct.userQuery ?? '';
-    const sql = fromGetDataset?.sql ?? direct.sql;
-    const description = fromGetDataset?.description ?? direct.description;
-    const datasetId = fromGetDataset?.datasetId ?? direct.datasetId ?? '';
+    }>(inputData, 'get-dataset-data');
+    const chartType = upstream.chartType ?? DEFAULT_CHART_TYPE;
+    const userQuery = upstream.userQuery ?? '';
+    const sql = upstream.sql;
+    const description = upstream.description;
+    const datasetId = upstream.datasetId ?? '';
     const lb4Ctx = requestContext?.get('lb4Ctx') as Context | undefined;
     if (!lb4Ctx) return {chartConfig: {}};
-    const bindings = lb4Ctx.findByTag({[VISUALIZATION_KEY]: true});
-    if (bindings.length === 0) return {chartConfig: {}};
-    const visualizers = await Promise.all(
-      bindings.map(b => lb4Ctx.get<IVisualizer>(b.key)),
-    );
-    const chosen =
-      visualizers.find(v => v.name === chartType) ?? visualizers[0];
+    const chosen = await pickVisualizer(lb4Ctx, chartType);
+    if (!chosen) return {chartConfig: {}};
     try {
       const config = await chosen.getConfig({
         prompt: userQuery,

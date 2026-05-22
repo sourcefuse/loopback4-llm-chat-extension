@@ -106,8 +106,24 @@ async function loadConsumerApp(): Promise<BootableApplication> {
   return app;
 }
 
-async function backfill(): Promise<void> {
-  const app = await loadConsumerApp();
+/**
+ * Mastra Memory shape used by the backfill: a Map-style getter on
+ * threadId plus createThread + saveMessages. Hand-rolled to avoid
+ * pulling the heavy @mastra/memory type into a CLI script and to keep
+ * the function helpers testable.
+ */
+type MemoryLike = {
+  getThreadById(args: {threadId: string}): Promise<unknown>;
+  createThread(args: {
+    threadId: string;
+    resourceId: string;
+    title?: string;
+    metadata?: unknown;
+  }): Promise<unknown>;
+  saveMessages(args: {messages: unknown[]}): Promise<unknown>;
+};
+
+async function resolveMemory(app: BootableApplication): Promise<MemoryLike> {
   const mastra = await app.get(AiIntegrationBindings.Mastra);
   const memory = await mastra.getAgent('chatAgent')?.getMemory();
   if (!memory) {
@@ -115,14 +131,91 @@ async function backfill(): Promise<void> {
       'Mastra Memory not configured on chatAgent. Verify AiIntegrationBindings.MastraStorage is bound.',
     );
   }
+  return memory as unknown as MemoryLike;
+}
 
+function buildMessagePayloads(
+  chat: Chat,
+  msgs: Message[],
+  resourceId: string,
+): unknown[] {
+  return msgs.map(m => ({
+    id: m.id,
+    threadId: chat.id,
+    resourceId,
+    role: mastraRoleFor(m),
+    content: m.body,
+    createdAt: m.createdOn,
+    metadata: {
+      sourceloopAudit: {
+        createdBy: m.createdBy,
+        createdOn: m.createdOn,
+        modifiedBy: m.modifiedBy,
+        modifiedOn: m.modifiedOn,
+        deleted: m.deleted,
+        deletedOn: m.deletedOn,
+        deletedBy: m.deletedBy,
+      },
+      tenantId: chat.tenantId,
+      original: m.metadata,
+    },
+  }));
+}
+
+async function backfillChat(
+  chat: Chat,
+  memory: MemoryLike,
+  msgRepo: MessageRepository,
+  summary: BackfillSummary,
+): Promise<void> {
+  const resourceId = formatResourceId(chat);
+  const existing = await memory.getThreadById({threadId: chat.id});
+  if (existing) {
+    summary.skipped++;
+    return;
+  }
+  const msgs = await msgRepo.find({
+    where: {channelId: chat.id},
+    order: ['createdOn ASC'],
+  });
+  if (DRY_RUN) {
+    console.log(
+      `[dry-run] would create thread ${chat.id} resourceId=${resourceId} (${msgs.length} messages)`,
+    );
+    summary.created++;
+    summary.messagesWritten += msgs.length;
+    return;
+  }
+  await memory.createThread({
+    threadId: chat.id,
+    resourceId,
+    title: chat.title ?? undefined,
+    metadata: chat.metadata ?? undefined,
+  });
+  if (msgs.length) {
+    // Memory.saveMessages accepts both the modern MastraDBMessage and
+    // the legacy MastraMessageV1 shape; it normalises content
+    // internally. We emit the V1 string-content shape and cast through
+    // `never` to silence the V2 schema requirement — verify the exact
+    // shape against your installed @mastra/memory version if you
+    // observe mismatches.
+    await memory.saveMessages({
+      messages: buildMessagePayloads(chat, msgs, resourceId) as never,
+    });
+  }
+  summary.created++;
+  summary.messagesWritten += msgs.length;
+}
+
+async function backfill(): Promise<void> {
+  const app = await loadConsumerApp();
+  const memory = await resolveMemory(app);
   const chatRepo = await app.getRepository<ChatRepository>(
     'repositories.ChatRepository',
   );
   const msgRepo = await app.getRepository<MessageRepository>(
     'repositories.MessageRepository',
   );
-
   const chats = await chatRepo.find();
   const summary: BackfillSummary = {
     seen: 0,
@@ -131,91 +224,23 @@ async function backfill(): Promise<void> {
     messagesWritten: 0,
     errors: [],
   };
-
   for (const chat of chats) {
     summary.seen++;
     try {
-      const resourceId = formatResourceId(chat);
-      const existing = await memory.getThreadById({threadId: chat.id});
-      if (existing) {
-        summary.skipped++;
-        continue;
-      }
-
-      const msgs = await msgRepo.find({
-        where: {channelId: chat.id},
-        order: ['createdOn ASC'],
-      });
-
-      if (DRY_RUN) {
-        console.log(
-          `[dry-run] would create thread ${chat.id} resourceId=${resourceId} (${msgs.length} messages)`,
-        );
-        summary.created++;
-        summary.messagesWritten += msgs.length;
-        continue;
-      }
-
-      await memory.createThread({
-        threadId: chat.id,
-        resourceId,
-        title: chat.title ?? undefined,
-        metadata: chat.metadata ?? undefined,
-      });
-
-      if (msgs.length) {
-        // Memory.saveMessages accepts both the modern MastraDBMessage and
-        // the legacy MastraMessageV1 shape; it normalises content
-        // internally. We emit the V1 string-content shape and cast through
-        // `never` to silence the V2 schema requirement — verify the exact
-        // shape against your installed @mastra/memory version if you
-        // observe mismatches.
-        await memory.saveMessages({
-          messages: msgs.map(m => ({
-            id: m.id,
-            threadId: chat.id,
-            resourceId,
-            role: mastraRoleFor(m),
-            content: m.body,
-            createdAt: m.createdOn,
-            metadata: {
-              sourceloopAudit: {
-                createdBy: m.createdBy,
-                createdOn: m.createdOn,
-                modifiedBy: m.modifiedBy,
-                modifiedOn: m.modifiedOn,
-                deleted: m.deleted,
-                deletedOn: m.deletedOn,
-                deletedBy: m.deletedBy,
-              },
-              tenantId: chat.tenantId,
-              original: m.metadata,
-            },
-          })) as never,
-        });
-      }
-
-      summary.created++;
-      summary.messagesWritten += msgs.length;
+      await backfillChat(chat, memory, msgRepo, summary);
     } catch (err) {
-      summary.errors.push({
-        chatId: chat.id,
-        error: (err as Error).message,
-      });
+      summary.errors.push({chatId: chat.id, error: (err as Error).message});
       console.error(`[error] chat ${chat.id}:`, (err as Error).message);
     }
-
     if (summary.seen % PROGRESS_EVERY === 0) {
       console.log(
         `[progress] ${summary.seen}/${chats.length} seen | ${summary.created} created | ${summary.skipped} skipped | ${summary.errors.length} errors`,
       );
     }
   }
-
   console.log('\n=== Backfill Summary ===');
   console.log(JSON.stringify(summary, null, 2));
   await app.stop();
-
   if (summary.errors.length > 0) process.exit(1);
 }
 
