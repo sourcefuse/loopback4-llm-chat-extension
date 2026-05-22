@@ -13,8 +13,6 @@ import {AiIntegrationBindings} from '../../../keys';
  */
 export class MastraImproveDatasetTool implements IMastraGraphTool {
   key = 'improve-dataset';
-  requireApproval = false;
-
   constructor(
     @inject(AiIntegrationBindings.Mastra) private readonly mastra: Mastra,
   ) {}

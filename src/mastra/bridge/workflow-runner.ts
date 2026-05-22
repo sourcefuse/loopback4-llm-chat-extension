@@ -1,4 +1,7 @@
 import {randomUUID} from 'crypto';
+import debugFactory from 'debug';
+
+const debug = debugFactory('ai-integration:workflow-runner');
 import {
   BindingScope,
   Context,
@@ -188,9 +191,27 @@ export class WorkflowRunner {
         yield* queue;
         return;
       }
-      // Resume path: the stored thread.resourceId wins so the second
-      // turn shares the same Memory scope as the first.
-      resourceId = thread.resourceId ?? this.resourceIdValue ?? randomUUID();
+      // Resume path: thread.resourceId is set by Memory.createThread on
+      // every write, so a missing value here is an invariant violation
+      // upstream (data corruption / manual DB edit / Memory driver bug).
+      // Papering over it with a fresh randomUUID would orphan the thread
+      // — every subsequent turn would see a different Memory scope and
+      // semanticRecall would return nothing. Surface the corruption as
+      // an SSE Error instead.
+      if (!thread.resourceId) {
+        queue.push({
+          type: LLMStreamEventType.Error,
+          data: {
+            message:
+              `Thread ${sessionId} is missing resourceId — possible data ` +
+              `corruption. Refusing to resume to avoid orphaning the conversation.`,
+          },
+        });
+        queue.close();
+        yield* queue;
+        return;
+      }
+      resourceId = thread.resourceId;
     } else {
       resourceId = this.resourceIdValue ?? randomUUID();
       thread = await memory.createThread({resourceId});
@@ -237,8 +258,11 @@ export class WorkflowRunner {
     // Pump task is fire-and-forget; completion is signalled by queue.close()
     // inside the inner finally. The inner try/catch maps any thrown error to
     // an SSE Error event before closing, so this promise never rejects.
-    this.pumpStream(streamPromise, queue).catch(() => {
-      /* errors handled inside pumpStream; guard satisfies no-floating-promises. */
+    this.pumpStream(streamPromise, queue).catch(err => {
+      // pumpStream's inner try/catch maps errors to SSE Error + closes
+      // the queue. This guard catches unexpected escapes (e.g. queue
+      // push during error-emission). Log instead of swallow.
+      debug('pump task escaped error: %o', err);
     });
 
     yield* queue;

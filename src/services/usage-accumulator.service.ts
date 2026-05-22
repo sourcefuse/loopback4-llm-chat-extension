@@ -5,8 +5,14 @@ import {BindingScope, injectable} from '@loopback/core';
  * TokenCounter in v3. WorkflowRunner adds totals from
  * `await stream.usage` after every agent.stream() / workflow run completes.
  * LimitStrategy consumes `flush()` instead of the old `TokenCounter.report()`.
+ *
+ * REQUEST-scoped: each chat turn gets a fresh accumulator so totals
+ * cannot leak across users / tenants. A SINGLETON variant would let
+ * `snapshot()` return cumulative totals across every request the
+ * process has handled — a foot-gun for any consumer wiring a
+ * LimitStrategy against it.
  */
-@injectable({scope: BindingScope.SINGLETON})
+@injectable({scope: BindingScope.REQUEST})
 export class UsageAccumulator {
   private readonly perModel = new Map<
     string,

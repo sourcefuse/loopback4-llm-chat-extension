@@ -16,8 +16,6 @@ import {AiIntegrationBindings} from '../../../keys';
  */
 export class MastraGenerateVisualizationTool implements IMastraGraphTool {
   key = 'generate-visualization';
-  requireApproval = false;
-
   constructor(
     @inject(AiIntegrationBindings.Mastra) private readonly mastra: Mastra,
   ) {}

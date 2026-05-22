@@ -21,8 +21,6 @@ import type {IDataSetStore} from '../types';
  */
 export class MastraAskAboutDatasetTool implements IMastraGraphTool {
   key = 'ask-about-dataset';
-  requireApproval = false;
-
   constructor(
     @inject(AiIntegrationBindings.MastraChatLLM, {optional: true})
     private readonly chatLlm: MastraModelConfig | undefined,

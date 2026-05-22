@@ -70,14 +70,13 @@ const outputSchema = z.object({
   rowCount: z.number(),
 });
 
-const isImprovementStep = createStep({
-  id: 'is-improvement',
-  inputSchema,
-  outputSchema: inputSchema.extend({isImprovement: z.boolean()}),
-  execute: async ({inputData}) => ({...inputData, isImprovement: false}),
-});
-
-const parallelInput = inputSchema.extend({isImprovement: z.boolean()});
+// `isImprovementStep` + `classifyChangeStep` lived here in earlier
+// drafts but never fired meaningful logic for generateQueryWorkflow:
+// the improve flow runs in its own improveQueryWorkflow (entry path
+// owns the original-SQL merge + change-type classification). Removed
+// so generate workflow stays free of dead branches; if a future
+// orchestrator needs the unified mode-detection step, lift it into
+// _helpers.ts and reuse.
 
 /**
  * check-cache — wired with retriever + LLM judge. Resolves the
@@ -89,14 +88,14 @@ const parallelInput = inputSchema.extend({isImprovement: z.boolean()});
  */
 const checkCacheStep = createStep({
   id: 'check-cache',
-  inputSchema: parallelInput,
+  inputSchema,
   outputSchema: z.object({
     cacheHit: z.boolean(),
     datasetId: z.string().optional(),
   }),
   execute: async ({inputData, requestContext}) => {
-    const data = inputData as {prompt?: string; isImprovement?: boolean};
-    if ((data.isImprovement ?? false) || !data.prompt) return {cacheHit: false};
+    const data = inputData as {prompt?: string};
+    if (!data.prompt) return {cacheHit: false};
     const cache = getQueryCache(requestContext);
     const chatLlm = getChatLlm(requestContext);
     if (!cache || !chatLlm) return {cacheHit: false};
@@ -151,7 +150,7 @@ Return ONLY the verdict, no other text.`;
  */
 const getTablesStep = createStep({
   id: 'get-tables',
-  inputSchema: parallelInput,
+  inputSchema,
   outputSchema: z.object({tables: z.array(z.string())}),
   execute: async ({requestContext}) => {
     const schemaStore = getSchemaStore(requestContext);
@@ -179,14 +178,14 @@ const getTablesStep = createStep({
  */
 const checkTemplatesStep = createStep({
   id: 'check-templates',
-  inputSchema: parallelInput,
+  inputSchema,
   outputSchema: z.object({
     matched: z.boolean(),
     templateId: z.string().optional(),
   }),
   execute: async ({inputData, requestContext}) => {
-    const data = inputData as {prompt?: string; isImprovement?: boolean};
-    if ((data.isImprovement ?? false) || !data.prompt) return {matched: false};
+    const data = inputData as {prompt?: string};
+    if (!data.prompt) return {matched: false};
     const cache = getTemplateCache(requestContext);
     const chatLlm = getChatLlm(requestContext);
     if (!cache || !chatLlm) return {matched: false};
@@ -222,46 +221,6 @@ Return 'match <index>' for an exact match or 'no_match'. No other text.`;
       // judge LLM failed — degrade to matched=false.
     }
     return {matched: false};
-  },
-});
-
-/**
- * classify-change — wired with LLM. Only active when the generate
- * workflow is invoked with an existing sample SQL (currently
- * isImprovementStep returns isImprovement=false for the entry
- * generate workflow, so this step routinely sits as a no-op — the
- * improve workflow is the live caller). Restored from
- * `git show 4be9767^:src/components/db-query/nodes/classify-change.node.ts`.
- */
-const classifyChangeStep = createStep({
-  id: 'classify-change',
-  inputSchema: parallelInput,
-  outputSchema: z.object({changeType: z.string().optional()}),
-  execute: async ({inputData, requestContext}) => {
-    const data = inputData as {
-      prompt?: string;
-      sampleSqlPrompt?: string;
-      isImprovement?: boolean;
-    };
-    if (!data.isImprovement) return {changeType: undefined};
-    const chatLlm = getChatLlm(requestContext);
-    if (!chatLlm) return {changeType: undefined};
-    const llmPrompt = `You are given the original description of a SQL query and a new description that includes user feedback.
-Classify the level of change required to transform the original query into the new one.
-
-Original description: ${data.sampleSqlPrompt ?? ''}
-New description: ${data.prompt ?? ''}
-
-Return ONLY one of: minor, major, rewrite`;
-    try {
-      const result = await generateText({model: chatLlm, prompt: llmPrompt});
-      const text = result.text.trim().toLowerCase();
-      if (text.includes('minor')) return {changeType: 'minor'};
-      if (text.includes('rewrite')) return {changeType: 'rewrite'};
-      return {changeType: 'major'};
-    } catch {
-      return {changeType: undefined};
-    }
   },
 });
 
@@ -589,13 +548,7 @@ export const generateQueryWorkflow = createWorkflow({
   inputSchema,
   outputSchema,
 })
-  .then(isImprovementStep)
-  .parallel([
-    checkCacheStep,
-    getTablesStep,
-    checkTemplatesStep,
-    classifyChangeStep,
-  ])
+  .parallel([checkCacheStep, getTablesStep, checkTemplatesStep])
   .then(postCacheAndTablesStep)
   .branch([
     [

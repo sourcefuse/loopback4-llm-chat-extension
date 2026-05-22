@@ -16,8 +16,6 @@ import {AiIntegrationBindings} from '../../../keys';
  */
 export class MastraGetDataAsDatasetTool implements IMastraGraphTool {
   key = 'get-data-as-dataset';
-  requireApproval = false;
-
   constructor(
     @inject(AiIntegrationBindings.Mastra) private readonly mastra: Mastra,
   ) {}

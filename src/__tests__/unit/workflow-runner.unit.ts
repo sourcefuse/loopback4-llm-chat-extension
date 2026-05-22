@@ -137,7 +137,10 @@ describe('WorkflowRunner Unit', () => {
   });
 
   it('reuses an existing thread when sessionId is provided and omits Init', async () => {
-    getThreadById.resolves({id: 'thread-existing'});
+    getThreadById.resolves({
+      id: 'thread-existing',
+      resourceId: 'tenant-1:user-1',
+    });
     stubStreamWith([{type: 'text-delta', payload: {text: 'ok'}}]);
 
     const events = await collect(

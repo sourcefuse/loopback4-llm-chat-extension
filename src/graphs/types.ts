@@ -32,10 +32,12 @@ export enum ToolStatus {
  */
 export interface IMastraGraphTool {
   key: string;
-  requireApproval?: boolean;
   build(): Tool;
   getValue?(result: Record<string, unknown>): string;
   getMetadata?(result: Record<string, unknown>): AnyObject;
+  // `requireApproval` arrives in v3.1 alongside the ApprovalController
+  // PR. Until the resume side is wired, declaring it on the interface
+  // misleads consumers into thinking HITL works end-to-end.
 }
 
 /**

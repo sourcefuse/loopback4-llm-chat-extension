@@ -6,25 +6,36 @@
  *
  * Critical properties:
  * - Push order is preserved across concurrent producers (atomic shift/push).
- * - `maxSize` provides hard backpressure: overflow throws rather than dropping
- * events silently, which would corrupt the SSE wire contract.
+ * - `maxSize` triggers hard-close on overflow rather than throwing. Tool-side
+ *   `push()` calls run inside Mastra's tool harness; a throw there propagates
+ *   up as a tool failure and the SSE consumer sees the stream stop with no
+ *   Error event. Hard-close instead lets the consumer drain whatever already
+ *   queued and then sees `done: true` cleanly.
+ * - Post-close `push()` is silently dropped (no throw).
  * - Array-of-resolvers (NOT single slot): waiters queue up so 1000 concurrent
- * pushes followed by a single consumer observe exactly 1000 values in order.
+ *   pushes followed by a single consumer observe exactly 1000 values in order.
  */
 export class AsyncEventQueue<T> implements AsyncIterable<T> {
   private readonly queue: T[] = [];
   private readonly resolvers: Array<(v: IteratorResult<T>) => void> = [];
-  private closed = false;
+  private closedFlag = false;
   private readonly maxSize: number;
 
   constructor(opts: {maxSize?: number} = {}) {
     this.maxSize = opts.maxSize ?? 10000;
   }
 
+  get isClosed(): boolean {
+    return this.closedFlag;
+  }
+
   push(value: T): void {
-    if (this.closed) return;
+    if (this.closedFlag) return;
     if (this.queue.length >= this.maxSize) {
-      throw new Error(`AsyncEventQueue overflow (max ${this.maxSize})`);
+      // Hard-close instead of throw — see class-level comment for
+      // the why. Drains nothing; consumer's next iteration sees done.
+      this.close();
+      return;
     }
     const resolver = this.resolvers.shift();
     if (resolver) {
@@ -35,7 +46,8 @@ export class AsyncEventQueue<T> implements AsyncIterable<T> {
   }
 
   close(): void {
-    this.closed = true;
+    if (this.closedFlag) return;
+    this.closedFlag = true;
     while (this.resolvers.length) {
       this.resolvers.shift()!({value: undefined as never, done: true});
     }
@@ -47,7 +59,7 @@ export class AsyncEventQueue<T> implements AsyncIterable<T> {
         if (this.queue.length) {
           return Promise.resolve({value: this.queue.shift()!, done: false});
         }
-        if (this.closed) {
+        if (this.closedFlag) {
           return Promise.resolve({value: undefined as never, done: true});
         }
         return new Promise(resolve => this.resolvers.push(resolve));
