@@ -8,7 +8,10 @@ import {z} from 'zod';
 import {DbQueryAIExtensionBindings} from '../../../components/db-query/keys';
 import type {DbSchemaHelperService} from '../../../components/db-query/services';
 import type {SchemaStore} from '../../../components/db-query/services/schema.store';
-import type {IDataSetStore} from '../../../components/db-query/types';
+import type {
+  IDataSetStore,
+  IDbConnector,
+} from '../../../components/db-query/types';
 
 /**
  * `generateQueryWorkflow` — Mastra port of the 17-node LangGraph
@@ -432,6 +435,60 @@ Return ONLY the SQL statement. No explanation, no markdown fences, no comments.`
       // test / dry-run mode still complete with a documented stub.
       passed = true;
     }
+
+    // Syntactic validation via IDbConnector.validate() — runs a DB EXPLAIN
+    // against the generated SQL. Mirrors v2 SyntacticValidatorNode.
+    if (passed && sql) {
+      const lb4Ctx = requestContext?.get('lb4Ctx') as Context | undefined;
+      if (lb4Ctx) {
+        const dbConnector = await lb4Ctx.get<IDbConnector>(
+          DbQueryAIExtensionBindings.Connector,
+          {optional: true},
+        );
+        if (dbConnector) {
+          try {
+            await dbConnector.validate(sql);
+          } catch (err) {
+            passed = false;
+            feedback = `Syntactic error: ${(err as Error).message}`;
+          }
+        }
+      }
+    }
+
+    // Semantic validation via LLM checklist comparison. Mirrors v2
+    // SemanticValidatorNode, simplified — emits <valid/> on pass or
+    // <invalid>...feedback...</invalid> on fail. Skipped when no
+    // checklist (the LLM has nothing to verify against).
+    if (passed && sql && chatLlm && data.checklist) {
+      const semanticPrompt = `You are a SQL semantic validator. Decide whether the SQL below satisfies every item in the validation checklist for the user's request.
+
+User request: ${data.prompt ?? ''}
+SQL: ${sql}
+Validation checklist:
+${data.checklist}
+
+If every checklist item is satisfied, return ONLY: <valid/>
+Otherwise return: <invalid>one short sentence per failed item</invalid>
+Do not return any other text.`;
+      try {
+        const verdict = await generateText({
+          model: chatLlm,
+          prompt: semanticPrompt,
+        });
+        const text = verdict.text.trim();
+        if (!text.includes('<valid/>')) {
+          passed = false;
+          const match = text.match(/<invalid>([\s\S]*?)<\/invalid>/);
+          feedback = `Semantic error: ${match?.[1]?.trim() ?? text}`;
+        }
+      } catch {
+        // verdict call failed — treat as pass to avoid blocking the
+        // workflow on a flaky judge LLM. Real Mastra observability
+        // span captures the error.
+      }
+    }
+
     return {
       sql,
       passed,

@@ -4,7 +4,10 @@ import {generateText} from 'ai';
 import type {LanguageModel} from 'ai';
 import {z} from 'zod';
 import {DbQueryAIExtensionBindings} from '../../../components/db-query/keys';
-import type {IDataSetStore} from '../../../components/db-query/types';
+import type {
+  IDataSetStore,
+  IDbConnector,
+} from '../../../components/db-query/types';
 
 /**
  * `improveQueryWorkflow` — improvement variant of `generateQueryWorkflow`.
@@ -135,6 +138,56 @@ Return ONLY the improved SQL statement. No explanation, no markdown fences, no c
         feedback = (err as Error).message;
       }
     }
+
+    // Syntactic validation via IDbConnector.validate() — same pattern as
+    // sql-and-validate in generate.workflow.ts. Mirrors v2 SyntacticValidatorNode.
+    if (passed && sql) {
+      const lb4Ctx = requestContext?.get('lb4Ctx') as Context | undefined;
+      if (lb4Ctx) {
+        const dbConnector = await lb4Ctx.get<IDbConnector>(
+          DbQueryAIExtensionBindings.Connector,
+          {optional: true},
+        );
+        if (dbConnector) {
+          try {
+            await dbConnector.validate(sql);
+          } catch (err) {
+            passed = false;
+            feedback = `Syntactic error: ${(err as Error).message}`;
+          }
+        }
+      }
+    }
+
+    // Semantic validation against the checklist — same pattern as
+    // sql-and-validate. Skipped when no checklist available.
+    if (passed && sql && chatLlm && data.checklist) {
+      const semanticPrompt = `You are a SQL semantic validator. Decide whether the SQL below satisfies every item in the validation checklist for the user's request.
+
+User request: ${data.prompt ?? ''}
+SQL: ${sql}
+Validation checklist:
+${data.checklist}
+
+If every checklist item is satisfied, return ONLY: <valid/>
+Otherwise return: <invalid>one short sentence per failed item</invalid>
+Do not return any other text.`;
+      try {
+        const verdict = await generateText({
+          model: chatLlm,
+          prompt: semanticPrompt,
+        });
+        const text = verdict.text.trim();
+        if (!text.includes('<valid/>')) {
+          passed = false;
+          const match = text.match(/<invalid>([\s\S]*?)<\/invalid>/);
+          feedback = `Semantic error: ${match?.[1]?.trim() ?? text}`;
+        }
+      } catch {
+        // verdict call failed — treat as pass to avoid blocking the loop.
+      }
+    }
+
     return {
       datasetId: data.datasetId ?? '',
       sql,
