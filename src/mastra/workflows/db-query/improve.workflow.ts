@@ -5,11 +5,9 @@ import {DbQueryAIExtensionBindings} from '../../../components/db-query/keys';
 import type {IDataSetStore} from '../../../components/db-query/types';
 import {
   buildImproveSqlPrompt,
-  generateSqlOnce,
   getChatLlm,
   getLb4Ctx,
-  validateSqlSemantic,
-  validateSqlSyntactic,
+  runSqlAttempt,
 } from './_helpers';
 
 const MAX_IMPROVE_ATTEMPTS = 3;
@@ -121,61 +119,27 @@ const fixQueryStep = createStep({
       feedback?: string;
       attempts?: number;
     };
-    const chatLlm = getChatLlm(requestContext);
     const prompt = data.prompt ?? '';
-    let sql = data.originalSql ?? '';
-    let passed = true;
-    let feedback: string | undefined;
-    if (chatLlm && prompt) {
-      const gen = await generateSqlOnce(
-        chatLlm,
-        buildImproveSqlPrompt({
-          prompt,
-          tables: data.tables ?? [],
-          checklist: data.checklist,
-          feedback: data.feedback,
-          originalSql: data.originalSql,
-        }),
-      );
-      if (gen.error) {
-        passed = false;
-        feedback = gen.error;
-      } else if (gen.sql) {
-        sql = gen.sql;
-      }
-    }
-    if (passed && sql) {
-      const syntactic = await validateSqlSyntactic(
-        sql,
-        getLb4Ctx(requestContext),
-      );
-      if (!syntactic.passed) {
-        passed = false;
-        feedback = syntactic.feedback;
-      }
-    }
-    if (passed && sql) {
-      const semantic = await validateSqlSemantic({
-        sql,
-        chatLlm,
-        prompt,
-        checklist: data.checklist,
-      });
-      if (!semantic.passed) {
-        passed = false;
-        feedback = semantic.feedback;
-      }
-    }
-
+    const tables = data.tables ?? [];
+    const attempt = await runSqlAttempt({
+      chatLlm: getChatLlm(requestContext),
+      lb4Ctx: getLb4Ctx(requestContext),
+      prompt,
+      tables,
+      checklist: data.checklist,
+      feedback: data.feedback,
+      buildPrompt: buildImproveSqlPrompt,
+      initialSql: data.originalSql,
+    });
     return {
       datasetId: data.datasetId ?? '',
-      sql,
-      passed,
+      sql: attempt.sql,
+      passed: attempt.passed,
       attempts: (data.attempts ?? 0) + 1,
-      feedback,
+      feedback: attempt.feedback,
       description: undefined,
-      prompt: data.prompt ?? '',
-      tables: data.tables ?? [],
+      prompt,
+      tables,
       checklist: data.checklist ?? '',
     };
   },

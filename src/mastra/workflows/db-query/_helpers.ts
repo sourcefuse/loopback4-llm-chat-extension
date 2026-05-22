@@ -44,15 +44,16 @@ export function getChatLlm(
 
 const SQL_FENCE = '```';
 const SQL_FENCE_LANG = '```sql';
+const JSON_FENCE_LANG = '```json';
 
 /**
- * Strip leading ```sql / ``` fences and trailing ``` plus whitespace.
+ * Strip leading ```<lang> / ``` fences and trailing ``` plus whitespace.
  * Pure string ops to avoid super-linear regex backtracking (s5852).
  */
-export function stripSqlFences(text: string): string {
+function stripFences(text: string, langFence: string): string {
   let s = text.trim();
-  if (s.startsWith(SQL_FENCE_LANG)) {
-    s = s.slice(SQL_FENCE_LANG.length);
+  if (s.startsWith(langFence)) {
+    s = s.slice(langFence.length);
   } else if (s.startsWith(SQL_FENCE)) {
     s = s.slice(SQL_FENCE.length);
   } else {
@@ -64,6 +65,14 @@ export function stripSqlFences(text: string): string {
   return s.trim();
 }
 
+export function stripSqlFences(text: string): string {
+  return stripFences(text, SQL_FENCE_LANG);
+}
+
+export function stripJsonFences(text: string): string {
+  return stripFences(text, JSON_FENCE_LANG);
+}
+
 export type SqlGenInput = {
   prompt: string;
   tables: string[];
@@ -71,6 +80,88 @@ export type SqlGenInput = {
   feedback?: string;
   originalSql?: string;
 };
+
+export type SqlAttemptResult = {
+  sql: string;
+  passed: boolean;
+  feedback?: string;
+  description?: string;
+};
+
+/**
+ * Run one full SQL attempt: generation -> syntactic validation ->
+ * semantic validation. Returns the final attempt result with passed
+ * flag + optional feedback to feed back into the dountil loop. The
+ * step body that wraps this stays under SonarQube's complexity
+ * threshold; all branching lives here.
+ */
+export async function runSqlAttempt(args: {
+  chatLlm: LanguageModel | undefined;
+  lb4Ctx: Context | undefined;
+  prompt: string;
+  tables: string[];
+  checklist?: string;
+  feedback?: string;
+  buildPrompt: (input: SqlGenInput) => string;
+  initialSql?: string;
+  buildDescription?: (sql: string, prompt: string) => string;
+}): Promise<SqlAttemptResult> {
+  const {
+    chatLlm,
+    lb4Ctx,
+    prompt,
+    tables,
+    checklist,
+    feedback,
+    buildPrompt,
+    initialSql,
+    buildDescription,
+  } = args;
+
+  let sql = initialSql ?? '';
+  let description: string | undefined;
+
+  if (chatLlm && prompt) {
+    const gen = await generateSqlOnce(
+      chatLlm,
+      buildPrompt({
+        prompt,
+        tables,
+        checklist,
+        feedback,
+        originalSql: initialSql,
+      }),
+    );
+    if (gen.error) {
+      return {sql: initialSql ?? '', passed: false, feedback: gen.error};
+    }
+    if (gen.sql) {
+      sql = gen.sql;
+      description = buildDescription?.(sql, prompt);
+    }
+  }
+
+  if (sql) {
+    const syntactic = await validateSqlSyntactic(sql, lb4Ctx);
+    if (!syntactic.passed) {
+      return {sql, passed: false, feedback: syntactic.feedback, description};
+    }
+  }
+
+  if (sql) {
+    const semantic = await validateSqlSemantic({
+      sql,
+      chatLlm,
+      prompt,
+      checklist,
+    });
+    if (!semantic.passed) {
+      return {sql, passed: false, feedback: semantic.feedback, description};
+    }
+  }
+
+  return {sql, passed: true, description};
+}
 
 /**
  * Single LLM call producing the next SQL candidate. Caller picks the
@@ -275,7 +366,7 @@ User query: ${prompt}
 Return ONLY valid JSON. Include primary-key and foreign-key columns even if not directly mentioned.`;
   try {
     const result = await generateText({model: chatLlm, prompt: llmPrompt});
-    const cleaned = result.text.trim().replace(/^```json\s*|\s*```$/g, '');
+    const cleaned = stripJsonFences(result.text);
     const parsed = JSON.parse(cleaned) as Record<string, string[]>;
     const filtered = Object.keys(parsed).filter(t =>
       upstreamTables.includes(t),

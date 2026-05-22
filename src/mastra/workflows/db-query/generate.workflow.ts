@@ -6,20 +6,31 @@ import type {IDataSetStore} from '../../../components/db-query/types';
 import {
   buildGenerateSqlPrompt,
   computeSchemaHash,
-  generateSqlOnce,
   getChatLlm,
   getLb4Ctx,
   getTablesWithColumns,
   pickRelevantTables,
   resolvePersistDeps,
   resolveTemplateById,
-  validateSqlSemantic,
-  validateSqlSyntactic,
+  runSqlAttempt,
 } from './_helpers';
 import {DbQueryAIExtensionBindings} from '../../../components/db-query/keys';
 
 const MAX_VALIDATION_ATTEMPTS = 3;
 const SCHEMA_STORE_KEY = 'services.SchemaStore';
+
+/** Workflow status enum exported so the post-cache step's union type
+ * stays under SonarQube's S4622 threshold (max 2 unions inline). */
+type DbQueryStatus = 'AsIs' | 'FromTemplate' | 'Failed' | 'Continue';
+
+function classifyPostCacheStatus(
+  cacheHit: boolean,
+  templateMatched: boolean,
+): DbQueryStatus {
+  if (cacheHit) return 'AsIs';
+  if (templateMatched) return 'FromTemplate';
+  return 'Continue';
+}
 
 /**
  * `generateQueryWorkflow` — Mastra port of the 17-node LangGraph
@@ -289,18 +300,10 @@ const postCacheAndTablesStep = createStep({
     const templates = (getStepResult('check-templates') ?? {
       matched: false,
     }) as {matched: boolean; templateId?: string};
-    let status: 'AsIs' | 'FromTemplate' | 'Failed' | 'Continue';
-    if (cache.cacheHit) {
-      status = 'AsIs';
-    } else if (templates.matched) {
-      status = 'FromTemplate';
-    } else {
-      status = 'Continue';
-    }
     return {
       fromCache: cache.cacheHit,
       fromTemplate: templates.matched,
-      status,
+      status: classifyPostCacheStatus(cache.cacheHit, templates.matched),
       tables: tables.tables,
       templateId: templates.templateId,
       datasetId: cache.datasetId,
@@ -521,60 +524,26 @@ const sqlAndValidateStep = createStep({
       feedback?: string;
       attempts?: number;
     };
-    const chatLlm = getChatLlm(requestContext);
     const prompt = data.prompt ?? '';
-    let sql = '';
-    let description = '';
-    let passed = true;
-    let feedback: string | undefined;
-    if (chatLlm && prompt) {
-      const gen = await generateSqlOnce(
-        chatLlm,
-        buildGenerateSqlPrompt({
-          prompt,
-          tables: data.tables ?? [],
-          checklist: data.checklist,
-          feedback: data.feedback,
-        }),
-      );
-      sql = gen.sql;
-      if (gen.error) {
-        passed = false;
-        feedback = gen.error;
-      } else {
-        description = `Generated SQL for: ${prompt}`;
-      }
-    }
-    if (passed && sql) {
-      const syntactic = await validateSqlSyntactic(
-        sql,
-        getLb4Ctx(requestContext),
-      );
-      if (!syntactic.passed) {
-        passed = false;
-        feedback = syntactic.feedback;
-      }
-    }
-    if (passed && sql) {
-      const semantic = await validateSqlSemantic({
-        sql,
-        chatLlm,
-        prompt,
-        checklist: data.checklist,
-      });
-      if (!semantic.passed) {
-        passed = false;
-        feedback = semantic.feedback;
-      }
-    }
-    return {
-      sql,
-      passed,
-      attempts: (data.attempts ?? 0) + 1,
-      feedback,
-      description,
+    const tables = data.tables ?? [];
+    const attempt = await runSqlAttempt({
+      chatLlm: getChatLlm(requestContext),
+      lb4Ctx: getLb4Ctx(requestContext),
       prompt,
-      tables: data.tables ?? [],
+      tables,
+      checklist: data.checklist,
+      feedback: data.feedback,
+      buildPrompt: buildGenerateSqlPrompt,
+      buildDescription: (_sql, p) => `Generated SQL for: ${p}`,
+    });
+    return {
+      sql: attempt.sql,
+      passed: attempt.passed,
+      attempts: (data.attempts ?? 0) + 1,
+      feedback: attempt.feedback,
+      description: attempt.description ?? '',
+      prompt,
+      tables,
       checklist: data.checklist ?? '',
     };
   },

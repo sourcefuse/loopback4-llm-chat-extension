@@ -29,6 +29,78 @@ function toErrorMessage(err: unknown, fallback: string): string {
   return String(err ?? fallback);
 }
 
+function textDeltaEvent(payload: unknown): LLMStreamEvent {
+  return {
+    type: LLMStreamEventType.Message,
+    data: {message: (payload as {text: string}).text},
+  };
+}
+
+function toolCallEvent(payload: unknown): LLMStreamEvent {
+  const p = payload as {toolCallId: string; toolName: string; args?: unknown};
+  return {
+    type: LLMStreamEventType.Tool,
+    data: {
+      id: p.toolCallId,
+      tool: p.toolName,
+      data: (p.args ?? {}) as Record<string, unknown>,
+    },
+  };
+}
+
+function toolStatusEvent(payload: unknown): LLMStreamEvent {
+  const p = payload as {toolCallId?: string; toolName?: string; args?: unknown};
+  return {
+    type: LLMStreamEventType.ToolStatus,
+    data: {
+      id: p.toolCallId ?? 'unknown',
+      status: ToolStatus.AwaitingApproval,
+      data: {toolName: p.toolName, args: p.args},
+    },
+  };
+}
+
+function tripwireEvent(payload: unknown): LLMStreamEvent {
+  const p = payload as {processorId?: string; reason?: string};
+  return {
+    type: LLMStreamEventType.Error,
+    data: {
+      message: `Blocked by ${p.processorId ?? 'processor'}: ${p.reason ?? 'tripwire'}`,
+    },
+  };
+}
+
+function chunkErrorEvent(payload: unknown): LLMStreamEvent {
+  const err = (payload as {error?: unknown}).error;
+  return {
+    type: LLMStreamEventType.Error,
+    data: {message: toErrorMessage(err, 'error')},
+  };
+}
+
+const CHUNK_MAPPERS: Record<string, (p: unknown) => LLMStreamEvent> = {
+  'text-delta': textDeltaEvent,
+  'tool-call': toolCallEvent,
+  'tool-call-approval': toolStatusEvent,
+  'tool-call-suspended': toolStatusEvent,
+  tripwire: tripwireEvent,
+  error: chunkErrorEvent,
+};
+
+/**
+ * Table-dispatched chunk -> SSE event mapping. Returns undefined for
+ * chunk types that need side-effect handling (e.g. 'finish' which has
+ * to persist the runId on suspend). Extracted to keep handleChunk
+ * under SonarQube's complexity threshold.
+ */
+function mapChunkToEvent(chunk: {
+  type: string;
+  payload: unknown;
+}): LLMStreamEvent | undefined {
+  const mapper = CHUNK_MAPPERS[chunk.type];
+  return mapper ? mapper(chunk.payload) : undefined;
+}
+
 /**
  * REQUEST-scoped bridge between LB4 controllers and the singleton Mastra Agent.
  * Replaces v2's ChatGraph.execute(). The single AsyncEventQueue enforces total
@@ -208,71 +280,13 @@ export class WorkflowRunner {
     stream: {runId?: string | Promise<string>},
     threadId: string,
   ): Promise<void> {
-    switch (chunk.type) {
-      case 'text-delta':
-        queue.push({
-          type: LLMStreamEventType.Message,
-          data: {message: (chunk.payload as {text: string}).text},
-        });
-        return;
-      case 'tool-call': {
-        const p = chunk.payload as {
-          toolCallId: string;
-          toolName: string;
-          args?: unknown;
-        };
-        queue.push({
-          type: LLMStreamEventType.Tool,
-          data: {
-            id: p.toolCallId,
-            tool: p.toolName,
-            data: (p.args ?? {}) as Record<string, unknown>,
-          },
-        });
-        return;
-      }
-      case 'tool-call-approval':
-      case 'tool-call-suspended': {
-        const p = chunk.payload as {
-          toolCallId?: string;
-          toolName?: string;
-          args?: unknown;
-        };
-        queue.push({
-          type: LLMStreamEventType.ToolStatus,
-          data: {
-            id: p.toolCallId ?? 'unknown',
-            status: ToolStatus.AwaitingApproval,
-            data: {toolName: p.toolName, args: p.args},
-          },
-        });
-        return;
-      }
-      case 'tripwire': {
-        const p = chunk.payload as {processorId?: string; reason?: string};
-        queue.push({
-          type: LLMStreamEventType.Error,
-          data: {
-            message: `Blocked by ${p.processorId ?? 'processor'}: ${
-              p.reason ?? 'tripwire'
-            }`,
-          },
-        });
-        return;
-      }
-      case 'error': {
-        const err = (chunk.payload as {error?: unknown}).error;
-        queue.push({
-          type: LLMStreamEventType.Error,
-          data: {message: toErrorMessage(err, 'error')},
-        });
-        return;
-      }
-      case 'finish':
-        await this.maybePersistSuspendedRun(chunk.payload, stream, threadId);
-        return;
-      default:
-        return;
+    const event = mapChunkToEvent(chunk);
+    if (event) {
+      queue.push(event);
+      return;
+    }
+    if (chunk.type === 'finish') {
+      await this.maybePersistSuspendedRun(chunk.payload, stream, threadId);
     }
   }
 
