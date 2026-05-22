@@ -175,11 +175,53 @@ const getDatasetDataStep = createStep({
   },
 });
 
+/**
+ * render-visualization — wired. Picks the matching visualizer from
+ * the consumer-registered registry and delegates to its getConfig().
+ * Visualizers (PieVisualizer, BarVisualizer, LineVisualizer plus any
+ * consumer extension via @visualizer()) own their own LLM calls
+ * internally — the workflow step just dispatches.
+ */
 const renderVisualizationStep = createStep({
   id: 'render-visualization',
   inputSchema: z.any(),
   outputSchema,
-  execute: async () => ({chartConfig: {}}),
+  execute: async ({inputData, requestContext}) => {
+    const wrapped = inputData as Record<string, unknown>;
+    const fromGetDataset = wrapped['get-dataset-data'] as
+      | {datasetId?: string; rows?: unknown[]; chartType?: string}
+      | undefined;
+    const direct = wrapped as {
+      datasetId?: string;
+      rows?: unknown[];
+      chartType?: string;
+    };
+    const chartType = fromGetDataset?.chartType ?? direct.chartType ?? 'bar';
+    const lb4Ctx = requestContext?.get('lb4Ctx') as Context | undefined;
+    if (!lb4Ctx) return {chartConfig: {}};
+    const bindings = lb4Ctx.findByTag({[VISUALIZATION_KEY]: true});
+    if (bindings.length === 0) return {chartConfig: {}};
+    const visualizers = await Promise.all(
+      bindings.map(b => lb4Ctx.get<IVisualizer>(b.key)),
+    );
+    const chosen =
+      visualizers.find(v => v.name === chartType) ?? visualizers[0];
+    try {
+      const config = await chosen.getConfig({
+        prompt: '',
+        datasetId: fromGetDataset?.datasetId ?? direct.datasetId ?? '',
+        sql: undefined,
+        queryDescription: undefined,
+        visualizer: chosen,
+        visualizerName: chosen.name,
+        done: true,
+        type: chartType,
+      });
+      return {chartConfig: config};
+    } catch {
+      return {chartConfig: {}};
+    }
+  },
 });
 
 export const visualizationWorkflow = createWorkflow({

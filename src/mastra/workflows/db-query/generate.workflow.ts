@@ -1,6 +1,8 @@
 import type {Context} from '@loopback/core';
 import {createStep, createWorkflow} from '@mastra/core/workflows';
 import type {IAuthUserWithPermissions} from '@sourceloop/core';
+import {generateText} from 'ai';
+import type {LanguageModel} from 'ai';
 import {AuthenticationBindings} from 'loopback4-authentication';
 import {z} from 'zod';
 import {DbQueryAIExtensionBindings} from '../../../components/db-query/keys';
@@ -214,12 +216,20 @@ const getColumnsStep = createStep({
   }),
 });
 
+/**
+ * generate-checklist — wired with LLM. Asks the chat model to produce
+ * a short bulleted validation checklist for the upcoming SQL
+ * generation, given the user prompt and the chosen tables. Mirrors v2
+ * GenerateChecklistNode body (`git show 4be9767^:src/components/db-query/nodes/generate-checklist.node.ts`)
+ * minus the structured-output coercion.
+ *
+ * After `.branch()` Mastra wraps the matched branch's output under the
+ * branch step's id (mirroring the .parallel() fan-in shape). The body
+ * unwraps defensively so the step runs regardless of which branch
+ * fired.
+ */
 const generateChecklistStep = createStep({
   id: 'generate-checklist',
-  // After `.branch()` Mastra wraps the matched branch's output under the
-  // branch step's id (mirroring the .parallel() fan-in shape). The body
-  // unwraps defensively so generateChecklist runs regardless of which
-  // branch fired.
   inputSchema: z.any(),
   outputSchema: z.object({
     prompt: z.string(),
@@ -227,24 +237,45 @@ const generateChecklistStep = createStep({
     checklist: z.string(),
     attempts: z.number(),
   }),
-  execute: async ({inputData}) => {
+  execute: async ({inputData, requestContext}) => {
     const wrapped = inputData as Record<string, unknown>;
     const fromGetColumns = wrapped['get-columns'] as
       | {prompt?: string; tables?: string[]}
       | undefined;
-    return {
-      prompt:
-        fromGetColumns?.prompt ?? (wrapped.prompt as string | undefined) ?? '',
-      tables:
-        fromGetColumns?.tables ??
-        (wrapped.tables as string[] | undefined) ??
-        [],
-      checklist: '',
-      attempts: 0,
-    };
+    const prompt =
+      fromGetColumns?.prompt ?? (wrapped.prompt as string | undefined) ?? '';
+    const tables =
+      fromGetColumns?.tables ?? (wrapped.tables as string[] | undefined) ?? [];
+    const chatLlm = requestContext?.get('chatLlm') as LanguageModel | undefined;
+    let checklist = '';
+    if (chatLlm && prompt) {
+      const llmPrompt = `You are an AI assistant. Produce a concise bullet-list checklist (3-6 items) of constraints the SQL query about to be generated must satisfy.
+
+User request: ${prompt}
+Available tables: ${tables.join(', ') || '(none)'}
+
+Return ONLY the checklist as plain text bullets, no preamble.`;
+      try {
+        const result = await generateText({model: chatLlm, prompt: llmPrompt});
+        checklist = result.text.trim();
+      } catch {
+        // LLM unavailable / failed — proceed with empty checklist so
+        // the dountil loop can still attempt SQL generation.
+      }
+    }
+    return {prompt, tables, checklist, attempts: 0};
   },
 });
 
+/**
+ * sql-and-validate — wired with LLM. Composite step that generates
+ * SQL via the chat model and (in a follow-up commit) runs the
+ * syntactic + semantic validators in parallel. For now the step does
+ * SQL generation only and marks passed=true so the dountil loop exits
+ * after the first iteration. The validator wiring follows the same
+ * generateText pattern with bespoke prompts restored from
+ * `git show 4be9767^:src/components/db-query/nodes/{syntactic,semantic}-validator.node.ts`.
+ */
 const sqlAndValidateStep = createStep({
   id: 'sql-and-validate',
   // Loose input schema: dountil feeds this step its own output on each
@@ -262,7 +293,7 @@ const sqlAndValidateStep = createStep({
     tables: z.array(z.string()),
     checklist: z.string(),
   }),
-  execute: async ({inputData}) => {
+  execute: async ({inputData, requestContext}) => {
     const data = inputData as {
       prompt?: string;
       tables?: string[];
@@ -270,12 +301,44 @@ const sqlAndValidateStep = createStep({
       feedback?: string;
       attempts?: number;
     };
+    const chatLlm = requestContext?.get('chatLlm') as LanguageModel | undefined;
+    let sql = '';
+    let description = '';
+    let passed = true;
+    let feedback: string | undefined;
+    if (chatLlm && data.prompt) {
+      const llmPrompt = `You are a SQL expert. Generate a single ANSI SQL query that satisfies the user's request.
+
+User request: ${data.prompt}
+Allowed tables: ${(data.tables ?? []).join(', ') || '(any)'}
+Validation checklist:
+${data.checklist ?? '(none)'}
+${
+  data.feedback
+    ? `Previous attempt was rejected with the following feedback that you must address: ${data.feedback}`
+    : ''
+}
+
+Return ONLY the SQL statement. No explanation, no markdown fences, no comments.`;
+      try {
+        const result = await generateText({model: chatLlm, prompt: llmPrompt});
+        sql = result.text.trim().replace(/^```sql\s*|\s*```$/g, '');
+        description = `Generated SQL for: ${data.prompt}`;
+      } catch (err) {
+        passed = false;
+        feedback = (err as Error).message;
+      }
+    } else {
+      // No LLM bound — preserve loop-exit behaviour so callers in
+      // test / dry-run mode still complete with a documented stub.
+      passed = true;
+    }
     return {
-      sql: '',
-      passed: true,
+      sql,
+      passed,
       attempts: (data.attempts ?? 0) + 1,
-      feedback: undefined,
-      description: '',
+      feedback,
+      description,
       prompt: data.prompt ?? '',
       tables: data.tables ?? [],
       checklist: data.checklist ?? '',

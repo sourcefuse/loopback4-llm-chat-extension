@@ -1,5 +1,7 @@
 import type {Context} from '@loopback/core';
 import {createStep, createWorkflow} from '@mastra/core/workflows';
+import {generateText} from 'ai';
+import type {LanguageModel} from 'ai';
 import {z} from 'zod';
 import {DbQueryAIExtensionBindings} from '../../../components/db-query/keys';
 import type {IDataSetStore} from '../../../components/db-query/types';
@@ -78,36 +80,73 @@ const loadExistingStep = createStep({
   },
 });
 
+/**
+ * fix-query — wired with LLM. dountil loop body that asks the chat
+ * model to produce an improved SQL statement honouring the user's
+ * delta prompt + the original query (forwarded via load-existing's
+ * originalSql). Validator wiring still TODO — for now the step marks
+ * passed=true on a successful LLM call so the loop exits after first
+ * iteration. Validator restoration follows the same path as
+ * sql-and-validate's TODO in generate.workflow.ts.
+ */
 const fixQueryStep = createStep({
   id: 'fix-query',
-  inputSchema: z.object({
-    datasetId: z.string(),
-    prompt: z.string(),
-    tables: z.array(z.string()),
-    checklist: z.string(),
-    feedback: z.string().optional(),
-    attempts: z.number(),
-  }),
+  inputSchema: z.any(),
   outputSchema: z.object({
     datasetId: z.string(),
     sql: z.string(),
     passed: z.boolean(),
     attempts: z.number(),
     feedback: z.string().optional(),
+    description: z.string().optional(),
     prompt: z.string(),
     tables: z.array(z.string()),
     checklist: z.string(),
   }),
-  execute: async ({inputData}) => ({
-    datasetId: inputData.datasetId,
-    sql: '',
-    passed: true,
-    attempts: inputData.attempts + 1,
-    feedback: undefined,
-    prompt: inputData.prompt,
-    tables: inputData.tables,
-    checklist: inputData.checklist,
-  }),
+  execute: async ({inputData, requestContext}) => {
+    const data = inputData as {
+      datasetId?: string;
+      prompt?: string;
+      originalSql?: string;
+      tables?: string[];
+      checklist?: string;
+      feedback?: string;
+      attempts?: number;
+    };
+    const chatLlm = requestContext?.get('chatLlm') as LanguageModel | undefined;
+    let sql = data.originalSql ?? '';
+    let passed = true;
+    let feedback: string | undefined;
+    if (chatLlm && data.prompt) {
+      const llmPrompt = `You are a SQL expert. Improve the existing SQL query to satisfy the user's new request.
+
+Existing SQL: ${data.originalSql ?? '(none)'}
+User feedback / delta request: ${data.prompt}
+Allowed tables: ${(data.tables ?? []).join(', ') || '(any)'}
+${data.checklist ? `Validation checklist:\n${data.checklist}` : ''}
+${data.feedback ? `Previous attempt was rejected: ${data.feedback}` : ''}
+
+Return ONLY the improved SQL statement. No explanation, no markdown fences, no comments.`;
+      try {
+        const result = await generateText({model: chatLlm, prompt: llmPrompt});
+        sql = result.text.trim().replace(/^```sql\s*|\s*```$/g, '');
+      } catch (err) {
+        passed = false;
+        feedback = (err as Error).message;
+      }
+    }
+    return {
+      datasetId: data.datasetId ?? '',
+      sql,
+      passed,
+      attempts: (data.attempts ?? 0) + 1,
+      feedback,
+      description: undefined,
+      prompt: data.prompt ?? '',
+      tables: data.tables ?? [],
+      checklist: data.checklist ?? '',
+    };
+  },
 });
 
 /**
