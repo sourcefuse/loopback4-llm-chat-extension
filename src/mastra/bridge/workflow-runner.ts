@@ -20,6 +20,16 @@ import {DbQueryAIExtensionBindings} from '../../components/db-query/keys';
 import type {IDbConnector} from '../../components/db-query/types';
 
 /**
+ * Safe conversion of any thrown value to a non-empty error message.
+ * Used by the pump task's chunk + outer catches so the SSE Error
+ * event never carries an undefined / empty payload.
+ */
+function toErrorMessage(err: unknown, fallback: string): string {
+  if (err instanceof Error) return err.message ?? fallback;
+  return String(err ?? fallback);
+}
+
+/**
  * REQUEST-scoped bridge between LB4 controllers and the singleton Mastra Agent.
  * Replaces v2's ChatGraph.execute(). The single AsyncEventQueue enforces total
  * order across the pre-processing block, the fullStream pump task, and any
@@ -149,118 +159,164 @@ export class WorkflowRunner {
     // Pump task is fire-and-forget; completion is signalled by queue.close()
     // inside the inner finally. The inner try/catch maps any thrown error to
     // an SSE Error event before closing, so this promise never rejects.
-    (async () => {
-      try {
-        const stream = await streamPromise;
-        for await (const chunk of stream.fullStream) {
-          switch (chunk.type) {
-            case 'text-delta':
-              queue.push({
-                type: LLMStreamEventType.Message,
-                data: {message: chunk.payload.text},
-              });
-              break;
-            case 'tool-call':
-              queue.push({
-                type: LLMStreamEventType.Tool,
-                data: {
-                  id: chunk.payload.toolCallId,
-                  tool: chunk.payload.toolName,
-                  data: (chunk.payload.args ?? {}) as Record<string, unknown>,
-                },
-              });
-              break;
-            case 'tool-call-approval':
-            case 'tool-call-suspended':
-              queue.push({
-                type: LLMStreamEventType.ToolStatus,
-                data: {
-                  id:
-                    (chunk.payload as {toolCallId?: string}).toolCallId ??
-                    'unknown',
-                  status: ToolStatus.AwaitingApproval,
-                  data: {
-                    toolName: (chunk.payload as {toolName?: string}).toolName,
-                    args: (chunk.payload as {args?: unknown}).args,
-                  },
-                },
-              });
-              break;
-            case 'tripwire':
-              queue.push({
-                type: LLMStreamEventType.Error,
-                data: {
-                  message: `Blocked by ${chunk.payload.processorId ?? 'processor'}: ${
-                    chunk.payload.reason ?? 'tripwire'
-                  }`,
-                },
-              });
-              break;
-            case 'error': {
-              const err = (chunk.payload as {error?: unknown}).error;
-              queue.push({
-                type: LLMStreamEventType.Error,
-                data: {
-                  message:
-                    err instanceof Error ? err.message : String(err ?? 'error'),
-                },
-              });
-              break;
-            }
-            case 'finish':
-              // Persist runId on suspend so ApprovalController can resume.
-              // The finish chunk payload shape varies across Mastra patch
-              // versions; cast defensively.
-              if (
-                (chunk.payload as {output?: {finishReason?: string}})?.output
-                  ?.finishReason === 'suspended'
-              ) {
-                const runId =
-                  (chunk.payload as {runId?: string})?.runId ??
-                  (await (stream as {runId?: string | Promise<string>})?.runId);
-                if (runId && thread && this.runRegistry) {
-                  await this.runRegistry.set(thread.id, runId);
-                }
-              }
-              break;
-          }
-        }
-        try {
-          const u = await stream.usage;
-          this.usage?.add('chat-llm', {
-            inputTokens: u.inputTokens ?? 0,
-            outputTokens: u.outputTokens ?? 0,
-          });
-          queue.push({
-            type: LLMStreamEventType.TokenCount,
-            data: {
-              inputTokens: u.inputTokens ?? 0,
-              outputTokens: u.outputTokens ?? 0,
-            },
-          });
-        } catch {
-          // usage may reject on error / abort paths; skip TokenCount
-        }
-      } catch (err) {
-        // Safe conversion: handle non-Error throws and missing
-        //.message so the SSE Error event never carries an empty
-        // payload, mirroring the chunk 'error' branch above.
-        const message =
-          err instanceof Error
-            ? (err.message ?? 'Unknown error during agent.stream')
-            : String(err ?? 'Unknown error during agent.stream');
-        queue.push({
-          type: LLMStreamEventType.Error,
-          data: {message},
-        });
-      } finally {
-        queue.close();
-      }
-    })().catch(() => {
-      /* errors handled inside the IIFE; this guard satisfies no-floating-promises. */
+    this.pumpStream(streamPromise, queue, thread.id).catch(() => {
+      /* errors handled inside pumpStream; guard satisfies no-floating-promises. */
     });
 
     yield* queue;
+  }
+
+  /**
+   * Drain a Mastra `agent.stream()` into the SSE queue. Extracted from
+   * run() to keep cyclomatic + cognitive complexity below
+   * SonarQube's thresholds. Maps every chunk type to its SSE event,
+   * captures usage, and surfaces any thrown error as an SSE Error
+   * event before closing the queue.
+   */
+  private async pumpStream(
+    streamPromise: Promise<unknown>,
+    queue: AsyncEventQueue<LLMStreamEvent>,
+    threadId: string,
+  ): Promise<void> {
+    type ChunkLike = {type: string; payload: unknown};
+    type StreamLike = {
+      fullStream: AsyncIterable<ChunkLike>;
+      usage: Promise<{inputTokens?: number; outputTokens?: number}>;
+      runId?: string | Promise<string>;
+    };
+    try {
+      const stream = (await streamPromise) as unknown as StreamLike;
+      for await (const chunk of stream.fullStream) {
+        await this.handleChunk(chunk, queue, stream, threadId);
+      }
+      await this.emitUsage(stream, queue);
+    } catch (err) {
+      queue.push({
+        type: LLMStreamEventType.Error,
+        data: {
+          message: toErrorMessage(err, 'Unknown error during agent.stream'),
+        },
+      });
+    } finally {
+      queue.close();
+    }
+  }
+
+  private async handleChunk(
+    chunk: {type: string; payload: unknown},
+    queue: AsyncEventQueue<LLMStreamEvent>,
+    stream: {runId?: string | Promise<string>},
+    threadId: string,
+  ): Promise<void> {
+    switch (chunk.type) {
+      case 'text-delta':
+        queue.push({
+          type: LLMStreamEventType.Message,
+          data: {message: (chunk.payload as {text: string}).text},
+        });
+        return;
+      case 'tool-call': {
+        const p = chunk.payload as {
+          toolCallId: string;
+          toolName: string;
+          args?: unknown;
+        };
+        queue.push({
+          type: LLMStreamEventType.Tool,
+          data: {
+            id: p.toolCallId,
+            tool: p.toolName,
+            data: (p.args ?? {}) as Record<string, unknown>,
+          },
+        });
+        return;
+      }
+      case 'tool-call-approval':
+      case 'tool-call-suspended': {
+        const p = chunk.payload as {
+          toolCallId?: string;
+          toolName?: string;
+          args?: unknown;
+        };
+        queue.push({
+          type: LLMStreamEventType.ToolStatus,
+          data: {
+            id: p.toolCallId ?? 'unknown',
+            status: ToolStatus.AwaitingApproval,
+            data: {toolName: p.toolName, args: p.args},
+          },
+        });
+        return;
+      }
+      case 'tripwire': {
+        const p = chunk.payload as {processorId?: string; reason?: string};
+        queue.push({
+          type: LLMStreamEventType.Error,
+          data: {
+            message: `Blocked by ${p.processorId ?? 'processor'}: ${
+              p.reason ?? 'tripwire'
+            }`,
+          },
+        });
+        return;
+      }
+      case 'error': {
+        const err = (chunk.payload as {error?: unknown}).error;
+        queue.push({
+          type: LLMStreamEventType.Error,
+          data: {message: toErrorMessage(err, 'error')},
+        });
+        return;
+      }
+      case 'finish':
+        await this.maybePersistSuspendedRun(chunk.payload, stream, threadId);
+        return;
+      default:
+        return;
+    }
+  }
+
+  /**
+   * When a finish chunk reports finishReason='suspended', persist the
+   * runId on the registry so ApprovalController can resume the run on
+   * the next request.
+   */
+  private async maybePersistSuspendedRun(
+    payload: unknown,
+    stream: {runId?: string | Promise<string>},
+    threadId: string,
+  ): Promise<void> {
+    const finishReason = (payload as {output?: {finishReason?: string}})?.output
+      ?.finishReason;
+    if (finishReason !== 'suspended') return;
+    const runId = (payload as {runId?: string})?.runId ?? (await stream?.runId);
+    if (runId && this.runRegistry) {
+      await this.runRegistry.set(threadId, runId);
+    }
+  }
+
+  private async emitUsage(
+    stream: {
+      usage: Promise<{inputTokens?: number; outputTokens?: number}>;
+    },
+    queue: AsyncEventQueue<LLMStreamEvent>,
+  ): Promise<void> {
+    try {
+      const u = await stream.usage;
+      this.usage?.add('chat-llm', {
+        inputTokens: u.inputTokens ?? 0,
+        outputTokens: u.outputTokens ?? 0,
+      });
+      queue.push({
+        type: LLMStreamEventType.TokenCount,
+        data: {
+          inputTokens: u.inputTokens ?? 0,
+          outputTokens: u.outputTokens ?? 0,
+        },
+      });
+    } catch {
+      // usage may reject on error / abort paths; skip TokenCount
+    }
   }
 
   /**

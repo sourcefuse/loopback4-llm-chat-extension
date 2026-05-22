@@ -1,33 +1,18 @@
 import type {Context} from '@loopback/core';
 import {createStep, createWorkflow} from '@mastra/core/workflows';
-import {generateText} from 'ai';
-import type {LanguageModel} from 'ai';
 import {z} from 'zod';
 import {DbQueryAIExtensionBindings} from '../../../components/db-query/keys';
-import type {
-  IDataSetStore,
-  IDbConnector,
-} from '../../../components/db-query/types';
+import type {IDataSetStore} from '../../../components/db-query/types';
+import {
+  buildImproveSqlPrompt,
+  generateSqlOnce,
+  getChatLlm,
+  getLb4Ctx,
+  validateSqlSemantic,
+  validateSqlSyntactic,
+} from './_helpers';
 
 const MAX_IMPROVE_ATTEMPTS = 3;
-
-/**
- * Strip leading ```sql / ``` and trailing ``` fences plus whitespace.
- * Pure string ops avoid the super-linear regex backtracking that
- * `s5852` flags.
- */
-function stripSqlFences(text: string): string {
-  let s = text.trim();
-  if (s.startsWith('```sql')) {
-    s = s.slice('```sql'.length);
-  } else if (s.startsWith('```')) {
-    s = s.slice('```'.length);
-  }
-  if (s.endsWith('```')) {
-    s = s.slice(0, -3);
-  }
-  return s.trim();
-}
 
 /**
  * `improveQueryWorkflow` — improvement variant of `generateQueryWorkflow`.
@@ -136,75 +121,49 @@ const fixQueryStep = createStep({
       feedback?: string;
       attempts?: number;
     };
-    const chatLlm = requestContext?.get('chatLlm') as LanguageModel | undefined;
+    const chatLlm = getChatLlm(requestContext);
+    const prompt = data.prompt ?? '';
     let sql = data.originalSql ?? '';
     let passed = true;
     let feedback: string | undefined;
-    if (chatLlm && data.prompt) {
-      const llmPrompt = `You are a SQL expert. Improve the existing SQL query to satisfy the user's new request.
-
-Existing SQL: ${data.originalSql ?? '(none)'}
-User feedback / delta request: ${data.prompt}
-Allowed tables: ${(data.tables ?? []).join(', ') || '(any)'}
-${data.checklist ? `Validation checklist:\n${data.checklist}` : ''}
-${data.feedback ? `Previous attempt was rejected: ${data.feedback}` : ''}
-
-Return ONLY the improved SQL statement. No explanation, no markdown fences, no comments.`;
-      try {
-        const result = await generateText({model: chatLlm, prompt: llmPrompt});
-        sql = stripSqlFences(result.text);
-      } catch (err) {
+    if (chatLlm && prompt) {
+      const gen = await generateSqlOnce(
+        chatLlm,
+        buildImproveSqlPrompt({
+          prompt,
+          tables: data.tables ?? [],
+          checklist: data.checklist,
+          feedback: data.feedback,
+          originalSql: data.originalSql,
+        }),
+      );
+      if (gen.error) {
         passed = false;
-        feedback = (err as Error).message;
+        feedback = gen.error;
+      } else if (gen.sql) {
+        sql = gen.sql;
       }
     }
-
-    // Syntactic validation via IDbConnector.validate() — same pattern as
-    // sql-and-validate in generate.workflow.ts. Mirrors v2 SyntacticValidatorNode.
     if (passed && sql) {
-      const lb4Ctx = requestContext?.get('lb4Ctx') as Context | undefined;
-      if (lb4Ctx) {
-        const dbConnector = await lb4Ctx.get<IDbConnector>(
-          DbQueryAIExtensionBindings.Connector,
-          {optional: true},
-        );
-        if (dbConnector) {
-          try {
-            await dbConnector.validate(sql);
-          } catch (err) {
-            passed = false;
-            feedback = `Syntactic error: ${(err as Error).message}`;
-          }
-        }
+      const syntactic = await validateSqlSyntactic(
+        sql,
+        getLb4Ctx(requestContext),
+      );
+      if (!syntactic.passed) {
+        passed = false;
+        feedback = syntactic.feedback;
       }
     }
-
-    // Semantic validation against the checklist — same pattern as
-    // sql-and-validate. Skipped when no checklist available.
-    if (passed && sql && chatLlm && data.checklist) {
-      const semanticPrompt = `You are a SQL semantic validator. Decide whether the SQL below satisfies every item in the validation checklist for the user's request.
-
-User request: ${data.prompt ?? ''}
-SQL: ${sql}
-Validation checklist:
-${data.checklist}
-
-If every checklist item is satisfied, return ONLY: <valid/>
-Otherwise return: <invalid>one short sentence per failed item</invalid>
-Do not return any other text.`;
-      try {
-        const verdict = await generateText({
-          model: chatLlm,
-          prompt: semanticPrompt,
-        });
-        const text = verdict.text.trim();
-        if (!text.includes('<valid/>')) {
-          passed = false;
-          const match = text.match(/<invalid>([\s\S]*?)<\/invalid>/);
-          feedback = `Semantic error: ${match?.[1]?.trim() ?? text}`;
-        }
-      } catch {
-        // verdict call failed — treat as pass to avoid blocking the loop.
+    if (passed && sql) {
+      const semantic = await validateSqlSemantic({
+        sql,
+        chatLlm,
+        prompt,
+        checklist: data.checklist,
+      });
+      if (!semantic.passed) {
+        passed = false;
+        feedback = semantic.feedback;
       }
     }
 
