@@ -2,6 +2,8 @@ import type {Context} from '@loopback/core';
 import {createStep, createWorkflow} from '@mastra/core/workflows';
 import {z} from 'zod';
 import type {DataSetHelper} from '../../components/db-query/services';
+import {VISUALIZATION_KEY} from '../../components/visualization/keys';
+import type {IVisualizer} from '../../components/visualization/types';
 
 /**
  * `visualizationWorkflow` — Mastra port of the 4-node VisualizationGraph.
@@ -25,19 +27,45 @@ const outputSchema = z.object({
   chartConfig: z.unknown(),
 });
 
+/**
+ * select-visualisation — wired without LLM. Walks the @visualizer()-tagged
+ * bindings the consumer registered, picks the first one whose `name`
+ * matches the user-supplied `type` hint, falls back to 'bar'. The v2
+ * SelectVisualizationNode used an LLM to pick from the list when the
+ * caller did not supply a type; that LLM path is restored in a
+ * follow-up alongside the other LLM-driven nodes
+ * (`git show 4be9767^:src/components/visualization/nodes/select-visualization.node.ts`).
+ * needsQuery=true when no datasetId provided so the workflow branches
+ * to call-query-generation; otherwise reads dataset rows directly.
+ */
 const selectVisualisationStep = createStep({
   id: 'select-visualisation',
-  inputSchema,
+  inputSchema: z.object({
+    datasetId: z.string(),
+    userQuery: z.string(),
+    type: z.string().optional(),
+  }),
   outputSchema: z.object({
     datasetId: z.string(),
     needsQuery: z.boolean(),
     chartType: z.string(),
   }),
-  execute: async ({inputData}) => ({
-    datasetId: inputData.datasetId,
-    needsQuery: false,
-    chartType: 'bar',
-  }),
+  execute: async ({inputData, requestContext}) => {
+    const lb4Ctx = requestContext?.get('lb4Ctx') as Context | undefined;
+    let chartType = inputData.type ?? 'bar';
+    if (lb4Ctx && !inputData.type) {
+      const bindings = lb4Ctx.findByTag({[VISUALIZATION_KEY]: true});
+      if (bindings.length > 0) {
+        const first = await lb4Ctx.get<IVisualizer>(bindings[0].key);
+        chartType = first.name;
+      }
+    }
+    return {
+      datasetId: inputData.datasetId,
+      needsQuery: !inputData.datasetId,
+      chartType,
+    };
+  },
 });
 
 const callQueryGenerationStep = createStep({

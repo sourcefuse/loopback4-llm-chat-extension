@@ -110,15 +110,44 @@ const fixQueryStep = createStep({
   }),
 });
 
+/**
+ * save-improved — wired. Updates the existing dataset row with the new
+ * SQL produced by the dountil(fix-query) loop. No tenant check needed
+ * since the row already belongs to the caller (load-existing resolved
+ * it via findById which honours datasource RLS).
+ */
 const saveImprovedStep = createStep({
   id: 'save-improved',
   inputSchema: z.any(),
   outputSchema,
-  execute: async ({inputData}) => ({
-    datasetId: (inputData as {datasetId?: string})?.datasetId ?? '',
-    sql: (inputData as {sql?: string})?.sql ?? '',
-    rowCount: 0,
-  }),
+  execute: async ({inputData, requestContext}) => {
+    const data = inputData as {
+      datasetId?: string;
+      sql?: string;
+      description?: string;
+    };
+    const fallback = {
+      datasetId: data.datasetId ?? '',
+      sql: data.sql ?? '',
+      rowCount: 0,
+    };
+    const lb4Ctx = requestContext?.get('lb4Ctx') as Context | undefined;
+    if (!lb4Ctx || !data.datasetId || !data.sql) return fallback;
+    const store = await lb4Ctx.get<IDataSetStore>(
+      DbQueryAIExtensionBindings.DatasetStore,
+      {optional: true},
+    );
+    if (!store) return fallback;
+    try {
+      await store.updateById(data.datasetId, {
+        query: data.sql,
+        description: data.description ?? undefined,
+      });
+    } catch {
+      return fallback;
+    }
+    return {datasetId: data.datasetId, sql: data.sql, rowCount: 0};
+  },
 });
 
 const failedStep = createStep({

@@ -1,7 +1,12 @@
 import type {Context} from '@loopback/core';
 import {createStep, createWorkflow} from '@mastra/core/workflows';
+import type {IAuthUserWithPermissions} from '@sourceloop/core';
+import {AuthenticationBindings} from 'loopback4-authentication';
 import {z} from 'zod';
+import {DbQueryAIExtensionBindings} from '../../../components/db-query/keys';
+import type {DbSchemaHelperService} from '../../../components/db-query/services';
 import type {SchemaStore} from '../../../components/db-query/services/schema.store';
+import type {IDataSetStore} from '../../../components/db-query/types';
 
 /**
  * `generateQueryWorkflow` — Mastra port of the 17-node LangGraph
@@ -256,15 +261,70 @@ const sqlAndValidateStep = createStep({
   },
 });
 
+/**
+ * save-dataset — wired. Mirrors the storage half of v2 SaveDataSetNode
+ * (`git show 4be9767^:src/components/db-query/nodes/save-dataset-node.ts`)
+ * minus the LLM-driven description generation, which is deferred to
+ * the future generate-description step inside the dountil composite.
+ * The LLM-free path is enough to land real datasets when callers
+ * supply a description (the v2 GenerateDescription node populated it).
+ */
 const saveDatasetStep = createStep({
   id: 'save-dataset',
   inputSchema: z.any(),
   outputSchema,
-  execute: async ({inputData}) => ({
-    datasetId: '',
-    sql: (inputData as {sql?: string})?.sql ?? '',
-    rowCount: 0,
-  }),
+  execute: async ({inputData, requestContext}) => {
+    const data = inputData as {
+      sql?: string;
+      description?: string;
+      prompt?: string;
+      tables?: string[];
+    };
+    const fallback = {
+      datasetId: '',
+      sql: data.sql ?? '',
+      rowCount: 0,
+    };
+    const lb4Ctx = requestContext?.get('lb4Ctx') as Context | undefined;
+    if (!lb4Ctx || !data.sql) return fallback;
+    const store = await lb4Ctx.get<IDataSetStore>(
+      DbQueryAIExtensionBindings.DatasetStore,
+      {optional: true},
+    );
+    const user = await lb4Ctx.get<IAuthUserWithPermissions>(
+      AuthenticationBindings.CURRENT_USER,
+      {optional: true},
+    );
+    if (!store || !user?.tenantId) return fallback;
+    const schemaHelper = await lb4Ctx.get<DbSchemaHelperService>(
+      'services.DbSchemaHelperService',
+      {optional: true},
+    );
+    const schemaStore = await lb4Ctx.get<SchemaStore>('services.SchemaStore', {
+      optional: true,
+    });
+    let schemaHash = '';
+    let tableList = data.tables ?? [];
+    try {
+      const schema = schemaStore?.get();
+      if (schema && schemaHelper) {
+        schemaHash = schemaHelper.computeHash(schema);
+        if (!tableList.length) tableList = Object.keys(schema.tables);
+      }
+    } catch {
+      // schema not loaded — keep schemaHash empty.
+    }
+    const dataset = await store.create({
+      tenantId: user.tenantId,
+      query: data.sql,
+      description: data.description ?? '',
+      prompt: data.prompt ?? '',
+      tables: tableList,
+      schemaHash,
+      votes: 0,
+    });
+    return {datasetId: dataset.id ?? '', sql: data.sql, rowCount: 0};
+  },
 });
 
 export const generateQueryWorkflow = createWorkflow({
