@@ -37,6 +37,7 @@ export class MastraPgVectorStore implements Provider<MastraVector> {
       !process.env.DB_HOST ||
       !process.env.DB_PORT ||
       !process.env.DB_USER ||
+      !process.env.DB_PASSWORD ||
       !process.env.DB_DATABASE
     ) {
       throw new Error(
@@ -53,8 +54,19 @@ export class MastraPgVectorStore implements Provider<MastraVector> {
     });
   }
 
+  /**
+   * URL-encodes every credential / host component so reserved URI
+   * characters in DB_USER / DB_PASSWORD (e.g. ':' or '@') don't
+   * silently corrupt the connection string. The required-var guard in
+   * `value()` already failed fast above, so all five values are
+   * guaranteed populated here.
+   */
   private buildConnString(): string {
-    const {DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_DATABASE} = process.env;
-    return `postgresql://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_DATABASE}`;
+    const user = encodeURIComponent(process.env.DB_USER!);
+    const password = encodeURIComponent(process.env.DB_PASSWORD!);
+    const host = encodeURIComponent(process.env.DB_HOST!);
+    const port = encodeURIComponent(process.env.DB_PORT!);
+    const database = encodeURIComponent(process.env.DB_DATABASE!);
+    return `postgresql://${user}:${password}@${host}:${port}/${database}`;
   }
 }
