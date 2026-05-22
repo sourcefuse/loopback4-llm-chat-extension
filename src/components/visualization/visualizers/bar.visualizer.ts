@@ -1,10 +1,9 @@
 import {PromptTemplate} from '@langchain/core/prompts';
-import {IVisualizer} from '../types';
+import {IVisualizer, VisualizationGraphState} from '../types';
 import {AiIntegrationBindings} from '../../../keys';
 import {LLMProvider} from '../../../types';
 import {inject} from '@loopback/core';
 import {AnyObject} from '@loopback/repository';
-import {VisualizationGraphState} from '../types';
 import z from 'zod';
 import {RunnableSequence} from '@langchain/core/runnables';
 import {visualizer} from '../decorators/visualizer.decorator';

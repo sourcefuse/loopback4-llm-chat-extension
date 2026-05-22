@@ -17,6 +17,27 @@ import type {
   IQueryTemplateStore,
 } from '../../../components/db-query/types';
 
+const MAX_VALIDATION_ATTEMPTS = 3;
+const SCHEMA_STORE_KEY = 'services.SchemaStore';
+
+/**
+ * Strip a leading ```sql / ``` fence and a trailing ``` fence from an
+ * LLM response, plus surrounding whitespace. Pure string ops to avoid
+ * the super-linear regex backtracking that `s5852` flags.
+ */
+function stripSqlFences(text: string): string {
+  let s = text.trim();
+  if (s.startsWith('```sql')) {
+    s = s.slice('```sql'.length);
+  } else if (s.startsWith('```')) {
+    s = s.slice('```'.length);
+  }
+  if (s.endsWith('```')) {
+    s = s.slice(0, -3);
+  }
+  return s.trim();
+}
+
 /**
  * `generateQueryWorkflow` — Mastra port of the 17-node LangGraph
  * DbQueryGraph that builds a SQL dataset from a natural-language prompt.
@@ -143,7 +164,7 @@ const getTablesStep = createStep({
   execute: async ({requestContext}) => {
     const lb4Ctx = requestContext?.get('lb4Ctx') as Context | undefined;
     if (!lb4Ctx) return {tables: []};
-    const schemaStore = await lb4Ctx.get<SchemaStore>('services.SchemaStore', {
+    const schemaStore = await lb4Ctx.get<SchemaStore>(SCHEMA_STORE_KEY, {
       optional: true,
     });
     if (!schemaStore) return {tables: []};
@@ -285,14 +306,18 @@ const postCacheAndTablesStep = createStep({
     const templates = (getStepResult('check-templates') ?? {
       matched: false,
     }) as {matched: boolean; templateId?: string};
+    let status: 'AsIs' | 'FromTemplate' | 'Failed' | 'Continue';
+    if (cache.cacheHit) {
+      status = 'AsIs';
+    } else if (templates.matched) {
+      status = 'FromTemplate';
+    } else {
+      status = 'Continue';
+    }
     return {
       fromCache: cache.cacheHit,
       fromTemplate: templates.matched,
-      status: cache.cacheHit
-        ? 'AsIs'
-        : templates.matched
-          ? 'FromTemplate'
-          : 'Continue',
+      status,
       tables: tables.tables,
       templateId: templates.templateId,
       datasetId: cache.datasetId,
@@ -367,7 +392,7 @@ const saveDatasetFromTemplateStep = createStep({
       'services.TemplateHelper',
       {optional: true},
     );
-    const schemaStore = await lb4Ctx.get<SchemaStore>('services.SchemaStore', {
+    const schemaStore = await lb4Ctx.get<SchemaStore>(SCHEMA_STORE_KEY, {
       optional: true,
     });
     const user = await lb4Ctx.get<IAuthUserWithPermissions>(
@@ -471,7 +496,7 @@ const getColumnsStep = createStep({
     if (!lb4Ctx || !chatLlm || tables.length === 0) {
       return {prompt, tables, templateId};
     }
-    const schemaStore = await lb4Ctx.get<SchemaStore>('services.SchemaStore', {
+    const schemaStore = await lb4Ctx.get<SchemaStore>(SCHEMA_STORE_KEY, {
       optional: true,
     });
     const tablesWithColumns: Record<string, string[]> = {};
@@ -624,17 +649,16 @@ ${
 Return ONLY the SQL statement. No explanation, no markdown fences, no comments.`;
       try {
         const result = await generateText({model: chatLlm, prompt: llmPrompt});
-        sql = result.text.trim().replace(/^```sql\s*|\s*```$/g, '');
+        sql = stripSqlFences(result.text);
         description = `Generated SQL for: ${data.prompt}`;
       } catch (err) {
         passed = false;
         feedback = (err as Error).message;
       }
-    } else {
-      // No LLM bound — preserve loop-exit behaviour so callers in
-      // test / dry-run mode still complete with a documented stub.
-      passed = true;
     }
+    // No-LLM path: `passed` stays at its initial `true` so the dountil
+    // loop exits after a single iteration (callers in test / dry-run
+    // mode complete with a documented stub).
 
     // Syntactic validation via IDbConnector.validate() — runs a DB EXPLAIN
     // against the generated SQL. Mirrors v2 SyntacticValidatorNode.
@@ -741,7 +765,7 @@ const saveDatasetStep = createStep({
       'services.DbSchemaHelperService',
       {optional: true},
     );
-    const schemaStore = await lb4Ctx.get<SchemaStore>('services.SchemaStore', {
+    const schemaStore = await lb4Ctx.get<SchemaStore>(SCHEMA_STORE_KEY, {
       optional: true,
     });
     let schemaHash = '';
@@ -801,7 +825,8 @@ export const generateQueryWorkflow = createWorkflow({
   .then(generateChecklistStep)
   .dountil(
     sqlAndValidateStep,
-    async ({inputData}) => inputData.passed || inputData.attempts >= 3,
+    async ({inputData}) =>
+      inputData.passed || inputData.attempts >= MAX_VALIDATION_ATTEMPTS,
   )
   .branch([
     [

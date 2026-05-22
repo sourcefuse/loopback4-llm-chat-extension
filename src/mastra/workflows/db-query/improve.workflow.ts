@@ -9,6 +9,26 @@ import type {
   IDbConnector,
 } from '../../../components/db-query/types';
 
+const MAX_IMPROVE_ATTEMPTS = 3;
+
+/**
+ * Strip leading ```sql / ``` and trailing ``` fences plus whitespace.
+ * Pure string ops avoid the super-linear regex backtracking that
+ * `s5852` flags.
+ */
+function stripSqlFences(text: string): string {
+  let s = text.trim();
+  if (s.startsWith('```sql')) {
+    s = s.slice('```sql'.length);
+  } else if (s.startsWith('```')) {
+    s = s.slice('```'.length);
+  }
+  if (s.endsWith('```')) {
+    s = s.slice(0, -3);
+  }
+  return s.trim();
+}
+
 /**
  * `improveQueryWorkflow` — improvement variant of `generateQueryWorkflow`.
  * Enters with an existing datasetId and a delta prompt, skips the
@@ -132,7 +152,7 @@ ${data.feedback ? `Previous attempt was rejected: ${data.feedback}` : ''}
 Return ONLY the improved SQL statement. No explanation, no markdown fences, no comments.`;
       try {
         const result = await generateText({model: chatLlm, prompt: llmPrompt});
-        sql = result.text.trim().replace(/^```sql\s*|\s*```$/g, '');
+        sql = stripSqlFences(result.text);
       } catch (err) {
         passed = false;
         feedback = (err as Error).message;
@@ -257,7 +277,8 @@ export const improveQueryWorkflow = createWorkflow({
   .then(loadExistingStep)
   .dountil(
     fixQueryStep,
-    async ({inputData}) => inputData.passed || inputData.attempts >= 3,
+    async ({inputData}) =>
+      inputData.passed || inputData.attempts >= MAX_IMPROVE_ATTEMPTS,
   )
   .branch([
     [

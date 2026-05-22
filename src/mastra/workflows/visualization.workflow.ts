@@ -1,7 +1,9 @@
 import type {Context} from '@loopback/core';
 import {createStep, createWorkflow} from '@mastra/core/workflows';
 import {z} from 'zod';
+import {DbQueryAIExtensionBindings} from '../../components/db-query/keys';
 import type {DataSetHelper} from '../../components/db-query/services';
+import type {IDataSetStore} from '../../components/db-query/types';
 import {VISUALIZATION_KEY} from '../../components/visualization/keys';
 import type {IVisualizer} from '../../components/visualization/types';
 
@@ -90,6 +92,7 @@ const callQueryGenerationStep = createStep({
     datasetId: z.string(),
     needsQuery: z.boolean(),
     chartType: z.string(),
+    userQuery: z.string(),
   }),
   execute: async ({inputData, mastra, requestContext}) => {
     if (inputData.datasetId) {
@@ -97,6 +100,7 @@ const callQueryGenerationStep = createStep({
         datasetId: inputData.datasetId,
         needsQuery: false,
         chartType: inputData.chartType,
+        userQuery: inputData.userQuery,
       };
     }
     const generate = mastra?.getWorkflow?.('generateQueryWorkflow' as never);
@@ -105,6 +109,7 @@ const callQueryGenerationStep = createStep({
         datasetId: '',
         needsQuery: true,
         chartType: inputData.chartType,
+        userQuery: inputData.userQuery,
       };
     }
     const run = await generate.createRun();
@@ -119,6 +124,7 @@ const callQueryGenerationStep = createStep({
       datasetId: out?.datasetId ?? '',
       needsQuery: false,
       chartType: inputData.chartType,
+      userQuery: inputData.userQuery,
     };
   },
 });
@@ -141,24 +147,56 @@ const getDatasetDataStep = createStep({
     datasetId: z.string(),
     rows: z.array(z.unknown()),
     chartType: z.string(),
+    userQuery: z.string(),
+    sql: z.string().optional(),
+    description: z.string().optional(),
   }),
   execute: async ({inputData, requestContext}) => {
     const wrapped = inputData as Record<string, unknown>;
     const fromCallQuery = wrapped['call-query-generation'] as
-      | {datasetId?: string; chartType?: string}
+      | {datasetId?: string; chartType?: string; userQuery?: string}
       | undefined;
-    const direct = wrapped as {datasetId?: string; chartType?: string};
+    const direct = wrapped as {
+      datasetId?: string;
+      chartType?: string;
+      userQuery?: string;
+    };
     const inferredId = fromCallQuery?.datasetId ?? direct.datasetId ?? '';
     const inferredChart = fromCallQuery?.chartType ?? direct.chartType ?? 'bar';
+    const inferredQuery = fromCallQuery?.userQuery ?? direct.userQuery ?? '';
     const lb4Ctx = requestContext?.get('lb4Ctx') as Context | undefined;
-    if (!lb4Ctx) {
-      return {datasetId: inferredId, rows: [], chartType: inferredChart};
-    }
+    const baseline = {
+      datasetId: inferredId,
+      rows: [] as unknown[],
+      chartType: inferredChart,
+      userQuery: inferredQuery,
+      sql: undefined as string | undefined,
+      description: undefined as string | undefined,
+    };
+    if (!lb4Ctx) return baseline;
     const helper = await lb4Ctx.get<DataSetHelper>('services.DataSetHelper', {
       optional: true,
     });
-    if (!helper) {
-      return {datasetId: inferredId, rows: [], chartType: inferredChart};
+    if (!helper) return baseline;
+    // Fetch the dataset row to surface sql + description for the
+    // visualizer.getConfig() call downstream — the built-in
+    // visualizers (Pie/Bar/Line) reject empty prompt/sql/description
+    // and would otherwise silently fall through to {chartConfig:{}}.
+    let sql: string | undefined;
+    let description: string | undefined;
+    const datasetStore = await lb4Ctx.get<IDataSetStore>(
+      DbQueryAIExtensionBindings.DatasetStore,
+      {optional: true},
+    );
+    if (datasetStore && inferredId) {
+      try {
+        const ds = await datasetStore.findById(inferredId);
+        sql = ds.query;
+        description = ds.description;
+      } catch {
+        // not found / permission denied — leave undefined; render step
+        // will surface the error to the user via its own try/catch.
+      }
     }
     try {
       const rows = (await helper.getDataFromDataset(inferredId)) as unknown[];
@@ -166,11 +204,12 @@ const getDatasetDataStep = createStep({
         datasetId: inferredId,
         rows: rows ?? [],
         chartType: inferredChart,
+        userQuery: inferredQuery,
+        sql,
+        description,
       };
     } catch {
-      // permission denied / not found — empty rows let renderVisualization
-      // surface an error to the user instead of crashing the workflow.
-      return {datasetId: inferredId, rows: [], chartType: inferredChart};
+      return {...baseline, sql, description};
     }
   },
 });
@@ -189,14 +228,28 @@ const renderVisualizationStep = createStep({
   execute: async ({inputData, requestContext}) => {
     const wrapped = inputData as Record<string, unknown>;
     const fromGetDataset = wrapped['get-dataset-data'] as
-      | {datasetId?: string; rows?: unknown[]; chartType?: string}
+      | {
+          datasetId?: string;
+          rows?: unknown[];
+          chartType?: string;
+          userQuery?: string;
+          sql?: string;
+          description?: string;
+        }
       | undefined;
     const direct = wrapped as {
       datasetId?: string;
       rows?: unknown[];
       chartType?: string;
+      userQuery?: string;
+      sql?: string;
+      description?: string;
     };
     const chartType = fromGetDataset?.chartType ?? direct.chartType ?? 'bar';
+    const userQuery = fromGetDataset?.userQuery ?? direct.userQuery ?? '';
+    const sql = fromGetDataset?.sql ?? direct.sql;
+    const description = fromGetDataset?.description ?? direct.description;
+    const datasetId = fromGetDataset?.datasetId ?? direct.datasetId ?? '';
     const lb4Ctx = requestContext?.get('lb4Ctx') as Context | undefined;
     if (!lb4Ctx) return {chartConfig: {}};
     const bindings = lb4Ctx.findByTag({[VISUALIZATION_KEY]: true});
@@ -208,10 +261,10 @@ const renderVisualizationStep = createStep({
       visualizers.find(v => v.name === chartType) ?? visualizers[0];
     try {
       const config = await chosen.getConfig({
-        prompt: '',
-        datasetId: fromGetDataset?.datasetId ?? direct.datasetId ?? '',
-        sql: undefined,
-        queryDescription: undefined,
+        prompt: userQuery,
+        datasetId,
+        sql,
+        queryDescription: description,
         visualizer: chosen,
         visualizerName: chosen.name,
         done: true,
