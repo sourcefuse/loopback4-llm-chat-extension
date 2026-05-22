@@ -1,16 +1,30 @@
+import type {Context} from '@loopback/core';
 import {createStep, createWorkflow} from '@mastra/core/workflows';
 import {z} from 'zod';
+import type {SchemaStore} from '../../../components/db-query/services/schema.store';
 
 /**
  * `generateQueryWorkflow` — Mastra port of the 17-node LangGraph
  * DbQueryGraph that builds a SQL dataset from a natural-language prompt.
  * See MIGRATION-STRATEGY.md Section 9.1.
  *
- * P3 scope: structural DAG only — every step body returns the minimal
- * default that keeps the chain typed and end-to-end runnable. The real
- * implementations move from the legacy nodes into these executes in a
- * follow-up commit (Section 16A.4 keeps the helper services intact, so
- * each step's body becomes a single helper call).
+ * P3 scope: structural DAG only. WorkflowRunner enriches RequestContext
+ * with `lb4Ctx` (full LB4 Context), `dbConnector`, `chatLlm` and
+ * `eventWriter` so each step can resolve the preserved helpers
+ * (DbSchemaHelperService, SchemaStore, TableSearchService,
+ * PermissionHelper, DataSetHelper, TemplateHelper) lazily.
+ *
+ * **Real step bodies — restore strategy:** the LangGraph node sources
+ * lived at `src/components/db-query/nodes/<name>.node.ts` before
+ * commit 4be9767. `git show 4be9767^:src/components/db-query/nodes/<x>.node.ts`
+ * pulls each one back. Each node's `.execute(state, config)` body
+ * maps 1:1 to the corresponding step's `execute({inputData,
+ * requestContext})`. Replace the stub bodies below in the same order
+ * the v2 graph traversed: IsImprovement -> CheckCache / GetTables /
+ * CheckTemplates / ClassifyChange -> PostCacheAndTables -> branch ->
+ * GetColumns -> GenerateChecklist -> dountil(SqlAndValidate ==
+ * SqlGeneration + Syntactic + Semantic + GenerateDescription +
+ * VerifyChecklist) -> branch -> SaveDataset | Failed.
  */
 
 const inputSchema = z.object({
@@ -42,11 +56,39 @@ const checkCacheStep = createStep({
   execute: async () => ({cacheHit: false}),
 });
 
+/**
+ * get-tables — wired example showing the helper-resolution pattern.
+ * WorkflowRunner placed `lb4Ctx` (full LB4 Context) on requestContext.
+ * Steps that need preserved helpers resolve them lazily here.
+ *
+ * Current body returns the raw table list from SchemaStore (populated
+ * upstream by the consumer-side schema-seed observer / migrator). The
+ * LLM-driven relevance filtering — PromptTemplate + CheapLLM chain
+ * restored from `git show 4be9767^:src/components/db-query/nodes/get-tables.node.ts`
+ * — lands in the follow-up commit. The deterministic baseline gives
+ * downstream steps a real list of table names instead of an empty
+ * array, so the rest of the workflow can be reasoned about.
+ */
 const getTablesStep = createStep({
   id: 'get-tables',
   inputSchema: parallelInput,
   outputSchema: z.object({tables: z.array(z.string())}),
-  execute: async () => ({tables: []}),
+  execute: async ({requestContext}) => {
+    const lb4Ctx = requestContext?.get('lb4Ctx') as Context | undefined;
+    if (!lb4Ctx) return {tables: []};
+    const schemaStore = await lb4Ctx.get<SchemaStore>('services.SchemaStore', {
+      optional: true,
+    });
+    if (!schemaStore) return {tables: []};
+    try {
+      const schema = schemaStore.get();
+      return {tables: Object.keys(schema.tables)};
+    } catch {
+      // schema not yet loaded — caller (or a follow-up loadSchemaStep)
+      // must populate SchemaStore before the workflow runs.
+      return {tables: []};
+    }
+  },
 });
 
 const checkTemplatesStep = createStep({

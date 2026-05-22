@@ -16,6 +16,8 @@ import {MastraToolStore, ToolStatus} from '../../graphs/types';
 import type {Tool} from '@mastra/core/tools';
 import {UsageAccumulator} from '../../services/usage-accumulator.service';
 import {AsyncEventQueue} from './async-event-queue';
+import {DbQueryAIExtensionBindings} from '../../components/db-query/keys';
+import type {IDbConnector} from '../../components/db-query/types';
 
 /**
  * REQUEST-scoped bridge between LB4 controllers and the singleton Mastra Agent.
@@ -103,9 +105,24 @@ export class WorkflowRunner {
       }
     }
 
+    // Pull bounded LB4 service refs dynamically from the REQUEST-scoped
+    // context. Optional — each is undefined if the consumer hasn't bound
+    // the DbQuery component. Workflow steps destructure defensively.
+    const dbConnector = await this.lb4Ctx.get<IDbConnector>(
+      DbQueryAIExtensionBindings.Connector,
+      {optional: true},
+    );
+
     const ctx = new RequestContext<Record<string, unknown>>([
       ['resourceId', resourceId],
       ['eventWriter', (e: LLMStreamEvent) => queue.push(e)],
+      ['dbConnector', dbConnector],
+      ['chatLlm', this.chatLlm],
+      // Expose the LB4 Context to step bodies that need to resolve
+      // additional helpers (DbSchemaHelperService, SchemaStore,
+      // TableSearchService, etc.) lazily. Workflow steps that need
+      // helpers do `requestContext.get<Context>('lb4Ctx').get(key)`.
+      ['lb4Ctx', this.lb4Ctx],
     ]);
 
     // Pump fullStream chunks into the queue. The pre-processing block above
