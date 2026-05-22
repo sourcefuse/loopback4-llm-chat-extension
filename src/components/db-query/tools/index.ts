@@ -1,3 +1,3 @@
-export * from './ask-about-dataset.tool';
-export * from './get-data-as-dataset.tool';
-export * from './improve-dataset.tool';
+export * from './ask-about-dataset.mastra.tool';
+export * from './get-data-as-dataset.mastra.tool';
+export * from './improve-dataset.mastra.tool';

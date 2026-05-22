@@ -1,1 +1,1 @@
-export * from './generate-visualization.tool';
+export * from './generate-visualization.mastra.tool';

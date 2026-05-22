@@ -38,11 +38,6 @@ import {DataSetHelper, DbSchemaHelperService, TemplateHelper} from './services';
 import {PermissionHelper} from './services/permission-helper.service';
 import {SchemaStore} from './services/schema.store';
 import {TableSearchService} from './services/search/table-search.service';
-import {
-  AskAboutDatasetTool,
-  GetDataAsDatasetTool,
-  ImproveDatasetTool,
-} from './tools';
 import {PgWithRlsConnector} from './connectors/pg';
 
 export class DbQueryComponent implements Component {
@@ -75,10 +70,6 @@ export class DbQueryComponent implements Component {
       TemplateHelper,
       // graph
       DbQueryGraph,
-      // tools
-      AskAboutDatasetTool,
-      GetDataAsDatasetTool,
-      ImproveDatasetTool,
       // nodes
       IsImprovementNode,
       GetTablesNode,
