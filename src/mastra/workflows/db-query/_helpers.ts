@@ -1,9 +1,24 @@
 import type {Context} from '@loopback/core';
 import type {RequestContext} from '@mastra/core/request-context';
+import type {IAuthUserWithPermissions} from '@sourceloop/core';
 import {generateText} from 'ai';
 import type {LanguageModel} from 'ai';
+import {AuthenticationBindings} from 'loopback4-authentication';
 import {DbQueryAIExtensionBindings} from '../../../components/db-query/keys';
-import type {IDbConnector} from '../../../components/db-query/types';
+import type {
+  DbSchemaHelperService,
+  TemplateHelper,
+} from '../../../components/db-query/services';
+import type {SchemaStore} from '../../../components/db-query/services/schema.store';
+import type {
+  IDataSetStore,
+  IDbConnector,
+  IQueryTemplateStore,
+} from '../../../components/db-query/types';
+
+const SCHEMA_STORE_KEY = 'services.SchemaStore';
+const SCHEMA_HELPER_KEY = 'services.DbSchemaHelperService';
+const TEMPLATE_HELPER_KEY = 'services.TemplateHelper';
 
 /**
  * Shared helpers for the db-query workflows. Pulled out of inlined
@@ -27,19 +42,24 @@ export function getChatLlm(
   return rc?.get('chatLlm') as LanguageModel | undefined;
 }
 
+const SQL_FENCE = '```';
+const SQL_FENCE_LANG = '```sql';
+
 /**
  * Strip leading ```sql / ``` fences and trailing ``` plus whitespace.
  * Pure string ops to avoid super-linear regex backtracking (s5852).
  */
 export function stripSqlFences(text: string): string {
   let s = text.trim();
-  if (s.startsWith('```sql')) {
-    s = s.slice('```sql'.length);
-  } else if (s.startsWith('```')) {
-    s = s.slice('```'.length);
+  if (s.startsWith(SQL_FENCE_LANG)) {
+    s = s.slice(SQL_FENCE_LANG.length);
+  } else if (s.startsWith(SQL_FENCE)) {
+    s = s.slice(SQL_FENCE.length);
+  } else {
+    // no leading fence — nothing to strip
   }
-  if (s.endsWith('```')) {
-    s = s.slice(0, -3);
+  if (s.endsWith(SQL_FENCE)) {
+    s = s.slice(0, -SQL_FENCE.length);
   }
   return s.trim();
 }
@@ -177,5 +197,169 @@ Do not return any other text.`;
     // Verdict LLM failed — treat as pass to avoid blocking on a flaky
     // judge model. Mastra observability captures the error span.
     return {passed: true};
+  }
+}
+
+/**
+ * Read the cached schema hash, returning '' when the SchemaStore is
+ * unbound or empty. Extracted so saveDatasetStep + saveDatasetFromTemplateStep
+ * stay simple.
+ */
+export async function computeSchemaHash(
+  lb4Ctx: Context,
+): Promise<{schemaHash: string; tablesFromSchema: string[]}> {
+  const schemaHelper = await lb4Ctx.get<DbSchemaHelperService>(
+    SCHEMA_HELPER_KEY,
+    {optional: true},
+  );
+  const schemaStore = await lb4Ctx.get<SchemaStore>(SCHEMA_STORE_KEY, {
+    optional: true,
+  });
+  if (!schemaHelper || !schemaStore) {
+    return {schemaHash: '', tablesFromSchema: []};
+  }
+  try {
+    const schema = schemaStore.get();
+    return {
+      schemaHash: schemaHelper.computeHash(schema),
+      tablesFromSchema: Object.keys(schema.tables),
+    };
+  } catch {
+    return {schemaHash: '', tablesFromSchema: []};
+  }
+}
+
+/**
+ * Resolve the bindings saveDataset / saveDatasetFromTemplate need
+ * together. Any missing dep produces a `null` so callers can short-
+ * circuit to the inert default without dragging defensive ?. through
+ * the body.
+ */
+export async function resolvePersistDeps(lb4Ctx: Context): Promise<{
+  store: IDataSetStore;
+  user: IAuthUserWithPermissions & {tenantId: string};
+} | null> {
+  const store = await lb4Ctx.get<IDataSetStore>(
+    DbQueryAIExtensionBindings.DatasetStore,
+    {optional: true},
+  );
+  const user = await lb4Ctx.get<IAuthUserWithPermissions>(
+    AuthenticationBindings.CURRENT_USER,
+    {optional: true},
+  );
+  if (!store || !user?.tenantId) return null;
+  return {store, user: user as IAuthUserWithPermissions & {tenantId: string}};
+}
+
+/**
+ * One-shot column-relevance LLM call for getColumnsStep. Returns the
+ * narrowed table list or `null` when the LLM rejects / returns
+ * unparseable JSON / the schema is missing.
+ */
+export async function pickRelevantTables(args: {
+  chatLlm: LanguageModel;
+  prompt: string;
+  tablesWithColumns: Record<string, string[]>;
+  upstreamTables: string[];
+}): Promise<string[] | null> {
+  const {chatLlm, prompt, tablesWithColumns, upstreamTables} = args;
+  if (Object.keys(tablesWithColumns).length === 0) return null;
+  const llmPrompt = `You are an AI assistant that identifies relevant columns from database tables based on a user's query.
+Return a JSON object where each table name is a key and the value is an array of relevant column names.
+
+Tables with columns:
+${JSON.stringify(tablesWithColumns, null, 2)}
+
+User query: ${prompt}
+
+Return ONLY valid JSON. Include primary-key and foreign-key columns even if not directly mentioned.`;
+  try {
+    const result = await generateText({model: chatLlm, prompt: llmPrompt});
+    const cleaned = result.text.trim().replace(/^```json\s*|\s*```$/g, '');
+    const parsed = JSON.parse(cleaned) as Record<string, string[]>;
+    const filtered = Object.keys(parsed).filter(t =>
+      upstreamTables.includes(t),
+    );
+    return filtered.length > 0 ? filtered : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Read SchemaStore.filteredSchema(tables) into a {table: columns[]}
+ * blob; returns {} when the SchemaStore is unbound or schema is empty.
+ */
+export async function getTablesWithColumns(
+  lb4Ctx: Context,
+  tables: string[],
+): Promise<Record<string, string[]>> {
+  const schemaStore = await lb4Ctx.get<SchemaStore>(SCHEMA_STORE_KEY, {
+    optional: true,
+  });
+  if (!schemaStore) return {};
+  try {
+    const schema = schemaStore.filteredSchema(tables);
+    const out: Record<string, string[]> = {};
+    for (const [tableName, tableDef] of Object.entries(schema.tables)) {
+      out[tableName] = Object.keys(
+        (tableDef as {columns?: Record<string, unknown>}).columns ?? {},
+      );
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Fetch template + run TemplateHelper.resolveTemplate. Returns the
+ * resolved SQL + description or `null` when any binding is missing or
+ * the template helper rejects.
+ */
+export async function resolveTemplateById(args: {
+  lb4Ctx: Context;
+  templateId: string;
+  prompt: string;
+}): Promise<{sql: string; description?: string} | null> {
+  const {lb4Ctx, templateId, prompt} = args;
+  const templateStore = await lb4Ctx.get<IQueryTemplateStore>(
+    DbQueryAIExtensionBindings.TemplateStore,
+    {optional: true},
+  );
+  const templateHelper = await lb4Ctx.get<TemplateHelper>(TEMPLATE_HELPER_KEY, {
+    optional: true,
+  });
+  const schemaStore = await lb4Ctx.get<SchemaStore>(SCHEMA_STORE_KEY, {
+    optional: true,
+  });
+  if (!templateStore || !templateHelper) return null;
+  try {
+    const template = await templateStore.findById(templateId);
+    const schema = (() => {
+      try {
+        return schemaStore?.get();
+      } catch {
+        return undefined;
+      }
+    })();
+    const resolved = await templateHelper.resolveTemplate(
+      template,
+      prompt,
+      {} as never,
+      schema,
+      async id => {
+        try {
+          return await templateStore.findById(id);
+        } catch {
+          return undefined;
+        }
+      },
+    );
+    return resolved.sql
+      ? {sql: resolved.sql, description: resolved.description}
+      : null;
+  } catch {
+    return null;
   }
 }
