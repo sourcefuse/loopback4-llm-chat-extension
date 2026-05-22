@@ -108,11 +108,44 @@ const checkTemplatesStep = createStep({
   execute: async () => ({matched: false}),
 });
 
+/**
+ * classify-change — wired with LLM. Only active when the generate
+ * workflow is invoked with an existing sample SQL (currently
+ * isImprovementStep returns isImprovement=false for the entry
+ * generate workflow, so this step routinely sits as a no-op — the
+ * improve workflow is the live caller). Restored from
+ * `git show 4be9767^:src/components/db-query/nodes/classify-change.node.ts`.
+ */
 const classifyChangeStep = createStep({
   id: 'classify-change',
   inputSchema: parallelInput,
   outputSchema: z.object({changeType: z.string().optional()}),
-  execute: async () => ({changeType: undefined}),
+  execute: async ({inputData, requestContext}) => {
+    const data = inputData as {
+      prompt?: string;
+      sampleSqlPrompt?: string;
+      isImprovement?: boolean;
+    };
+    if (!data.isImprovement) return {changeType: undefined};
+    const chatLlm = requestContext?.get('chatLlm') as LanguageModel | undefined;
+    if (!chatLlm) return {changeType: undefined};
+    const llmPrompt = `You are given the original description of a SQL query and a new description that includes user feedback.
+Classify the level of change required to transform the original query into the new one.
+
+Original description: ${data.sampleSqlPrompt ?? ''}
+New description: ${data.prompt ?? ''}
+
+Return ONLY one of: minor, major, rewrite`;
+    try {
+      const result = await generateText({model: chatLlm, prompt: llmPrompt});
+      const text = result.text.trim().toLowerCase();
+      if (text.includes('minor')) return {changeType: 'minor'};
+      if (text.includes('rewrite')) return {changeType: 'rewrite'};
+      return {changeType: 'major'};
+    } catch {
+      return {changeType: undefined};
+    }
+  },
 });
 
 const postCacheAndTablesStep = createStep({
@@ -201,6 +234,17 @@ const failedStep = createStep({
   execute: async () => ({datasetId: '', sql: '', rowCount: 0}),
 });
 
+/**
+ * get-columns — wired with LLM. Asks the chat model to narrow down
+ * the column set per table to those relevant to the user's query.
+ * Simplified vs v2 GetColumnsNode: we don't yet feed the per-table
+ * column metadata to the model (the SchemaStore-cached schema is
+ * passed as a flat JSON blob); the JSON-output parse + retry loop
+ * lands later. Falls through to the upstream table list when no
+ * chatLlm is bound or parsing fails so the downstream
+ * generate-checklist + sql-and-validate stages still receive real
+ * table names.
+ */
 const getColumnsStep = createStep({
   id: 'get-columns',
   inputSchema: z.any(),
@@ -209,11 +253,66 @@ const getColumnsStep = createStep({
     tables: z.array(z.string()),
     templateId: z.string().optional(),
   }),
-  execute: async ({inputData}) => ({
-    prompt: (inputData as {prompt?: string})?.prompt ?? '',
-    tables: (inputData as {tables?: string[]})?.tables ?? [],
-    templateId: (inputData as {templateId?: string})?.templateId,
-  }),
+  execute: async ({inputData, requestContext}) => {
+    const data = inputData as {
+      prompt?: string;
+      tables?: string[];
+      templateId?: string;
+    };
+    const prompt = data.prompt ?? '';
+    const tables = data.tables ?? [];
+    const templateId = data.templateId;
+    // Without lb4Ctx or chatLlm we can't enrich — pass through.
+    const lb4Ctx = requestContext?.get('lb4Ctx') as Context | undefined;
+    const chatLlm = requestContext?.get('chatLlm') as LanguageModel | undefined;
+    if (!lb4Ctx || !chatLlm || tables.length === 0) {
+      return {prompt, tables, templateId};
+    }
+    const schemaStore = await lb4Ctx.get<SchemaStore>('services.SchemaStore', {
+      optional: true,
+    });
+    const tablesWithColumns: Record<string, string[]> = {};
+    try {
+      const schema = schemaStore?.filteredSchema(tables);
+      if (schema) {
+        for (const [tableName, tableDef] of Object.entries(schema.tables)) {
+          tablesWithColumns[tableName] = Object.keys(
+            (tableDef as {columns?: Record<string, unknown>}).columns ?? {},
+          );
+        }
+      }
+    } catch {
+      // schema not loaded
+    }
+    if (Object.keys(tablesWithColumns).length === 0) {
+      return {prompt, tables, templateId};
+    }
+    const llmPrompt = `You are an AI assistant that identifies relevant columns from database tables based on a user's query.
+Return a JSON object where each table name is a key and the value is an array of relevant column names.
+
+Tables with columns:
+${JSON.stringify(tablesWithColumns, null, 2)}
+
+User query: ${prompt}
+
+Return ONLY valid JSON. Include primary-key and foreign-key columns even if not directly mentioned.`;
+    try {
+      const result = await generateText({model: chatLlm, prompt: llmPrompt});
+      const cleaned = result.text.trim().replace(/^```json\s*|\s*```$/g, '');
+      const parsed = JSON.parse(cleaned) as Record<string, string[]>;
+      const filteredTables = Object.keys(parsed).filter(t =>
+        tables.includes(t),
+      );
+      return {
+        prompt,
+        tables: filteredTables.length > 0 ? filteredTables : tables,
+        templateId,
+      };
+    } catch {
+      // Parse failure — fall through to upstream tables verbatim.
+      return {prompt, tables, templateId};
+    }
+  },
 });
 
 /**
