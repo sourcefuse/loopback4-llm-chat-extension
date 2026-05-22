@@ -21,8 +21,25 @@ export class UsageAccumulator {
     });
   }
 
-  flush(): Record<string, {input: number; output: number}> {
+  /**
+   * Returns a snapshot of the accumulated per-model token totals
+   * WITHOUT mutating state. Useful for periodic reporting.
+   */
+  snapshot(): Record<string, {input: number; output: number}> {
     return Object.fromEntries(this.perModel);
+  }
+
+  /**
+   * Consume-and-reset: returns the current totals and clears the
+   * internal Map. Use this when handing off totals to a consumer
+   * (LimitStrategy, audit log, etc.) so the next request starts from
+   * zero — important because this service is SINGLETON scope and the
+   * Map would otherwise leak across requests / tests.
+   */
+  flush(): Record<string, {input: number; output: number}> {
+    const out = Object.fromEntries(this.perModel);
+    this.perModel.clear();
+    return out;
   }
 
   reset(): void {

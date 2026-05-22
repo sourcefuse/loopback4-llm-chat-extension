@@ -1,6 +1,7 @@
 import {BindingScope, injectable, Provider} from '@loopback/core';
 import {Observability, SamplingStrategyType} from '@mastra/observability';
 import {LangSmithExporter} from '@mastra/langsmith';
+import {parseSampleRate} from './util';
 
 /**
  * Mastra Observability wired with the LangSmith exporter. Consumer binds
@@ -40,7 +41,7 @@ export class MastraLangSmithObservability implements Provider<Observability> {
           ],
           sampling: {
             type: SamplingStrategyType.RATIO,
-            probability: parseFloat(process.env.OTEL_SAMPLE_RATE ?? '1.0'),
+            probability: parseSampleRate(process.env.OTEL_SAMPLE_RATE),
           },
         },
       },

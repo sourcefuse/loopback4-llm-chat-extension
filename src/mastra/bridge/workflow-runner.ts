@@ -56,11 +56,6 @@ export class WorkflowRunner {
   ): AsyncIterable<LLMStreamEvent> {
     const queue = new AsyncEventQueue<LLMStreamEvent>();
 
-    // SECURITY: never share an 'anonymous' bucket — Mastra Memory `scope:'resource'`
-    // groups working memory + semantic recall by resourceId. Consumer-bound
-    // ResourceId resolver returns `${tenantId}:${userId}` for multi-tenant safety.
-    const resourceId = this.resourceIdValue ?? sessionId ?? randomUUID();
-
     const agent = this.buildAgent();
     const memory = await agent.getMemory();
     if (!memory) {
@@ -73,7 +68,19 @@ export class WorkflowRunner {
       return;
     }
 
+    // SECURITY: never share an 'anonymous' bucket — Mastra Memory
+    // `scope:'resource'` groups working memory + semantic recall by
+    // resourceId. The consumer-bound ResourceId resolver returns
+    // `${tenantId}:${userId}` for multi-tenant safety.
+    //
+    // When resuming an existing thread (sessionId provided) we MUST
+    // honour the resourceId that was set when the thread was first
+    // created. Falling back to `sessionId` for a resumed thread would
+    // diverge from the resourceId the original request used and break
+    // Memory.semanticRecall + working memory scope. Load the thread
+    // first, then prefer thread.resourceId on resume.
     let thread;
+    let resourceId: string;
     if (sessionId) {
       thread = await memory.getThreadById({threadId: sessionId});
       if (!thread) {
@@ -85,7 +92,11 @@ export class WorkflowRunner {
         yield* queue;
         return;
       }
+      // Resume path: the stored thread.resourceId wins so the second
+      // turn shares the same Memory scope as the first.
+      resourceId = thread.resourceId ?? this.resourceIdValue ?? randomUUID();
     } else {
+      resourceId = this.resourceIdValue ?? randomUUID();
       thread = await memory.createThread({resourceId});
       queue.push({
         type: LLMStreamEventType.Init,
@@ -231,9 +242,16 @@ export class WorkflowRunner {
           // usage may reject on error / abort paths; skip TokenCount
         }
       } catch (err) {
+        // Safe conversion: handle non-Error throws and missing
+        // .message so the SSE Error event never carries an empty
+        // payload, mirroring the chunk 'error' branch above.
+        const message =
+          err instanceof Error
+            ? (err.message ?? 'Unknown error during agent.stream')
+            : String(err ?? 'Unknown error during agent.stream');
         queue.push({
           type: LLMStreamEventType.Error,
-          data: {message: (err as Error).message},
+          data: {message},
         });
       } finally {
         queue.close();

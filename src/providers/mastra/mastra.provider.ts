@@ -54,9 +54,19 @@ export class MastraProvider implements Provider<Mastra> {
       },
     });
 
-    // Placeholder model — WorkflowRunner overrides per-request with the
-    // consumer-bound MastraChatLLM. Sensible default that uses zero quota
-    // if accidentally invoked at the singleton level.
+    // Placeholder model for the singleton ChatAgent. WorkflowRunner
+    // builds its own per-request Agent with the consumer-bound
+    // MastraChatLLM, so the singleton's model is only consulted on
+    // out-of-band paths (Mastra Studio, MCP exposure, observability
+    // probes). Consumers may override the placeholder by binding
+    // `AiIntegrationBindings.MastraChatLLM` to a known model
+    // (recommended) — if OPENAI_API_KEY is present in the
+    // environment AND the singleton agent is invoked through one of
+    // those out-of-band paths, the literal 'openai/gpt-4o-mini' default
+    // here WILL bill against the consumer's OpenAI account. To avoid
+    // surprise spend, set OPENAI_API_KEY only when you intentionally
+    // route to OpenAI, or pin a non-OpenAI model id here via a
+    // consumer-side MastraProvider override.
     const chatAgent = new Agent({
       id: 'chat-agent',
       name: 'ChatAgent',
@@ -64,10 +74,7 @@ export class MastraProvider implements Provider<Mastra> {
         'You are a helpful AI assistant. Always use one of the available tools if applicable.',
         ...(this.systemContext ?? []),
       ].join('\n'),
-      model: 'openai/gpt-4o-mini',
-      // Tools are added in P1.11 when internal tools migrate to createTool.
-      // Until then the singleton Agent boots tool-less; WorkflowRunner builds
-      // its per-request Agent with the live tool registry.
+      model: process.env.MASTRA_DEFAULT_CHAT_MODEL ?? 'openai/gpt-4o-mini',
       tools: {},
       memory,
     });

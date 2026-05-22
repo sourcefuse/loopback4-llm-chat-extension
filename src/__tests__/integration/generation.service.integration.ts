@@ -85,7 +85,7 @@ describe(`GenerationService Integration`, () => {
       expect(endCalls.length).to.be.eql(1);
     });
 
-    it('should handle error gracyfully', async () => {
+    it('should handle error gracefully', async () => {
       const dummyStream = new PassThrough({objectMode: true});
       graph.stubs.run.callsFake(() => {
         return dummyStream as unknown as AsyncIterable<LLMStreamEvent>;
@@ -199,7 +199,7 @@ describe(`GenerationService Integration`, () => {
       expect(endCalls.length).to.be.eql(1);
     });
 
-    it('should handle error gracyfully', async () => {
+    it('should handle error gracefully', async () => {
       const dummyStream = new PassThrough({objectMode: true});
       graph.stubs.run.callsFake(() => {
         return dummyStream as unknown as AsyncIterable<LLMStreamEvent>;
