@@ -95,6 +95,10 @@ function chunkErrorEvent(payload: unknown): LLMStreamEvent {
   };
 }
 
+function stepLogEvent(label: string): (p: unknown) => LLMStreamEvent {
+  return () => ({type: LLMStreamEventType.Log, data: label});
+}
+
 const CHUNK_MAPPERS: Record<string, (p: unknown) => LLMStreamEvent> = {
   'text-delta': textDeltaEvent,
   'tool-call': toolCallEvent,
@@ -102,6 +106,8 @@ const CHUNK_MAPPERS: Record<string, (p: unknown) => LLMStreamEvent> = {
   'tool-call-suspended': toolStatusEvent,
   tripwire: tripwireEvent,
   error: chunkErrorEvent,
+  'step-start': stepLogEvent('Mastra: reasoning step started'),
+  'step-finish': stepLogEvent('Mastra: reasoning step complete'),
 };
 
 /**
