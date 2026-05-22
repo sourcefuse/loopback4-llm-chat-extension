@@ -152,15 +152,37 @@ const postCacheAndTablesStep = createStep({
   },
 });
 
+/**
+ * return-cached — wired. When postCacheAndTablesStep classifies status
+ * as 'AsIs' (cache hit), this step resolves the cached dataset row via
+ * IDataSetStore.findById so downstream consumers see the real sql +
+ * tenant-owned tables without re-running SQL generation.
+ */
 const returnCachedStep = createStep({
   id: 'return-cached',
   inputSchema: z.any(),
   outputSchema,
-  execute: async ({inputData}) => ({
-    datasetId: (inputData as {datasetId?: string})?.datasetId ?? '',
-    sql: '',
-    rowCount: 0,
-  }),
+  execute: async ({inputData, requestContext}) => {
+    const data = inputData as {datasetId?: string};
+    const fallback = {datasetId: data.datasetId ?? '', sql: '', rowCount: 0};
+    const lb4Ctx = requestContext?.get('lb4Ctx') as Context | undefined;
+    if (!lb4Ctx || !data.datasetId) return fallback;
+    const store = await lb4Ctx.get<IDataSetStore>(
+      DbQueryAIExtensionBindings.DatasetStore,
+      {optional: true},
+    );
+    if (!store) return fallback;
+    try {
+      const dataset = await store.findById(data.datasetId);
+      return {
+        datasetId: dataset.id ?? data.datasetId,
+        sql: dataset.query ?? '',
+        rowCount: 0,
+      };
+    } catch {
+      return fallback;
+    }
+  },
 });
 
 const saveDatasetFromTemplateStep = createStep({
