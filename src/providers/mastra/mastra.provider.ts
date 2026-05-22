@@ -5,6 +5,9 @@ import {Memory} from '@mastra/memory';
 import type {MastraCompositeStore} from '@mastra/core/storage';
 import type {MastraEmbeddingModel, MastraVector} from '@mastra/core/vector';
 import {AiIntegrationBindings} from '../../keys';
+import {generateQueryWorkflow} from '../../mastra/workflows/db-query/generate.workflow';
+import {improveQueryWorkflow} from '../../mastra/workflows/db-query/improve.workflow';
+import {visualizationWorkflow} from '../../mastra/workflows/visualization.workflow';
 
 /**
  * Singleton Mastra instance. Holds storage pools, vector clients, registered
@@ -68,8 +71,11 @@ export class MastraProvider implements Provider<Mastra> {
 
     return new Mastra({
       agents: {chatAgent},
-      // Workflows populated in P3 (Section 9.4a).
-      workflows: {},
+      workflows: {
+        generateQueryWorkflow,
+        improveQueryWorkflow,
+        visualizationWorkflow,
+      },
       storage: this.storage,
       vectors: this.vector ? {default: this.vector} : undefined,
     });
