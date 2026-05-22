@@ -34,16 +34,6 @@ import {
 } from './components';
 import {DEFAULT_FILE_SIZE, MAX_TOTAL_SIZE} from './constant';
 import {GenerationController} from './controllers';
-import {
-  CallLLMNode,
-  ChatGraph,
-  ChatStore,
-  ContextCompressionNode,
-  EndSessionNode,
-  InitSessionNode,
-  RunToolNode,
-  SummariseFileNode,
-} from './graphs/chat';
 import {WriterDB, AiIntegrationBindings, ReaderDB} from './keys';
 import {Chat, Message} from './models';
 import {CacheModel, ToolsProvider} from './providers';
@@ -55,7 +45,6 @@ import {
   TokenCountPerUserStrategy,
   TokenCountStrategy,
 } from './services';
-import {TokenCounter} from './services/token-counter.service';
 import {UsageAccumulator} from './services/usage-accumulator.service';
 import {SSETransport} from './transports';
 import {AIIntegrationConfig} from './types';
@@ -112,23 +101,13 @@ export class AiIntegrationsComponent implements Component {
 
     this.services = [
       // utils
-      TokenCounter,
       GenerationService,
-      ChatStore,
-      // graph
-      ChatGraph,
-      // nodes
-      CallLLMNode,
-      RunToolNode,
-      InitSessionNode,
-      SummariseFileNode,
-      ContextCompressionNode,
-      EndSessionNode,
       // mastra v3 services
       UsageAccumulator,
       WorkflowRunner,
-      // mastra-flavored tool wrappers (delegate to legacy IGraphTool
-      // implementations during the P1->P3 transition)
+      // mastra-flavored tool wrappers — each calls
+      // mastra.getWorkflow(...).createRun().start() (ask-about-dataset
+      // runs an inline one-shot Mastra Agent instead of a workflow).
       MastraGetDataAsDatasetTool,
       MastraImproveDatasetTool,
       MastraAskAboutDatasetTool,

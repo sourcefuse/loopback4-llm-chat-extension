@@ -21,7 +21,7 @@ import type {Application as CoreApplication} from '@loopback/core';
 import {AiIntegrationBindings} from '../keys';
 import {Chat} from '../models/chat.model';
 import {Message} from '../models/message.model';
-import {MessageMetadataType} from '../graphs/chat/chat-metadata.type';
+import {MessageMetadataType} from '../graphs/message-metadata.type';
 import type {ChatRepository} from '../repositories/chat.repository';
 import type {MessageRepository} from '../repositories/message.repository';
 
