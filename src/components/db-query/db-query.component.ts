@@ -12,26 +12,7 @@ import {
 import {AnyObject} from '@loopback/repository';
 import {DataSetController, TemplateController} from './controller';
 import {DatasetServiceComponent} from './dataset-service.component';
-import {DbQueryGraph} from './db-query.graph';
 import {DbQueryAIExtensionBindings} from './keys';
-import {
-  CheckCacheNode,
-  CheckPermissionsNode,
-  ClassifyChangeNode,
-  FixQueryNode,
-  CheckTemplatesNode,
-  GenerateChecklistNode,
-  GenerateDescriptionNode,
-  FailedNode,
-  GetColumnsNode,
-  GetTablesNode,
-  IsImprovementNode,
-  SaveDataSetNode,
-  SemanticValidatorNode,
-  SqlGenerationNode,
-  SyntacticValidatorNode,
-  VerifyChecklistNode,
-} from './nodes';
 import {TableSeedObserver} from './observers';
 import {DatasetRetriever, TemplateRetriever} from './providers';
 import {DataSetHelper, DbSchemaHelperService, TemplateHelper} from './services';
@@ -61,32 +42,14 @@ export class DbQueryComponent implements Component {
     ];
     this.lifeCycleObservers = [TableSeedObserver];
     this.services = [
-      // db related
+      // db helpers — still consumed by generateQueryWorkflow / improveQueryWorkflow
+      // step bodies (Section 16A.4 explicitly preserves these).
       DbSchemaHelperService,
       PermissionHelper,
       DataSetHelper,
       SchemaStore,
       TableSearchService,
       TemplateHelper,
-      // graph
-      DbQueryGraph,
-      // nodes
-      IsImprovementNode,
-      GetTablesNode,
-      CheckPermissionsNode,
-      SqlGenerationNode,
-      SyntacticValidatorNode,
-      SemanticValidatorNode,
-      FailedNode,
-      SaveDataSetNode,
-      CheckCacheNode,
-      ClassifyChangeNode,
-      FixQueryNode,
-      GenerateChecklistNode,
-      GenerateDescriptionNode,
-      VerifyChecklistNode,
-      GetColumnsNode,
-      CheckTemplatesNode,
     ];
     this.components = [DatasetServiceComponent];
   }

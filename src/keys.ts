@@ -1,5 +1,4 @@
 import {VectorStore as VectorStoreType} from '@langchain/core/vectorstores';
-import {BaseCheckpointSaver} from '@langchain/langgraph';
 import type {Mastra} from '@mastra/core';
 import type {MastraModelConfig} from '@mastra/core/llm';
 import type {MastraCompositeStore} from '@mastra/core/storage';
@@ -46,9 +45,6 @@ export namespace AiIntegrationBindings {
   );
   export const EmbeddingModel = BindingKey.create<EmbeddingProvider>(
     'services.ai-reporting.embeddingModel',
-  );
-  export const Checkpointer = BindingKey.create<BaseCheckpointSaver>(
-    'services.ai-reporting.checkpointer',
   );
   export const Tools = BindingKey.create<ToolStore>(
     'services.ai-reporting.tool-store',

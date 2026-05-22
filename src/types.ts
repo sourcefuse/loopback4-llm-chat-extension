@@ -5,10 +5,8 @@ import {
   ChatGoogleGenerativeAI,
   GoogleGenerativeAIEmbeddings,
 } from '@langchain/google-genai';
-import {BaseCheckpointSaver} from '@langchain/langgraph';
 import {ChatOllama, OllamaEmbeddings} from '@langchain/ollama';
 import {ChatOpenAI, OpenAIEmbeddings} from '@langchain/openai';
-import {Provider} from '@loopback/core';
 import {AnyObject} from '@loopback/repository';
 import {IGraphTool} from './graphs/types';
 import {ChatGroq} from '@langchain/groq';
@@ -56,8 +54,6 @@ export type EmbeddingProvider =
   | OllamaEmbeddings
   | BedrockEmbeddings
   | GoogleGenerativeAIEmbeddings;
-
-export type CheckpointerProvider = Provider<BaseCheckpointSaver>;
 
 export type ToolStore = {
   list: IGraphTool[];

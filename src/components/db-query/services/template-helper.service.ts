@@ -10,7 +10,7 @@ import {
   QueryTemplateMetadata,
   TemplatePlaceholder,
 } from '../types';
-import {RunnableConfig} from '../../../graphs';
+import type {RunnableConfig} from '@langchain/core/runnables';
 
 const MAX_TEMPLATE_RECURSION_DEPTH = 3;
 

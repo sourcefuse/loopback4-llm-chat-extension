@@ -1,47 +1,23 @@
 import {AIMessage, HumanMessage, ToolMessage} from '@langchain/core/messages';
 import {RunnableToolLike} from '@langchain/core/runnables';
 import {StructuredToolInterface} from '@langchain/core/tools';
-import {LangGraphRunnableConfig} from '@langchain/langgraph';
 import {Tool} from '@mastra/core/tools';
-import {AnyObject, Command} from '@loopback/repository';
-import {LLMStreamEvent} from './event.types';
+import type {AnyObject} from '@loopback/repository';
 
-export type {LangGraphRunnableConfig} from '@langchain/langgraph';
-
-export type RunnableConfig = LangGraphRunnableConfig & {
-  writer?: (event: LLMStreamEvent) => void;
-};
-
-export interface IGraphNode<T extends object> {
-  execute: (state: T, config: RunnableConfig) => Promise<Partial<T> | Command>;
-}
-
-export type SavedMessage = HumanMessage | AIMessage | ToolMessage;
-
+/**
+ * Legacy LangChain-shaped tool interface. Kept for any downstream
+ * consumer still injecting `AiIntegrationBindings.Tools`. The Mastra
+ * code path uses `IMastraGraphTool` and `MastraToolStore` below.
+ */
 export interface IGraphTool {
   key: string;
-  build(
-    config: LangGraphRunnableConfig,
-  ): Promise<StructuredToolInterface | RunnableToolLike>;
+  build(): Promise<StructuredToolInterface | RunnableToolLike>;
   getValue?(result: Record<string, string>): string;
   getMetadata?(result: Record<string, string>): AnyObject;
   needsReview?: boolean;
 }
 
-export type IGraphDirectEdge = {
-  from: string;
-  to: string;
-};
-
-export type IGraphConditionalEdge<T extends object> = {
-  from: string;
-  toList: string[];
-  branchingFunction(state: T): string;
-};
-
-export type IGraphEdge<T extends object> =
-  | IGraphDirectEdge
-  | IGraphConditionalEdge<T>;
+export type SavedMessage = HumanMessage | AIMessage | ToolMessage;
 
 export enum ToolStatus {
   Running = 'running',
@@ -50,8 +26,10 @@ export enum ToolStatus {
   AwaitingApproval = 'awaiting_approval',
 }
 
-// Mastra-shaped tool interface. Coexists with v2 IGraphTool during P1 transition.
-// In P3 (LangGraph deletion), IGraphTool is replaced by this shape and renamed back to IGraphTool.
+/**
+ * Mastra-shaped tool interface used by the Mastra createTool wrappers and
+ * consumed by WorkflowRunner.buildAgent() via MastraToolStore.
+ */
 export interface IMastraGraphTool {
   key: string;
   requireApproval?: boolean;

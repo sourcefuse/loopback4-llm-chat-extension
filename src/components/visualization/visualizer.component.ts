@@ -8,13 +8,6 @@ import {
   ServiceOrProviderClass,
 } from '@loopback/core';
 import {AnyObject} from '@loopback/repository';
-import {VisualizationGraph} from './visualization.graph';
-import {
-  CallQueryGenerationNode,
-  GetDatasetDataNode,
-  RenderVisualizationNode,
-  SelectVisualizationNode,
-} from './nodes';
 import {PieVisualizer, BarVisualizer, LineVisualizer} from './visualizers';
 
 export class VisualizerComponent implements Component {
@@ -31,14 +24,9 @@ export class VisualizerComponent implements Component {
     this.bindings = [];
     this.lifeCycleObservers = [];
     this.services = [
-      // graph
-      VisualizationGraph,
-      // nodes
-      GetDatasetDataNode,
-      SelectVisualizationNode,
-      RenderVisualizationNode,
-      CallQueryGenerationNode,
-      // visualizers
+      // visualizers (consumer-extensible via @visualizer() — the Mastra
+      // visualizationWorkflow's render step dispatches to these via
+      // RequestContext, see Section 9.3)
       PieVisualizer,
       BarVisualizer,
       LineVisualizer,
