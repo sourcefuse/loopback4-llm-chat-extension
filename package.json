@@ -149,6 +149,7 @@
     "@mastra/core": "~1.36.0",
     "@mastra/libsql": "~1.11.1",
     "@mastra/memory": "~1.19.0",
+    "@mastra/pg": "~1.11.1",
     "@openrouter/ai-sdk-provider": "^2.9.0",
     "@sourceloop/chat-service": "^17.0.6",
     "@sourceloop/core": "^20.0.6",
