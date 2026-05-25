@@ -57,65 +57,13 @@ It does not return anything, instead it fires an event internally that renders t
           data: {id: toolCallId, status: ToolStatus.Running},
         });
         try {
-          const workflow = this.mastra.getWorkflow(
-            'visualizationWorkflow' as never,
+          return await this.runVisualizationWorkflow(
+            writer,
+            toolCallId,
+            inputData.datasetId ?? '',
+            inputData.prompt,
+            ctx,
           );
-          if (!workflow) {
-            throw new Error(
-              "visualizationWorkflow not registered in Mastra — check MastraProvider's workflows config",
-            );
-          }
-          const run = await workflow.createRun();
-          const result = await run.start({
-            inputData: {
-              datasetId: inputData.datasetId ?? '',
-              userQuery: inputData.prompt,
-            },
-            requestContext: ctx?.requestContext,
-          } as never);
-          if (result.status === 'suspended') {
-            // HITL — emit AwaitingApproval, return empty. Resume in v3.1.
-            writer?.({
-              type: LLMStreamEventType.ToolStatus,
-              data: {id: toolCallId, status: ToolStatus.AwaitingApproval},
-            });
-            return {};
-          }
-          if (result.status !== 'success') {
-            throw new Error(`Visualization failed: ${result.status}`);
-          }
-          const rawResult =
-            (result as {result?: Record<string, unknown>}).result ?? {};
-          // visualizationWorkflow's final step is `.then(renderVisualizationStep)`
-          // (not a `.branch()`), so the result lands directly on the top level
-          // — no branch-key unwrap needed.
-          const workflowResult = rawResult as {
-            chartConfig?: unknown;
-            datasetId?: string;
-            sql?: string;
-            description?: string;
-          };
-          // Emit final Tool event so the UI can render the chart inline.
-          // App reads `evtData.data.visualization` for the chart config and
-          // `evtData.data.datasetId` for the like/dislike footer (see app.js).
-          writer?.({
-            type: LLMStreamEventType.Tool,
-            data: {
-              id: toolCallId,
-              tool: this.key,
-              data: {
-                visualization: workflowResult.chartConfig ?? {},
-                datasetId: workflowResult.datasetId ?? '',
-                sql: workflowResult.sql ?? '',
-                description: workflowResult.description ?? '',
-              },
-            },
-          });
-          writer?.({
-            type: LLMStreamEventType.ToolStatus,
-            data: {id: toolCallId, status: ToolStatus.Completed},
-          });
-          return workflowResult;
         } catch (err) {
           // Single Failed emit.
           writer?.({
@@ -126,5 +74,68 @@ It does not return anything, instead it fires an event internally that renders t
         }
       },
     });
+  }
+
+  private async runVisualizationWorkflow(
+    writer: ((e: LLMStreamEvent) => void) | undefined,
+    toolCallId: string,
+    datasetId: string,
+    userQuery: string,
+    ctx: unknown,
+  ): Promise<unknown> {
+    const workflow = this.mastra.getWorkflow('visualizationWorkflow' as never);
+    if (!workflow) {
+      throw new Error(
+        "visualizationWorkflow not registered in Mastra — check MastraProvider's workflows config",
+      );
+    }
+    const run = await workflow.createRun();
+    const result = await run.start({
+      inputData: {datasetId, userQuery},
+      requestContext: (ctx as {requestContext?: unknown})?.requestContext,
+    } as never);
+    if (result.status === 'suspended') {
+      // HITL — emit AwaitingApproval, return empty. Resume in v3.1.
+      writer?.({
+        type: LLMStreamEventType.ToolStatus,
+        data: {id: toolCallId, status: ToolStatus.AwaitingApproval},
+      });
+      return {};
+    }
+    if (result.status !== 'success') {
+      throw new Error(`Visualization failed: ${result.status}`);
+    }
+    // visualizationWorkflow's final step is `.then(renderVisualizationStep)`
+    // (not a `.branch()`), so the result lands directly on the top level
+    // — no branch-key unwrap needed.
+    const rawResult =
+      (result as {result?: Record<string, unknown>}).result ?? {};
+    const workflowResult = rawResult as {
+      chartConfig?: unknown;
+      datasetId?: string;
+      sql?: string;
+      description?: string;
+    };
+    // Emit final Tool event so the UI can render the chart inline.
+    // App reads `evtData.data.visualization` for the chart config and
+    // `evtData.data.datasetId` for the like/dislike footer (see app.js).
+    writer?.({
+      type: LLMStreamEventType.Tool,
+      data: {
+        id: toolCallId,
+        tool: this.key,
+        data: {
+          visualization: workflowResult.chartConfig ?? {},
+          datasetId: workflowResult.datasetId ?? '',
+          sql: workflowResult.sql ?? '',
+          description: workflowResult.description ?? '',
+        },
+      },
+    });
+    writer?.({
+      type: LLMStreamEventType.ToolStatus,
+      data: {id: toolCallId, status: ToolStatus.Completed},
+    });
+    return workflowResult;
   }
 }

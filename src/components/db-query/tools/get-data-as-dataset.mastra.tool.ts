@@ -49,68 +49,12 @@ export class MastraGetDataAsDatasetTool implements IMastraGraphTool {
           data: {id: toolCallId, status: ToolStatus.Running},
         });
         try {
-          const workflow = this.mastra.getWorkflow(
-            'generateQueryWorkflow' as never,
-          );
-          if (!workflow) {
-            throw new Error(
-              "generateQueryWorkflow not registered in Mastra — check MastraProvider's workflows config",
-            );
-          }
-          const run = await workflow.createRun();
-          const result = await run.start({
+          return await this.runQueryWorkflow(
+            writer,
+            toolCallId,
             inputData,
-            requestContext: ctx?.requestContext,
-          } as never);
-          if (result.status === 'suspended') {
-            // HITL — emit AwaitingApproval, return empty so the Agent
-            // pauses. Resume flow lands with the ApprovalController in
-            // v3.1 (Phase 4 of the migration plan).
-            writer?.({
-              type: LLMStreamEventType.ToolStatus,
-              data: {id: toolCallId, status: ToolStatus.AwaitingApproval},
-            });
-            return {};
-          }
-          if (result.status !== 'success') {
-            throw new Error(`Query generation failed: ${result.status}`);
-          }
-          // Mastra wraps the matched branch's output under the branch step
-          // id (mirroring `.parallel()` fan-in shape), so unwrap the
-          // `save-dataset`/`failed` key when present.
-          const rawResult =
-            (result as {result?: Record<string, unknown>}).result ?? {};
-          const branchOutput =
-            (rawResult['save-dataset'] as
-              | Record<string, unknown>
-              | undefined) ??
-            (rawResult['failed'] as Record<string, unknown> | undefined) ??
-            rawResult;
-          const workflowResult = branchOutput as {
-            datasetId?: string;
-            sql?: string;
-            rowCount?: number;
-          };
-          // Emit final Tool event so the UI's chat bubble can attach the
-          // SQL/template badge and the like/dislike footer (app.js reads
-          // evtData.data.datasetId off the `tool` event).
-          writer?.({
-            type: LLMStreamEventType.Tool,
-            data: {
-              id: toolCallId,
-              tool: this.key,
-              data: {
-                datasetId: workflowResult.datasetId ?? '',
-                sql: workflowResult.sql ?? '',
-                rowCount: workflowResult.rowCount ?? 0,
-              },
-            },
-          });
-          writer?.({
-            type: LLMStreamEventType.ToolStatus,
-            data: {id: toolCallId, status: ToolStatus.Completed},
-          });
-          return workflowResult;
+            ctx,
+          );
         } catch (err) {
           // Single Failed emit. Status-not-success path throws above
           // without emitting; this catch is the only Failed source.
@@ -122,5 +66,78 @@ export class MastraGetDataAsDatasetTool implements IMastraGraphTool {
         }
       },
     });
+  }
+
+  private extractQueryBranchResult(result: unknown): {
+    datasetId?: string;
+    sql?: string;
+    rowCount?: number;
+  } {
+    // Mastra wraps the matched branch's output under the branch step id
+    // (mirroring `.parallel()` fan-in shape), so unwrap the
+    // `save-dataset`/`failed` key when present.
+    const rawResult =
+      (result as {result?: Record<string, unknown>}).result ?? {};
+    const branchOutput =
+      (rawResult['save-dataset'] as Record<string, unknown> | undefined) ??
+      (rawResult['failed'] as Record<string, unknown> | undefined) ??
+      rawResult;
+    return branchOutput as {
+      datasetId?: string;
+      sql?: string;
+      rowCount?: number;
+    };
+  }
+
+  private async runQueryWorkflow(
+    writer: ((e: LLMStreamEvent) => void) | undefined,
+    toolCallId: string,
+    inputData: {prompt: string},
+    ctx: unknown,
+  ): Promise<unknown> {
+    const workflow = this.mastra.getWorkflow('generateQueryWorkflow' as never);
+    if (!workflow) {
+      throw new Error(
+        "generateQueryWorkflow not registered in Mastra — check MastraProvider's workflows config",
+      );
+    }
+    const run = await workflow.createRun();
+    const result = await run.start({
+      inputData,
+      requestContext: (ctx as {requestContext?: unknown})?.requestContext,
+    } as never);
+    if (result.status === 'suspended') {
+      // HITL — emit AwaitingApproval, return empty so the Agent pauses.
+      // Resume flow lands with the ApprovalController in v3.1.
+      writer?.({
+        type: LLMStreamEventType.ToolStatus,
+        data: {id: toolCallId, status: ToolStatus.AwaitingApproval},
+      });
+      return {};
+    }
+    if (result.status !== 'success') {
+      throw new Error(`Query generation failed: ${result.status}`);
+    }
+    const workflowResult = this.extractQueryBranchResult(result);
+    // Emit final Tool event so the UI's chat bubble can attach the
+    // SQL/template badge and the like/dislike footer (app.js reads
+    // evtData.data.datasetId off the `tool` event).
+    writer?.({
+      type: LLMStreamEventType.Tool,
+      data: {
+        id: toolCallId,
+        tool: this.key,
+        data: {
+          datasetId: workflowResult.datasetId ?? '',
+          sql: workflowResult.sql ?? '',
+          rowCount: workflowResult.rowCount ?? 0,
+        },
+      },
+    });
+    writer?.({
+      type: LLMStreamEventType.ToolStatus,
+      data: {id: toolCallId, status: ToolStatus.Completed},
+    });
+    return workflowResult;
   }
 }
