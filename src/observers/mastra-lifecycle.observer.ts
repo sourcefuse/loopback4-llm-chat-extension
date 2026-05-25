@@ -23,8 +23,8 @@ export class MastraLifecycleObserver implements LifeCycleObserver {
   constructor(@inject(AiIntegrationBindings.Mastra) private mastra: Mastra) {}
 
   async start(): Promise<void> {
-    // Reserved for vector-index preflight, RLS check, etc. (
-    // recommended boot-time safety gate for workingMemory + ResourceId).
+    // Reserved for vector-index preflight, RLS check, etc.
+    // Recommended boot-time safety gate for workingMemory + ResourceId.
   }
 
   async stop(): Promise<void> {

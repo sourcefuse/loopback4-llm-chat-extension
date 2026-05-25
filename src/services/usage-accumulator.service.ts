@@ -39,8 +39,8 @@ export class UsageAccumulator {
    * Consume-and-reset: returns the current totals and clears the
    * internal Map. Use this when handing off totals to a consumer
    * (LimitStrategy, audit log, etc.) so the next request starts from
-   * zero — important because this service is SINGLETON scope and the
-   * Map would otherwise leak across requests / tests.
+   * zero — important when reusing a long-lived instance so the
+   * Map does not accumulate stale entries across requests / tests.
    */
   flush(): Record<string, {input: number; output: number}> {
     const out = Object.fromEntries(this.perModel);
