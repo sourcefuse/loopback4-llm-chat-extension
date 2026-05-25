@@ -8,7 +8,6 @@ import {
 import {ChatOllama, OllamaEmbeddings} from '@langchain/ollama';
 import {ChatOpenAI, OpenAIEmbeddings} from '@langchain/openai';
 import {AnyObject} from '@loopback/repository';
-import {IGraphTool} from './graphs/types';
 import {ChatGroq} from '@langchain/groq';
 import {ChatOpenRouter} from '@langchain/openrouter';
 
@@ -54,11 +53,6 @@ export type EmbeddingProvider =
   | OllamaEmbeddings
   | BedrockEmbeddings
   | GoogleGenerativeAIEmbeddings;
-
-export type ToolStore = {
-  list: IGraphTool[];
-  map: Record<string, IGraphTool>;
-};
 
 export enum ChannelType {
   Chat = 'chat',

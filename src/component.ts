@@ -36,7 +36,7 @@ import {DEFAULT_FILE_SIZE, MAX_TOTAL_SIZE} from './constant';
 import {GenerationController} from './controllers';
 import {WriterDB, AiIntegrationBindings, ReaderDB} from './keys';
 import {Chat, Message} from './models';
-import {CacheModel, ToolsProvider} from './providers';
+import {CacheModel} from './providers';
 import {RedisCache, RedisCacheRepository} from './providers/cache/redis';
 import {ChatRepository, MessageRepository} from './repositories';
 import {
@@ -96,7 +96,6 @@ export class AiIntegrationsComponent implements Component {
 
     this.providers = {
       [AiIntegrationBindings.VectorStore.key]: PgVectorStore,
-      [AiIntegrationBindings.Tools.key]: ToolsProvider,
     };
 
     this.services = [

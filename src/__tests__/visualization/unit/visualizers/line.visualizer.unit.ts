@@ -1,22 +1,16 @@
 import {expect, sinon} from '@loopback/testlab';
 import {LineVisualizer} from '../../../../components/visualization/visualizers/line.visualizer';
-import {LLMProvider} from '../../../../types';
 import {fail} from 'assert';
 import {VisualizationGraphState} from '../../../../components';
-
 describe('LineVisualizer Unit', function () {
   let visualizer: LineVisualizer;
-  let llmProvider: sinon.SinonStubbedInstance<LLMProvider>;
-  let withStructuredOutputStub: sinon.SinonStub;
+  let generateObjectStub: sinon.SinonStub;
 
   beforeEach(() => {
-    // Create stub for LLM provider
-    withStructuredOutputStub = sinon.stub();
-    llmProvider = {
-      withStructuredOutput: withStructuredOutputStub,
-    } as sinon.SinonStubbedInstance<LLMProvider>;
-
-    visualizer = new LineVisualizer(llmProvider);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    visualizer = new LineVisualizer({} as any);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    generateObjectStub = sinon.stub(visualizer, 'callGen' as any);
   });
 
   afterEach(() => {
@@ -146,8 +140,7 @@ describe('LineVisualizer Unit', function () {
       seriesColumns: 'product_line',
     };
 
-    const mockInvoke = sinon.stub().resolves(mockLLMResponse);
-    withStructuredOutputStub.returns(mockInvoke);
+    generateObjectStub.resolves({object: mockLLMResponse});
 
     const validState = {
       prompt:
@@ -159,33 +152,32 @@ describe('LineVisualizer Unit', function () {
 
     const config = await visualizer.getConfig(validState);
 
-    expect(config).to.deepEqual(mockLLMResponse);
-    expect(
-      withStructuredOutputStub.calledOnceWith(visualizer.schema),
-    ).to.be.true();
-    expect(mockInvoke.calledOnce).to.be.true();
+    expect(config.xAxisColumn).to.equal('month');
+    expect(config.yAxisColumn).to.equal('revenue');
+    expect(generateObjectStub.calledOnce).to.be.true();
 
-    // Check that the mock was called with a StringPromptValue containing our data
-    const invokeArgs = mockInvoke.getCall(0).args[0];
-    expect(invokeArgs).to.have.property('value');
+    // Check that generateObject was called with a prompt containing our data
+    const callArgs = generateObjectStub.getCall(0).args[0];
+    expect(callArgs.prompt).to.match(/<sql>/);
+    expect(callArgs.prompt).to.match(/<description>/);
+    expect(callArgs.prompt).to.match(/<user-prompt>/);
     // Escape special regex characters in SQL
     const escapedSQL = validState.sql?.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    expect(invokeArgs.value).to.match(new RegExp(escapedSQL ?? ''));
-    expect(invokeArgs.value).to.match(
+    expect(callArgs.prompt).to.match(new RegExp(escapedSQL ?? ''));
+    expect(callArgs.prompt).to.match(
       new RegExp(validState.queryDescription ?? ''),
     );
-    expect(invokeArgs.value).to.match(new RegExp(validState.prompt));
+    expect(callArgs.prompt).to.match(new RegExp(validState.prompt));
   });
 
   it('should successfully generate config without series column', async () => {
-    const mockLLMResponse = {
-      xAxisColumn: 'month',
-      yAxisColumn: 'total_sales',
-      seriesColumns: null,
-    };
-
-    const mockInvoke = sinon.stub().resolves(mockLLMResponse);
-    withStructuredOutputStub.returns(mockInvoke);
+    generateObjectStub.resolves({
+      object: {
+        xAxisColumn: 'month',
+        yAxisColumn: 'total_sales',
+        seriesColumns: null,
+      },
+    });
 
     const validState = {
       prompt: 'Show me total sales over time',
@@ -196,14 +188,14 @@ describe('LineVisualizer Unit', function () {
 
     const config = await visualizer.getConfig(validState);
 
-    expect(config).to.deepEqual(mockLLMResponse);
+    expect(config.xAxisColumn).to.equal('month');
+    expect(config.yAxisColumn).to.equal('total_sales');
     expect(config.seriesColumns).to.be.null();
   });
 
   it('should handle LLM errors gracefully', async () => {
     const mockError = new Error('LLM processing failed');
-    const mockInvoke = sinon.stub().rejects(mockError);
-    withStructuredOutputStub.returns(mockInvoke);
+    generateObjectStub.rejects(mockError);
 
     const validState = {
       prompt: 'test prompt',
@@ -220,17 +212,32 @@ describe('LineVisualizer Unit', function () {
     }
   });
 
-  it('should contain proper prompt template structure', () => {
-    const promptTemplate = visualizer.renderPrompt;
-    expect(promptTemplate).to.be.ok();
+  it('should contain proper prompt template structure', async () => {
+    generateObjectStub.resolves({
+      object: {
+        xAxisColumn: 'date',
+        yAxisColumn: 'value',
+        seriesColumns: '',
+      },
+    });
 
-    const templateText = promptTemplate.template;
-    expect(templateText).to.match(/line chart/);
-    expect(templateText).to.match(/\{sql\}/);
-    expect(templateText).to.match(/\{description\}/);
-    expect(templateText).to.match(/\{userPrompt\}/);
-    expect(templateText).to.match(/x-axis/);
-    expect(templateText).to.match(/y-axis/);
-    expect(templateText).to.match(/multiple series/);
+    const validState = {
+      prompt: 'test prompt',
+      datasetId: 'test-dataset',
+      sql: 'SELECT * FROM test',
+      queryDescription: 'test description',
+    } as unknown as VisualizationGraphState;
+
+    await visualizer.getConfig(validState);
+
+    const callArgs = generateObjectStub.getCall(0).args[0];
+    const promptText: string = callArgs.prompt;
+    expect(promptText).to.match(/line chart/);
+    expect(promptText).to.match(/<sql>/);
+    expect(promptText).to.match(/<description>/);
+    expect(promptText).to.match(/<user-prompt>/);
+    expect(promptText).to.match(/x-axis/);
+    expect(promptText).to.match(/y-axis/);
+    expect(promptText).to.match(/multiple series/);
   });
 });

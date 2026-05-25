@@ -1,23 +1,5 @@
-import {AIMessage, HumanMessage, ToolMessage} from '@langchain/core/messages';
-import {RunnableToolLike} from '@langchain/core/runnables';
-import {StructuredToolInterface} from '@langchain/core/tools';
 import {Tool} from '@mastra/core/tools';
 import type {AnyObject} from '@loopback/repository';
-
-/**
- * Legacy LangChain-shaped tool interface. Kept for any downstream
- * consumer still injecting `AiIntegrationBindings.Tools`. The Mastra
- * code path uses `IMastraGraphTool` and `MastraToolStore` below.
- */
-export interface IGraphTool {
-  key: string;
-  build(): Promise<StructuredToolInterface | RunnableToolLike>;
-  getValue?(result: Record<string, string>): string;
-  getMetadata?(result: Record<string, string>): AnyObject;
-  needsReview?: boolean;
-}
-
-export type SavedMessage = HumanMessage | AIMessage | ToolMessage;
 
 export enum ToolStatus {
   Running = 'running',

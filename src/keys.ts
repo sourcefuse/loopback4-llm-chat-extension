@@ -12,7 +12,6 @@ import {
   EmbeddingProvider,
   ICache,
   LLMProvider,
-  ToolStore,
 } from './types';
 import {ILimitStrategy} from './services/limit-strategies/types';
 
@@ -45,9 +44,6 @@ export namespace AiIntegrationBindings {
   );
   export const EmbeddingModel = BindingKey.create<EmbeddingProvider>(
     'services.ai-reporting.embeddingModel',
-  );
-  export const Tools = BindingKey.create<ToolStore>(
-    'services.ai-reporting.tool-store',
   );
   export const Transport = BindingKey.create<ITransport>(
     'services.ai-reporting.transport',
@@ -88,9 +84,6 @@ export namespace AiIntegrationBindings {
   export const RunRegistry = BindingKey.create<IRunRegistry>(
     'services.ai-reporting.runRegistry',
   );
-  // Mastra-shaped tool registry consumed by WorkflowRunner. Parallel to the
-  // legacy `Tools` binding while v2 IGraphTool consumers (ChatGraph) are
-  // alive; replaced cleanly in P3.
   export const MastraTools = BindingKey.create<MastraToolStore>(
     'services.ai-reporting.mastraTools',
   );
