@@ -230,6 +230,9 @@ export const improveQueryWorkflow = createWorkflow({
       async ({inputData}) => !(inputData as {passed?: boolean}).passed,
       failedStep,
     ],
-    [async () => true, saveImprovedStep],
+    [
+      async ({inputData}) => (inputData as {passed?: boolean}).passed === true,
+      saveImprovedStep,
+    ],
   ])
   .commit();

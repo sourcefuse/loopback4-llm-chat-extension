@@ -184,7 +184,8 @@ async function runValidationStage(args: {
   checklist?: string;
 }): Promise<{passed: boolean; feedback?: string}> {
   const {sql} = args;
-  if (!sql) return {passed: true};
+  if (!sql)
+    return {passed: false, feedback: 'SQL generation produced an empty query.'};
   const syntactic = await validateSqlSyntactic(sql, args.dbConnector);
   if (!syntactic.passed) return syntactic;
   return validateSqlSemantic({

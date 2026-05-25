@@ -80,6 +80,9 @@ const inputSchema = z.object({
 
 const outputSchema = z.object({
   chartConfig: z.unknown(),
+  datasetId: z.string().optional(),
+  sql: z.string().optional(),
+  description: z.string().optional(),
 });
 
 /**
@@ -168,7 +171,12 @@ const callQueryGenerationStep = createStep({
       },
       requestContext,
     } as never);
-    const out = (result as {result?: {datasetId?: string}}).result;
+    // generateQueryWorkflow ends with a `.branch()` so its result is keyed
+    // by `save-dataset` or `failed`; unwrap the success branch.
+    const rawOut = (result as {result?: Record<string, unknown>}).result ?? {};
+    const out =
+      (rawOut['save-dataset'] as {datasetId?: string} | undefined) ??
+      (rawOut as {datasetId?: string});
     return {
       datasetId: out?.datasetId ?? '',
       needsQuery: false,
@@ -247,7 +255,7 @@ const renderVisualizationStep = createStep({
     const description = upstream.description;
     const datasetId = upstream.datasetId ?? '';
     const chosen = pickVisualizer(getVisualizers(requestContext), chartType);
-    if (!chosen) return {chartConfig: {}};
+    if (!chosen) return {chartConfig: {}, datasetId, sql, description};
     try {
       const config = await chosen.getConfig({
         prompt: userQuery,
@@ -259,9 +267,9 @@ const renderVisualizationStep = createStep({
         done: true,
         type: chartType,
       });
-      return {chartConfig: config};
+      return {chartConfig: config, datasetId, sql, description};
     } catch {
-      return {chartConfig: {}};
+      return {chartConfig: {}, datasetId, sql, description};
     }
   },
 });
@@ -272,13 +280,12 @@ export const visualizationWorkflow = createWorkflow({
   outputSchema,
 })
   .then(selectVisualisationStep)
-  .branch([
-    [
-      async ({inputData}) =>
-        (inputData as {needsQuery?: boolean}).needsQuery === true,
-      callQueryGenerationStep,
-    ],
-    [async () => true, getDatasetDataStep],
-  ])
+  // callQueryGenerationStep is idempotent — if `datasetId` is provided it
+  // short-circuits without invoking the inner generateQueryWorkflow.
+  // Running it unconditionally keeps the chain linear so `getDatasetData`
+  // always runs after a datasetId is resolved (matches v2 graph order
+  // Select -> CallQueryGeneration -> GetDatasetData -> Render).
+  .then(callQueryGenerationStep)
+  .then(getDatasetDataStep)
   .then(renderVisualizationStep)
   .commit();

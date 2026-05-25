@@ -236,7 +236,7 @@ const postCacheAndTablesStep = createStep({
     datasetId: z.string().optional(),
     prompt: z.string(),
   }),
-  execute: async ({getStepResult, inputData}) => {
+  execute: async ({getStepResult, getInitData, inputData}) => {
     const cache = (getStepResult('check-cache') ?? {cacheHit: false}) as {
       cacheHit: boolean;
       datasetId?: string;
@@ -247,6 +247,13 @@ const postCacheAndTablesStep = createStep({
     const templates = (getStepResult('check-templates') ?? {
       matched: false,
     }) as {matched: boolean; templateId?: string};
+    // After `.parallel()`, `inputData` is the parallel-step output map keyed by
+    // step ids — the workflow's initial `{prompt, ...}` payload is no longer
+    // visible there. Read the prompt from `getInitData()` so downstream steps
+    // (sql-and-validate, save-dataset) see a non-empty prompt.
+    const init = (getInitData?.() ?? {}) as {prompt?: string};
+    const prompt =
+      init.prompt ?? (inputData as {prompt?: string})?.prompt ?? '';
     return {
       fromCache: cache.cacheHit,
       fromTemplate: templates.matched,
@@ -254,7 +261,7 @@ const postCacheAndTablesStep = createStep({
       tables: tables.tables,
       templateId: templates.templateId,
       datasetId: cache.datasetId,
-      prompt: (inputData as {prompt?: string})?.prompt ?? '',
+      prompt,
     };
   },
 });
@@ -565,7 +572,11 @@ export const generateQueryWorkflow = createWorkflow({
         (inputData as {status?: string}).status === 'Failed',
       failedStep,
     ],
-    [async () => true, getColumnsStep],
+    [
+      async ({inputData}) =>
+        (inputData as {status?: string}).status === 'Continue',
+      getColumnsStep,
+    ],
   ])
   .then(generateChecklistStep)
   .dountil(
@@ -578,6 +589,9 @@ export const generateQueryWorkflow = createWorkflow({
       async ({inputData}) => !(inputData as {passed?: boolean}).passed,
       failedStep,
     ],
-    [async () => true, saveDatasetStep],
+    [
+      async ({inputData}) => (inputData as {passed?: boolean}).passed === true,
+      saveDatasetStep,
+    ],
   ])
   .commit();

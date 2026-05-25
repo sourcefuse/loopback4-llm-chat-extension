@@ -84,11 +84,38 @@ It does not return anything, instead it fires an event internally that renders t
           if (result.status !== 'success') {
             throw new Error(`Visualization failed: ${result.status}`);
           }
+          const rawResult =
+            (result as {result?: Record<string, unknown>}).result ?? {};
+          // visualizationWorkflow's final step is `.then(renderVisualizationStep)`
+          // (not a `.branch()`), so the result lands directly on the top level
+          // — no branch-key unwrap needed.
+          const workflowResult = rawResult as {
+            chartConfig?: unknown;
+            datasetId?: string;
+            sql?: string;
+            description?: string;
+          };
+          // Emit final Tool event so the UI can render the chart inline.
+          // App reads `evtData.data.visualization` for the chart config and
+          // `evtData.data.datasetId` for the like/dislike footer (see app.js).
+          writer?.({
+            type: LLMStreamEventType.Tool,
+            data: {
+              id: toolCallId,
+              tool: this.key,
+              data: {
+                visualization: workflowResult.chartConfig ?? {},
+                datasetId: workflowResult.datasetId ?? '',
+                sql: workflowResult.sql ?? '',
+                description: workflowResult.description ?? '',
+              },
+            },
+          });
           writer?.({
             type: LLMStreamEventType.ToolStatus,
             data: {id: toolCallId, status: ToolStatus.Completed},
           });
-          return (result as {result?: unknown}).result ?? {};
+          return workflowResult;
         } catch (err) {
           // Single Failed emit.
           writer?.({
