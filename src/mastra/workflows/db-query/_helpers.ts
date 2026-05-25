@@ -132,10 +132,25 @@ export function stripJsonFences(text: string): string {
 export type SqlGenInput = {
   prompt: string;
   tables: string[];
+  columns?: Record<string, string[]>;
   checklist?: string;
   feedback?: string;
   originalSql?: string;
 };
+
+function formatTablesWithColumns(
+  tables: string[],
+  columns: Record<string, string[]> | undefined,
+): string {
+  if (!tables.length) return '(any)';
+  if (!columns) return tables.join(', ');
+  return tables
+    .map(t => {
+      const cols = columns[t];
+      return cols?.length ? `${t}(${cols.join(', ')})` : t;
+    })
+    .join('; ');
+}
 
 export type SqlAttemptResult = {
   sql: string;
@@ -150,6 +165,7 @@ async function runGenerationStage(args: {
   chatLlm: LanguageModel | undefined;
   prompt: string;
   tables: string[];
+  columns?: Record<string, string[]>;
   checklist?: string;
   feedback?: string;
   initialSql?: string;
@@ -163,6 +179,7 @@ async function runGenerationStage(args: {
     args.buildPrompt({
       prompt: args.prompt,
       tables: args.tables,
+      columns: args.columns,
       checklist: args.checklist,
       feedback: args.feedback,
       originalSql: args.initialSql,
@@ -206,6 +223,7 @@ export async function runSqlAttempt(args: {
   dbConnector: IDbConnector | undefined;
   prompt: string;
   tables: string[];
+  columns?: Record<string, string[]>;
   checklist?: string;
   feedback?: string;
   buildPrompt: (input: SqlGenInput) => string;
@@ -252,7 +270,7 @@ export async function generateSqlOnce(
  * Build the SQL-generation prompt used by generate.sqlAndValidateStep.
  */
 export function buildGenerateSqlPrompt(input: SqlGenInput): string {
-  const tablesLine = input.tables.length ? input.tables.join(', ') : '(any)';
+  const tablesLine = formatTablesWithColumns(input.tables, input.columns);
   const checklistLine = input.checklist ?? '(none)';
   const feedbackLine = input.feedback
     ? `Previous attempt was rejected with the following feedback that you must address: ${input.feedback}`
@@ -260,7 +278,7 @@ export function buildGenerateSqlPrompt(input: SqlGenInput): string {
   return `You are a SQL expert. Generate a single ANSI SQL query that satisfies the user's request.
 
 User request: ${input.prompt}
-Allowed tables: ${tablesLine}
+Allowed tables and columns (use ONLY these column names verbatim — do not invent or rename columns): ${tablesLine}
 Validation checklist:
 ${checklistLine}
 ${feedbackLine}
@@ -272,18 +290,21 @@ Return ONLY the SQL statement. No explanation, no markdown fences, no comments.`
  * Build the improve-SQL prompt used by improve.fixQueryStep.
  */
 export function buildImproveSqlPrompt(input: SqlGenInput): string {
-  const tablesLine = input.tables.length ? input.tables.join(', ') : '(any)';
   const checklistLine = input.checklist
     ? `Validation checklist:\n${input.checklist}`
     : '';
   const feedbackLine = input.feedback
     ? `Previous attempt was rejected: ${input.feedback}`
     : '';
+  const tablesWithColumns = formatTablesWithColumns(
+    input.tables,
+    input.columns,
+  );
   return `You are a SQL expert. Improve the existing SQL query to satisfy the user's new request.
 
 Existing SQL: ${input.originalSql ?? '(none)'}
 User feedback / delta request: ${input.prompt}
-Allowed tables: ${tablesLine}
+Allowed tables and columns (use ONLY these column names verbatim — do not invent or rename columns): ${tablesWithColumns}
 ${checklistLine}
 ${feedbackLine}
 

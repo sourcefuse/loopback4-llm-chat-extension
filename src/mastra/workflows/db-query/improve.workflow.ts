@@ -5,6 +5,8 @@ import {
   getChatLlm,
   getDatasetStore,
   getDbConnector,
+  getSchemaStore,
+  getTablesWithColumns,
   runSqlAttempt,
 } from './_helpers';
 
@@ -146,11 +148,16 @@ const fixQueryStep = createStep({
     if (data.loadError) return loadErrorShortCircuit(data);
     const prompt = data.prompt ?? '';
     const tables = data.tables ?? [];
+    const columns = getTablesWithColumns(
+      getSchemaStore(requestContext),
+      tables,
+    );
     const attempt = await runSqlAttempt({
       chatLlm: getChatLlm(requestContext),
       dbConnector: getDbConnector(requestContext),
       prompt,
       tables,
+      columns,
       checklist: data.checklist,
       feedback: data.feedback,
       buildPrompt: buildImproveSqlPrompt,
