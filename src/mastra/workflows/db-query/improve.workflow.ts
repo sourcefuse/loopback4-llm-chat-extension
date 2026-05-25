@@ -200,11 +200,15 @@ const saveImprovedStep = createStep({
     if (!data.datasetId || !data.sql) return failResult;
     const store = getDatasetStore(requestContext);
     if (!store) return failResult;
+    // Build the patch defensively: only include `description` when the
+    // upstream step produced one. Sending `description: undefined` against
+    // a NOT NULL column (the default datasets.description shape) makes
+    // some connectors (e.g. sqlite3) translate it to NULL and reject the
+    // update — silently dropping the improvement.
+    const patch: {query: string; description?: string} = {query: data.sql};
+    if (data.description !== undefined) patch.description = data.description;
     try {
-      await store.updateById(data.datasetId, {
-        query: data.sql,
-        description: data.description ?? undefined,
-      });
+      await store.updateById(data.datasetId, patch);
     } catch {
       // Persisted update rejected. Return fail-shape so the SSE layer
       // surfaces it instead of echoing the requested sql as if saved.

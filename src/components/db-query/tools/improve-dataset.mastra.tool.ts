@@ -67,11 +67,41 @@ export class MastraImproveDatasetTool implements IMastraGraphTool {
           if (result.status !== 'success') {
             throw new Error(`Improve dataset failed: ${result.status}`);
           }
+          // improveQueryWorkflow ends with a `.branch()` keyed by
+          // `save-improved` vs `failed`; unwrap whichever fired.
+          const rawResult =
+            (result as {result?: Record<string, unknown>}).result ?? {};
+          const branchOutput =
+            (rawResult['save-improved'] as
+              | Record<string, unknown>
+              | undefined) ??
+            (rawResult['failed'] as Record<string, unknown> | undefined) ??
+            rawResult;
+          const workflowResult = branchOutput as {
+            datasetId?: string;
+            sql?: string;
+            rowCount?: number;
+          };
+          // Emit final Tool event so the UI can attach the SQL/template
+          // badge and like/dislike footer (app.js reads
+          // evtData.data.datasetId off the `tool` event).
+          writer?.({
+            type: LLMStreamEventType.Tool,
+            data: {
+              id: toolCallId,
+              tool: this.key,
+              data: {
+                datasetId: workflowResult.datasetId ?? '',
+                sql: workflowResult.sql ?? '',
+                rowCount: workflowResult.rowCount ?? 0,
+              },
+            },
+          });
           writer?.({
             type: LLMStreamEventType.ToolStatus,
             data: {id: toolCallId, status: ToolStatus.Completed},
           });
-          return (result as {result?: unknown}).result ?? {};
+          return workflowResult;
         } catch (err) {
           // Single Failed emit — non-success branch throws above.
           writer?.({
