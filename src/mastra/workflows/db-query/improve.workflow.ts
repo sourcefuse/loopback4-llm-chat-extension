@@ -2,6 +2,7 @@ import {createStep, createWorkflow} from '@mastra/core/workflows';
 import {z} from 'zod';
 import {
   buildImproveSqlPrompt,
+  emitStepStatus,
   getChatLlm,
   getDatasetStore,
   getDbConnector,
@@ -81,6 +82,7 @@ const loadExistingStep = createStep({
     loadError: z.boolean().optional(),
   }),
   execute: async ({inputData, requestContext}) => {
+    emitStepStatus(requestContext, 'load-existing', 'Loading existing dataset');
     const base = {
       datasetId: inputData.datasetId,
       prompt: inputData.prompt,
@@ -135,6 +137,7 @@ const fixQueryStep = createStep({
     checklist: z.string(),
   }),
   execute: async ({inputData, requestContext}) => {
+    emitStepStatus(requestContext, 'fix-query', 'Improving SQL');
     const data = inputData as {
       datasetId?: string;
       prompt?: string;
@@ -188,6 +191,7 @@ const saveImprovedStep = createStep({
   inputSchema: z.any(),
   outputSchema,
   execute: async ({inputData, requestContext}) => {
+    emitStepStatus(requestContext, 'save-improved', 'Saving improvements');
     const data = inputData as {
       datasetId?: string;
       sql?: string;

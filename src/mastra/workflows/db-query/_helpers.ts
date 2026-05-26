@@ -2,6 +2,7 @@ import type {RequestContext} from '@mastra/core/request-context';
 import type {IAuthUserWithPermissions} from '@sourceloop/core';
 import {generateText} from 'ai';
 import type {LanguageModel} from 'ai';
+import {LLMStreamEventType} from '../../../graphs/event.types';
 import type {LLMStreamEvent} from '../../../graphs/event.types';
 import type {
   DbSchemaHelperService,
@@ -96,6 +97,33 @@ export function getTemplateCache(
 }
 export function getVisualizers(rc?: MastraRc): IVisualizer[] {
   return rc?.get('visualizers') ?? [];
+}
+
+export function getEventWriter(
+  rc?: MastraRc,
+): ((event: LLMStreamEvent) => void) | undefined {
+  return rc?.get('eventWriter');
+}
+
+/**
+ * Push a labelled ToolStatus event for the running workflow step so the
+ * UI's debug drawer (and v2 SSE consumers) get the same per-node
+ * progress strings v2 graph nodes used to emit. Mirrors the
+ * `Extracting relevant tables from the schema` / `Found relevant query
+ * in cache` calls in the legacy DbQuery graph nodes. Silently no-ops
+ * when the consumer hasn't wired an eventWriter.
+ */
+export function emitStepStatus(
+  rc: MastraRc | undefined,
+  stepId: string,
+  status: string,
+): void {
+  const writer = getEventWriter(rc);
+  if (!writer) return;
+  writer({
+    type: LLMStreamEventType.ToolStatus,
+    data: {id: stepId, status},
+  });
 }
 
 const SQL_FENCE = '```';
