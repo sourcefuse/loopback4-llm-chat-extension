@@ -4,6 +4,7 @@ import type {DataSetHelper} from '../../components/db-query/services';
 import type {IDataSetStore} from '../../components/db-query/types';
 import type {IVisualizer} from '../../components/visualization/types';
 import {
+  emitStepStatus,
   getDataSetHelper,
   getDatasetStore,
   getVisualizers,
@@ -110,6 +111,11 @@ const selectVisualisationStep = createStep({
     userQuery: z.string(),
   }),
   execute: async ({inputData, requestContext}) => {
+    emitStepStatus(
+      requestContext,
+      'select-visualisation',
+      'Selecting chart type',
+    );
     let chartType = inputData.type ?? DEFAULT_CHART_TYPE;
     if (!inputData.type) {
       const visualizers = getVisualizers(requestContext);
@@ -147,6 +153,11 @@ const callQueryGenerationStep = createStep({
     userQuery: z.string(),
   }),
   execute: async ({inputData, mastra, requestContext}) => {
+    emitStepStatus(
+      requestContext,
+      'call-query-generation',
+      'Generating data for chart',
+    );
     if (inputData.datasetId) {
       return {
         datasetId: inputData.datasetId,
@@ -209,6 +220,7 @@ const getDatasetDataStep = createStep({
     description: z.string().optional(),
   }),
   execute: async ({inputData, requestContext}) => {
+    emitStepStatus(requestContext, 'get-dataset-data', 'Fetching rows');
     const upstream = pickFromBranch<{
       datasetId?: string;
       chartType?: string;
@@ -241,6 +253,7 @@ const renderVisualizationStep = createStep({
   inputSchema: z.any(),
   outputSchema,
   execute: async ({inputData, requestContext}) => {
+    emitStepStatus(requestContext, 'render-visualization', 'Building chart');
     const upstream = pickFromBranch<{
       datasetId?: string;
       rows?: unknown[];

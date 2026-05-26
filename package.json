@@ -55,6 +55,10 @@
     "./langfuse": {
       "type": "./dist/sub-modules/obf/langfuse/index.d.ts",
       "default": "./dist/sub-modules/obf/langfuse/index.js"
+    },
+    "./mastra-langfuse": {
+      "type": "./dist/providers/mastra/observability/langfuse.provider.d.ts",
+      "default": "./dist/providers/mastra/observability/langfuse.provider.js"
     }
   },
   "typesVersions": {
@@ -88,6 +92,9 @@
       ],
       "langfuse": [
         "dist/sub-modules/obf/langfuse/index.d.ts"
+      ],
+      "mastra-langfuse": [
+        "dist/providers/mastra/observability/langfuse.provider.d.ts"
       ]
     }
   },

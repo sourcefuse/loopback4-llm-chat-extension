@@ -4,6 +4,7 @@ import {z} from 'zod';
 import {
   buildGenerateSqlPrompt,
   computeSchemaHash,
+  emitStepStatus,
   getAuthUser,
   getChatLlm,
   getDatasetStore,
@@ -94,6 +95,7 @@ const checkCacheStep = createStep({
     datasetId: z.string().optional(),
   }),
   execute: async ({inputData, requestContext}) => {
+    emitStepStatus(requestContext, 'check-cache', 'Checking query cache');
     const data = inputData as {prompt?: string};
     if (!data.prompt) return {cacheHit: false};
     const cache = getQueryCache(requestContext);
@@ -153,6 +155,11 @@ const getTablesStep = createStep({
   inputSchema,
   outputSchema: z.object({tables: z.array(z.string())}),
   execute: async ({requestContext}) => {
+    emitStepStatus(
+      requestContext,
+      'get-tables',
+      'Extracting relevant tables from the schema',
+    );
     const schemaStore = getSchemaStore(requestContext);
     if (!schemaStore) return {tables: []};
     try {
@@ -184,6 +191,11 @@ const checkTemplatesStep = createStep({
     templateId: z.string().optional(),
   }),
   execute: async ({inputData, requestContext}) => {
+    emitStepStatus(
+      requestContext,
+      'check-templates',
+      'Looking up query templates',
+    );
     const data = inputData as {prompt?: string};
     if (!data.prompt) return {matched: false};
     const cache = getTemplateCache(requestContext);
@@ -277,6 +289,7 @@ const returnCachedStep = createStep({
   inputSchema: z.any(),
   outputSchema,
   execute: async ({inputData, requestContext}) => {
+    emitStepStatus(requestContext, 'return-cached', 'Returning cached dataset');
     const data = inputData as {datasetId?: string};
     const fallback = {datasetId: data.datasetId ?? '', sql: '', rowCount: 0};
     const store = getDatasetStore(requestContext);
@@ -306,6 +319,11 @@ const saveDatasetFromTemplateStep = createStep({
   inputSchema: z.any(),
   outputSchema,
   execute: async ({inputData, requestContext}) => {
+    emitStepStatus(
+      requestContext,
+      'save-dataset-from-template',
+      'Building SQL from template',
+    );
     const data = inputData as {
       templateId?: string;
       prompt?: string;
@@ -370,6 +388,7 @@ const getColumnsStep = createStep({
     templateId: z.string().optional(),
   }),
   execute: async ({inputData, requestContext}) => {
+    emitStepStatus(requestContext, 'get-columns', 'Selecting relevant columns');
     const data = inputData as {
       prompt?: string;
       tables?: string[];
@@ -418,6 +437,11 @@ const generateChecklistStep = createStep({
     attempts: z.number(),
   }),
   execute: async ({inputData, requestContext}) => {
+    emitStepStatus(
+      requestContext,
+      'generate-checklist',
+      'Building validation checklist',
+    );
     const wrapped = inputData as Record<string, unknown>;
     const fromGetColumns = wrapped['get-columns'] as
       | {prompt?: string; tables?: string[]}
@@ -474,6 +498,7 @@ const sqlAndValidateStep = createStep({
     checklist: z.string(),
   }),
   execute: async ({inputData, requestContext}) => {
+    emitStepStatus(requestContext, 'sql-and-validate', 'Generating SQL');
     const data = inputData as {
       prompt?: string;
       tables?: string[];
@@ -524,6 +549,7 @@ const saveDatasetStep = createStep({
   inputSchema: z.any(),
   outputSchema,
   execute: async ({inputData, requestContext}) => {
+    emitStepStatus(requestContext, 'save-dataset', 'Saving dataset');
     const data = inputData as {
       sql?: string;
       description?: string;
