@@ -1,3 +1,4 @@
+import debugFactory from 'debug';
 import {
   BindingScope,
   inject,
@@ -7,6 +8,8 @@ import {
 } from '@loopback/core';
 import type {Mastra} from '@mastra/core';
 import {AiIntegrationBindings} from '../keys';
+
+const debug = debugFactory('ai-integration:mastra-lifecycle');
 
 /**
  * App-level lifecycle hook for the Mastra singleton. `start()` runs any
@@ -31,7 +34,11 @@ export class MastraLifecycleObserver implements LifeCycleObserver {
     try {
       await this.mastra.shutdown?.();
     } catch (err) {
-      console.error('Mastra shutdown error:', err);
+      // Use the project debug channel rather than console.error so
+      // shutdown noise stays under `DEBUG=ai-integration:*` like the
+      // rest of the codebase. Process exits regardless; this is a
+      // best-effort cleanup signal.
+      debug('Mastra shutdown error: %o', err);
     }
   }
 }

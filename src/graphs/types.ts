@@ -28,5 +28,4 @@ export interface IMastraGraphTool {
  */
 export type MastraToolStore = {
   list: IMastraGraphTool[];
-  map?: Record<string, IMastraGraphTool>;
 };

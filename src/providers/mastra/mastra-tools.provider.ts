@@ -38,9 +38,6 @@ export class DefaultMastraToolsProvider implements Provider<MastraToolStore> {
     const list = [this.getData, this.improve, this.ask, this.viz].filter(
       (t): t is NonNullable<typeof t> => t !== undefined,
     );
-    return {
-      list,
-      map: Object.fromEntries(list.map(t => [t.key, t])),
-    };
+    return {list};
   }
 }
