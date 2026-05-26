@@ -13,6 +13,7 @@ import {Agent} from '@mastra/core/agent';
 import {Mastra} from '@mastra/core';
 import {RequestContext} from '@mastra/core/request-context';
 import type {MastraModelConfig} from '@mastra/core/llm';
+import {generateText} from 'ai';
 import {AiIntegrationBindings, IRunRegistry} from '../../keys';
 import {LLMStreamEvent, LLMStreamEventType} from '../../graphs/event.types';
 import {MastraToolStore, ToolStatus} from '../../graphs/types';
@@ -151,11 +152,13 @@ export class WorkflowRunner {
     @service(UsageAccumulator) private usage?: UsageAccumulator,
     @inject(AiIntegrationBindings.MastraTools, {optional: true})
     private mastraTools?: MastraToolStore,
+    @inject(AiIntegrationBindings.MastraFileLLM, {optional: true})
+    private fileLlm?: MastraModelConfig,
   ) {}
 
   async *run(
     query: string,
-    files: Express.Multer.File[] | undefined,
+    files: Express.Multer.File[] | Express.Multer.File | undefined,
     abort: AbortSignal,
     sessionId?: string,
   ): AsyncIterable<LLMStreamEvent> {
@@ -227,17 +230,15 @@ export class WorkflowRunner {
       });
     }
 
-    // File summarisation — v2 SummariseFileNode equivalent. Wired in a
-    // follow-up commit once SummariseFileService is extracted. For each file
-    // the runner should emit a Status event before invoking the file LLM.
-    if (files?.length) {
-      for (const file of files) {
-        queue.push({
-          type: LLMStreamEventType.Status,
-          data: `Reading file: ${file.originalname}`,
-        });
-      }
-    }
+    // File summarisation — port of v2 SummariseFileNode. For each
+    // attached file, ask the FileLLM (falls back to ChatLLM) to produce
+    // a focused summary against the user's prompt, then merge the
+    // summary into the query so the chat Agent sees the file content
+    // as part of its input. AI SDK file content lives in user-message
+    // content arrays as `{type: 'file', data, mediaType}` parts.
+    const augmentedQuery = await this.summariseAndMergeFiles(query, files, e =>
+      queue.push(e),
+    );
 
     // Bounded service resolution per migration plan Section 3.4
     // ("least-privilege — pass bounded service references, NOT the
@@ -254,12 +255,15 @@ export class WorkflowRunner {
     // Pump fullStream chunks into the queue. The pre-processing block above
     // and any tool-side eventWriter calls push onto the same queue; total
     // order is preserved by sequential push semantics.
-    const streamPromise = agent.stream([{role: 'user', content: query}], {
-      maxSteps: 60,
-      abortSignal: abort,
-      requestContext: ctx,
-      memory: {thread: thread.id, resource: resourceId},
-    });
+    const streamPromise = agent.stream(
+      [{role: 'user', content: augmentedQuery}],
+      {
+        maxSteps: 60,
+        abortSignal: abort,
+        requestContext: ctx,
+        memory: {thread: thread.id, resource: resourceId},
+      },
+    );
 
     // Pump task is fire-and-forget; completion is signalled by queue.close()
     // inside the inner finally. The inner try/catch maps any thrown error to
@@ -342,6 +346,88 @@ export class WorkflowRunner {
     } catch {
       // usage may reject on error / abort paths; skip TokenCount
     }
+  }
+
+  /**
+   * Port of v2 SummariseFileNode. For each attached file, run a single
+   * FileLLM call (falls back to ChatLLM when MastraFileLLM is not
+   * bound) summarising the file against the user's prompt, then merge
+   * the summary into the query so the chat Agent sees the file content
+   * as part of its input. Emits a Status event per file so the UI can
+   * show progress, matching the v2 SSE contract.
+   */
+  private async summariseAndMergeFiles(
+    query: string,
+    files: Express.Multer.File[] | Express.Multer.File | undefined,
+    push: (e: LLMStreamEvent) => void,
+  ): Promise<string> {
+    // sourceloop/file-utils' @multipartRequestBody returns a single file
+    // object when the multipart request carries one file (matching the
+    // legacy multer.single shape) and an array when it carries multiple.
+    // Normalise so the rest of the method only deals with the array case.
+    const list: Express.Multer.File[] = Array.isArray(files)
+      ? files
+      : files
+        ? [files as Express.Multer.File]
+        : [];
+    if (!list.length) return query;
+    const model =
+      this.fileLlm ?? this.chatLlm ?? process.env.MASTRA_DEFAULT_CHAT_MODEL;
+    if (!model) {
+      // No file model and no chat model — surface a Status so the UI
+      // knows the file was received but skipped, then fall through to
+      // the un-augmented query rather than crashing the run.
+      for (const file of list) {
+        push({
+          type: LLMStreamEventType.Status,
+          data: `Skipped file ${file.originalname}: no LLM bound for summarisation`,
+        });
+      }
+      return query;
+    }
+    const summaries: string[] = [];
+    for (const file of list) {
+      push({
+        type: LLMStreamEventType.Status,
+        data: `Reading file: ${file.originalname}`,
+      });
+      try {
+        const result = await generateText({
+          model: model as never,
+          messages: [
+            {
+              role: 'system',
+              content:
+                'Summarise the attached file with the user prompt in mind. ' +
+                'Keep important details that may answer the user query. ' +
+                'Return plain text only — no markdown, no preamble.',
+            },
+            {
+              role: 'user',
+              content: [
+                {type: 'text', text: query},
+                {
+                  type: 'file',
+                  data: file.buffer ?? Buffer.alloc(0),
+                  mediaType: file.mimetype || 'application/pdf',
+                },
+              ],
+            },
+          ],
+        });
+        summaries.push(
+          `[Attached file "${file.originalname}"]\n${result.text.trim()}`,
+        );
+      } catch (err) {
+        debug('file summarisation failed for %s: %o', file.originalname, err);
+        push({
+          type: LLMStreamEventType.Status,
+          data: `Failed to read file: ${file.originalname}`,
+        });
+      }
+    }
+    if (!summaries.length) return query;
+    return `${query}\n\n${summaries.join('\n\n')}`;
   }
 
   /**

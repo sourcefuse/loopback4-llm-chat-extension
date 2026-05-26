@@ -14,7 +14,11 @@ export class GenerationService {
     @inject(AiIntegrationBindings.LimitStrategy, {optional: true})
     private readonly limiter?: ILimitStrategy,
   ) {}
-  async generate(prompt: string, files: Express.Multer.File[], id?: string) {
+  async generate(
+    prompt: string,
+    files: Express.Multer.File[] | Express.Multer.File | undefined,
+    id?: string,
+  ) {
     await this.limiter?.check();
     const abortController = new AbortController();
     await this.transport.start();
