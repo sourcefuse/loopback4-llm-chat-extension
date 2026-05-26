@@ -100,6 +100,38 @@ function stepLogEvent(label: string): (p: unknown) => LLMStreamEvent {
   return () => ({type: LLMStreamEventType.Log, data: label});
 }
 
+/**
+ * sourceloop/file-utils' @multipartRequestBody resolves a one-file
+ * upload to a single Express.Multer.File object (matching legacy
+ * multer.single shape); multi-file uploads land as an array. Normalise
+ * so callers only deal with the array case.
+ */
+function normaliseFileList(
+  files: Express.Multer.File[] | Express.Multer.File | undefined,
+): Express.Multer.File[] {
+  if (Array.isArray(files)) return files;
+  return files ? [files] : [];
+}
+
+/**
+ * No file model / chat model bound. Emit a Status per file so the UI
+ * knows attachments were received but skipped, then return the
+ * un-augmented query rather than crashing the run.
+ */
+function emitSkipsAndReturn(
+  list: Express.Multer.File[],
+  query: string,
+  push: (e: LLMStreamEvent) => void,
+): string {
+  for (const file of list) {
+    push({
+      type: LLMStreamEventType.Status,
+      data: `Skipped file ${file.originalname}: no LLM bound for summarisation`,
+    });
+  }
+  return query;
+}
+
 const CHUNK_MAPPERS: Record<string, (p: unknown) => LLMStreamEvent> = {
   'text-delta': textDeltaEvent,
   'tool-call': toolCallEvent,
@@ -361,73 +393,63 @@ export class WorkflowRunner {
     files: Express.Multer.File[] | Express.Multer.File | undefined,
     push: (e: LLMStreamEvent) => void,
   ): Promise<string> {
-    // sourceloop/file-utils' @multipartRequestBody returns a single file
-    // object when the multipart request carries one file (matching the
-    // legacy multer.single shape) and an array when it carries multiple.
-    // Normalise so the rest of the method only deals with the array case.
-    const list: Express.Multer.File[] = Array.isArray(files)
-      ? files
-      : files
-        ? [files as Express.Multer.File]
-        : [];
+    const list = normaliseFileList(files);
     if (!list.length) return query;
     const model =
       this.fileLlm ?? this.chatLlm ?? process.env.MASTRA_DEFAULT_CHAT_MODEL;
-    if (!model) {
-      // No file model and no chat model — surface a Status so the UI
-      // knows the file was received but skipped, then fall through to
-      // the un-augmented query rather than crashing the run.
-      for (const file of list) {
-        push({
-          type: LLMStreamEventType.Status,
-          data: `Skipped file ${file.originalname}: no LLM bound for summarisation`,
-        });
-      }
-      return query;
-    }
+    if (!model) return emitSkipsAndReturn(list, query, push);
     const summaries: string[] = [];
     for (const file of list) {
-      push({
-        type: LLMStreamEventType.Status,
-        data: `Reading file: ${file.originalname}`,
-      });
-      try {
-        const result = await generateText({
-          model: model as never,
-          messages: [
-            {
-              role: 'system',
-              content:
-                'Summarise the attached file with the user prompt in mind. ' +
-                'Keep important details that may answer the user query. ' +
-                'Return plain text only — no markdown, no preamble.',
-            },
-            {
-              role: 'user',
-              content: [
-                {type: 'text', text: query},
-                {
-                  type: 'file',
-                  data: file.buffer ?? Buffer.alloc(0),
-                  mediaType: file.mimetype || 'application/pdf',
-                },
-              ],
-            },
-          ],
-        });
-        summaries.push(
-          `[Attached file "${file.originalname}"]\n${result.text.trim()}`,
-        );
-      } catch (err) {
-        debug('file summarisation failed for %s: %o', file.originalname, err);
-        push({
-          type: LLMStreamEventType.Status,
-          data: `Failed to read file: ${file.originalname}`,
-        });
-      }
+      const summary = await this.summariseFile(query, file, model, push);
+      if (summary) summaries.push(summary);
     }
     if (!summaries.length) return query;
     return `${query}\n\n${summaries.join('\n\n')}`;
+  }
+
+  private async summariseFile(
+    query: string,
+    file: Express.Multer.File,
+    model: MastraModelConfig | string,
+    push: (e: LLMStreamEvent) => void,
+  ): Promise<string | undefined> {
+    push({
+      type: LLMStreamEventType.Status,
+      data: `Reading file: ${file.originalname}`,
+    });
+    try {
+      const result = await generateText({
+        model: model as never,
+        messages: [
+          {
+            role: 'system',
+            content:
+              'Summarise the attached file with the user prompt in mind. ' +
+              'Keep important details that may answer the user query. ' +
+              'Return plain text only — no markdown, no preamble.',
+          },
+          {
+            role: 'user',
+            content: [
+              {type: 'text', text: query},
+              {
+                type: 'file',
+                data: file.buffer ?? Buffer.alloc(0),
+                mediaType: file.mimetype || 'application/pdf',
+              },
+            ],
+          },
+        ],
+      });
+      return `[Attached file "${file.originalname}"]\n${result.text.trim()}`;
+    } catch (err) {
+      debug('file summarisation failed for %s: %o', file.originalname, err);
+      push({
+        type: LLMStreamEventType.Status,
+        data: `Failed to read file: ${file.originalname}`,
+      });
+      return undefined;
+    }
   }
 
   /**
