@@ -165,7 +165,8 @@ export type SqlGenInput = {
 
 function formatChecks(checks: string[] | undefined): string {
   if (!checks?.length) return '';
-  return `\nDomain rules you MUST follow:\n${checks.map(c => `- ${c}`).join('\n')}`;
+  const bullets = checks.map(c => `- ${c}`).join('\n');
+  return `\nDomain rules you MUST follow:\n${bullets}`;
 }
 
 function formatTablesWithColumns(
