@@ -22,11 +22,16 @@ export class BarVisualizer implements IVisualizer {
     valueColumn: z
       .string()
       .describe('Column to be used for values (y-axis) in the bar chart'),
+    // NOTE: no `.default()` here. AI SDK marks a defaulted field optional,
+    // which drops it from JSON-schema `required`; OpenAI strict structured
+    // output (used by generateObject) then 400s because every property must
+    // be required. That rejection made getConfig throw and the chart render
+    // with an empty config. Keep orientation required and tell the model
+    // what to do when unsure.
     orientation: z
       .string()
-      .default('vertical')
       .describe(
-        'Orientation of the bar chart: `vertical` or `horizontal` without backticks',
+        'Orientation of the bar chart: vertical or horizontal. Use vertical when unsure.',
       ),
   }) as z.AnyZodObject;
 

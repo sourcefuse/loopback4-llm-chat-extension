@@ -42,16 +42,25 @@ describe('BarVisualizer Unit', function () {
     }
   });
 
-  it('should validate schema with default orientation', () => {
+  it('requires orientation (no default — OpenAI strict structured output rejects optional fields)', () => {
     const schema = visualizer.schema;
+    // orientation is now a required field; omitting it must fail parse.
+    // The `.default('vertical')` was removed because AI SDK marks a
+    // defaulted field optional, which drops it from JSON-schema `required`
+    // and makes generateObject 400 under OpenAI strict mode.
     const dataWithoutOrientation = {
       categoryColumn: 'category',
       valueColumn: 'value',
     };
+    expect(schema.safeParse(dataWithoutOrientation).success).to.be.false();
 
-    const result = schema.safeParse(dataWithoutOrientation);
+    const dataWithOrientation = {
+      categoryColumn: 'category',
+      valueColumn: 'value',
+      orientation: 'vertical',
+    };
+    const result = schema.safeParse(dataWithOrientation);
     expect(result.success).to.be.true();
-
     if (result.success) {
       expect(result.data.orientation).to.equal('vertical');
     }
