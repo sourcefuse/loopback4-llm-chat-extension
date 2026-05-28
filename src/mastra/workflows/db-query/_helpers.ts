@@ -33,6 +33,11 @@ export interface MastraRcShape {
   resourceId: string;
   eventWriter: (event: LLMStreamEvent) => void;
   chatLlm?: LanguageModel;
+  // Per-request domain rules (v2 `{checks}`) injected into the SQL
+  // generation prompt — e.g. "exchange rate joins must use the active
+  // rate (end_date IS NULL)", "use partial case-insensitive name match".
+  // Without these the SQL generator produces literal/over-strict SQL.
+  globalContext?: string[];
   dbConnector?: IDbConnector;
   authUser?: IAuthUserWithPermissions;
   datasetStore?: IDataSetStore;
@@ -100,6 +105,9 @@ export function getTemplateCache(
 export function getVisualizers(rc?: MastraRc): IVisualizer[] {
   return rc?.get('visualizers') ?? [];
 }
+export function getGlobalContext(rc?: MastraRc): string[] {
+  return rc?.get('globalContext') ?? [];
+}
 
 export function emitToolStatus(
   rc: MastraRc | undefined,
@@ -149,10 +157,16 @@ export type SqlGenInput = {
   prompt: string;
   tables: string[];
   columns?: Record<string, string[]>;
+  checks?: string[];
   checklist?: string;
   feedback?: string;
   originalSql?: string;
 };
+
+function formatChecks(checks: string[] | undefined): string {
+  if (!checks?.length) return '';
+  return `\nDomain rules you MUST follow:\n${checks.map(c => `- ${c}`).join('\n')}`;
+}
 
 function formatTablesWithColumns(
   tables: string[],
@@ -182,6 +196,7 @@ async function runGenerationStage(args: {
   prompt: string;
   tables: string[];
   columns?: Record<string, string[]>;
+  checks?: string[];
   checklist?: string;
   feedback?: string;
   initialSql?: string;
@@ -196,6 +211,7 @@ async function runGenerationStage(args: {
       prompt: args.prompt,
       tables: args.tables,
       columns: args.columns,
+      checks: args.checks,
       checklist: args.checklist,
       feedback: args.feedback,
       originalSql: args.initialSql,
@@ -243,6 +259,7 @@ export async function runSqlAttempt(args: {
   prompt: string;
   tables: string[];
   columns?: Record<string, string[]>;
+  checks?: string[];
   checklist?: string;
   feedback?: string;
   buildPrompt: (input: SqlGenInput) => string;
@@ -299,7 +316,7 @@ export function buildGenerateSqlPrompt(input: SqlGenInput): string {
   return `You are a SQL expert. Generate a single ANSI SQL query that satisfies the user's request.
 
 User request: ${input.prompt}
-Allowed tables and columns (use ONLY these column names verbatim — do not invent or rename columns): ${tablesLine}
+Allowed tables and columns (use ONLY these column names verbatim — do not invent or rename columns): ${tablesLine}${formatChecks(input.checks)}
 Validation checklist:
 ${checklistLine}
 ${feedbackLine}
@@ -325,7 +342,7 @@ export function buildImproveSqlPrompt(input: SqlGenInput): string {
 
 Existing SQL: ${input.originalSql ?? '(none)'}
 User feedback / delta request: ${input.prompt}
-Allowed tables and columns (use ONLY these column names verbatim — do not invent or rename columns): ${tablesWithColumns}
+Allowed tables and columns (use ONLY these column names verbatim — do not invent or rename columns): ${tablesWithColumns}${formatChecks(input.checks)}
 ${checklistLine}
 ${feedbackLine}
 

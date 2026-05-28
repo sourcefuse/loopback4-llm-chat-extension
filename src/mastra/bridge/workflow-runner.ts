@@ -545,6 +545,7 @@ export class WorkflowRunner {
       dataSetHelper,
       queryCache,
       templateCache,
+      globalContext,
     ] = await Promise.all([
       this.lb4Ctx.get<IDbConnector>(DbQueryAIExtensionBindings.Connector, opt),
       this.lb4Ctx.get<IAuthUserWithPermissions>(
@@ -574,6 +575,7 @@ export class WorkflowRunner {
         DbQueryAIExtensionBindings.TemplateCache,
         opt,
       ),
+      this.lb4Ctx.get<string[]>(DbQueryAIExtensionBindings.GlobalContext, opt),
     ]);
     const visBindings = this.lb4Ctx.findByTag({[VISUALIZATION_KEY]: true});
     const visualizers = await Promise.all(
@@ -583,6 +585,7 @@ export class WorkflowRunner {
       resourceId: args.resourceId,
       eventWriter: args.eventWriter,
       chatLlm: this.chatLlm as MastraRcShape['chatLlm'],
+      globalContext,
       dbConnector,
       authUser,
       datasetStore,

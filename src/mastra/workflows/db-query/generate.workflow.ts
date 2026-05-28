@@ -9,6 +9,7 @@ import {
   getChatLlm,
   getDatasetStore,
   getDbConnector,
+  getGlobalContext,
   getQueryCache,
   getSchemaHelper,
   getSchemaStore,
@@ -43,6 +44,16 @@ function classifyPostCacheStatus(
   if (cacheHit) return 'AsIs';
   if (templateMatched) return 'FromTemplate';
   return 'Continue';
+}
+
+// The checklist model answers "no explicit constraints" in free text
+// ("None", "(none)", "N/A", empty). Collapse those to '' so the
+// semantic validator short-circuits to passed=true instead of trying
+// to enforce a non-constraint string.
+function normaliseChecklist(raw: string): string {
+  const trimmed = raw.trim();
+  if (/^(none|n\/?a|\(none\)|no constraints?\.?)$/i.test(trimmed)) return '';
+  return trimmed;
 }
 
 /**
@@ -467,15 +478,25 @@ const generateChecklistStep = createStep({
     const chatLlm = getChatLlm(requestContext);
     let checklist = '';
     if (chatLlm && prompt) {
-      const llmPrompt = `You are an AI assistant. Produce a concise bullet-list checklist (3-6 items) of constraints the SQL query about to be generated must satisfy.
+      // Only restate constraints the user EXPLICITLY stated. The earlier
+      // open-ended prompt ("produce constraints the SQL must satisfy")
+      // made the model invent requirements the user never asked for
+      // (e.g. "exclude the currencies table", "only active employees",
+      // "sort by id"). The semantic validator then enforced those
+      // hallucinated rules and rejected otherwise-correct SQL, so simple
+      // requests like "list all employees" failed validation. Grounding
+      // the checklist in explicit constraints only — and returning empty
+      // when there are none — lets validateSqlSemantic short-circuit to
+      // passed=true (see _helpers.ts) instead of false-rejecting.
+      const llmPrompt = `You are a SQL planning assistant. List ONLY the constraints the user EXPLICITLY stated in their request — specific filters, sort orders, row limits, or named columns they asked for. Do NOT invent filters, exclusions, sort orders, joins, or columns the user did not mention. If the request states no explicit constraints beyond the data wanted, return nothing.
 
 User request: ${prompt}
 Available tables: ${tables.join(', ') || '(none)'}
 
-Return ONLY the checklist as plain text bullets, no preamble.`;
+Return ONLY the explicit constraints as plain-text bullets, or an empty response if there are none.`;
       try {
         const result = await generateText({model: chatLlm, prompt: llmPrompt});
-        checklist = result.text.trim();
+        checklist = normaliseChecklist(result.text);
       } catch {
         // LLM unavailable / failed — proceed with empty checklist so
         // the dountil loop can still attempt SQL generation.
@@ -536,6 +557,7 @@ const sqlAndValidateStep = createStep({
       prompt,
       tables,
       columns,
+      checks: getGlobalContext(requestContext),
       checklist: data.checklist,
       feedback: data.feedback,
       buildPrompt: buildGenerateSqlPrompt,
@@ -609,9 +631,28 @@ const saveDatasetStep = createStep({
       schemaHash,
       votes: 0,
     });
-    return {datasetId: dataset.id ?? '', sql: data.sql, rowCount: 0};
+    // Execute the query so the tool reports the real row count. Without
+    // this the agent saw a hardcoded rowCount:0 and told the user "no
+    // records" even though the dataset persisted fine and the grid
+    // renders rows. Best-effort: a failure here must not undo the save.
+    const rowCount = await countRows(getDbConnector(requestContext), data.sql);
+    return {datasetId: dataset.id ?? '', sql: data.sql, rowCount};
   },
 });
+
+async function countRows(
+  dbConnector: ReturnType<typeof getDbConnector>,
+  sql: string,
+): Promise<number> {
+  if (!dbConnector) return 0;
+  try {
+    const rows = await dbConnector.execute<unknown>(sql);
+    return Array.isArray(rows) ? rows.length : 0;
+  } catch {
+    // Count is advisory; never fail the save over it.
+    return 0;
+  }
+}
 
 export const generateQueryWorkflow = createWorkflow({
   id: 'generate-query',
