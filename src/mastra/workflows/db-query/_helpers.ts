@@ -2,8 +2,10 @@ import type {RequestContext} from '@mastra/core/request-context';
 import type {IAuthUserWithPermissions} from '@sourceloop/core';
 import {generateText} from 'ai';
 import type {LanguageModel} from 'ai';
-import {LLMStreamEventType} from '../../../graphs/event.types';
-import type {LLMStreamEvent} from '../../../graphs/event.types';
+import {
+  LLMStreamEventType,
+  type LLMStreamEvent,
+} from '../../../graphs/event.types';
 import type {
   DbSchemaHelperService,
   TemplateHelper,
@@ -99,30 +101,16 @@ export function getVisualizers(rc?: MastraRc): IVisualizer[] {
   return rc?.get('visualizers') ?? [];
 }
 
-export function getEventWriter(
-  rc?: MastraRc,
-): ((event: LLMStreamEvent) => void) | undefined {
-  return rc?.get('eventWriter');
-}
-
-/**
- * Push a labelled ToolStatus event for the running workflow step so the
- * UI's debug drawer (and v2 SSE consumers) get the same per-node
- * progress strings v2 graph nodes used to emit. Mirrors the
- * `Extracting relevant tables from the schema` / `Found relevant query
- * in cache` calls in the legacy DbQuery graph nodes. Silently no-ops
- * when the consumer hasn't wired an eventWriter.
- */
-export function emitStepStatus(
+export function emitToolStatus(
   rc: MastraRc | undefined,
-  stepId: string,
+  id: string,
   status: string,
 ): void {
-  const writer = getEventWriter(rc);
+  const writer = rc?.get('eventWriter');
   if (!writer) return;
   writer({
     type: LLMStreamEventType.ToolStatus,
-    data: {id: stepId, status},
+    data: {id, status},
   });
 }
 
@@ -227,12 +215,15 @@ async function runValidationStage(args: {
   dbConnector: IDbConnector | undefined;
   prompt: string;
   checklist?: string;
+  onStatus?: (stage: 'syntactic' | 'semantic') => void;
 }): Promise<{passed: boolean; feedback?: string}> {
   const {sql} = args;
   if (!sql)
     return {passed: false, feedback: 'SQL generation produced an empty query.'};
+  args.onStatus?.('syntactic');
   const syntactic = await validateSqlSyntactic(sql, args.dbConnector);
   if (!syntactic.passed) return syntactic;
+  args.onStatus?.('semantic');
   return validateSqlSemantic({
     sql,
     chatLlm: args.chatLlm,
@@ -257,6 +248,7 @@ export async function runSqlAttempt(args: {
   buildPrompt: (input: SqlGenInput) => string;
   initialSql?: string;
   buildDescription?: (sql: string, prompt: string) => string;
+  onStatus?: (stage: 'syntactic' | 'semantic') => void;
 }): Promise<SqlAttemptResult> {
   const stage = await runGenerationStage(args);
   if (stage.error) {
@@ -268,6 +260,7 @@ export async function runSqlAttempt(args: {
     dbConnector: args.dbConnector,
     prompt: args.prompt,
     checklist: args.checklist,
+    onStatus: args.onStatus,
   });
   return {
     sql: stage.sql,

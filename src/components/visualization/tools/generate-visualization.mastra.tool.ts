@@ -62,6 +62,7 @@ It does not return anything, instead it fires an event internally that renders t
             toolCallId,
             inputData.datasetId ?? '',
             inputData.prompt,
+            inputData.type,
             ctx,
           );
         } catch (err) {
@@ -81,6 +82,7 @@ It does not return anything, instead it fires an event internally that renders t
     toolCallId: string,
     datasetId: string,
     userQuery: string,
+    requestedType: string | undefined,
     ctx: unknown,
   ): Promise<unknown> {
     const workflow = this.mastra.getWorkflow('visualizationWorkflow' as never);
@@ -91,7 +93,7 @@ It does not return anything, instead it fires an event internally that renders t
     }
     const run = await workflow.createRun();
     const result = await run.start({
-      inputData: {datasetId, userQuery},
+      inputData: {datasetId, userQuery, type: requestedType},
       requestContext: (ctx as {requestContext?: unknown})?.requestContext,
     } as never);
     if (result.status === 'suspended') {
@@ -112,21 +114,24 @@ It does not return anything, instead it fires an event internally that renders t
       (result as {result?: Record<string, unknown>}).result ?? {};
     const workflowResult = rawResult as {
       chartConfig?: unknown;
+      visualization?: string;
       datasetId?: string;
       sql?: string;
       description?: string;
     };
     // Emit final Tool event so the UI can render the chart inline.
-    // App reads `evtData.data.visualization` for the chart config and
-    // `evtData.data.datasetId` for the like/dislike footer (see app.js).
+    // UI consumers expect `visualization` to hold the chart type and
+    // `config` to hold chart settings.
     writer?.({
       type: LLMStreamEventType.Tool,
       data: {
         id: toolCallId,
         tool: this.key,
         data: {
-          visualization: workflowResult.chartConfig ?? {},
+          visualization: workflowResult.visualization ?? '',
+          config: workflowResult.chartConfig ?? {},
           datasetId: workflowResult.datasetId ?? '',
+          existingDatasetId: workflowResult.datasetId ?? '',
           sql: workflowResult.sql ?? '',
           description: workflowResult.description ?? '',
         },

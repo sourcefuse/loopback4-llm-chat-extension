@@ -100,7 +100,7 @@ describe('WorkflowRunner Unit', () => {
     });
   }
 
-  it('emits Init then maps text-delta chunks to Message events and finishes with TokenCount', async () => {
+  it('emits Init then coalesces text-delta chunks into one Message and finishes with TokenCount', async () => {
     createThread.resolves({id: 'thread-new'});
     stubStreamWith([
       {type: 'text-delta', payload: {text: 'Hello '}},
@@ -115,20 +115,16 @@ describe('WorkflowRunner Unit', () => {
     expect(events.map(e => e.type)).to.eql([
       LLMStreamEventType.Init,
       LLMStreamEventType.Message,
-      LLMStreamEventType.Message,
       LLMStreamEventType.TokenCount,
     ]);
     expect((events[0] as {data: {sessionId: string}}).data.sessionId).to.equal(
       'thread-new',
     );
     expect((events[1] as {data: {message: string}}).data.message).to.equal(
-      'Hello ',
-    );
-    expect((events[2] as {data: {message: string}}).data.message).to.equal(
-      'world',
+      'Hello world',
     );
     expect(
-      (events[3] as {data: {inputTokens: number; outputTokens: number}}).data,
+      (events[2] as {data: {inputTokens: number; outputTokens: number}}).data,
     ).to.eql({
       inputTokens: 11,
       outputTokens: 5,

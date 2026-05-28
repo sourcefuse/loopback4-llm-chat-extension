@@ -47,13 +47,6 @@ function toErrorMessage(err: unknown, fallback: string): string {
   return String(err ?? fallback);
 }
 
-function textDeltaEvent(payload: unknown): LLMStreamEvent {
-  return {
-    type: LLMStreamEventType.Message,
-    data: {message: (payload as {text: string}).text},
-  };
-}
-
 function toolCallEvent(payload: unknown): LLMStreamEvent {
   const p = payload as {toolCallId: string; toolName: string; args?: unknown};
   return {
@@ -96,10 +89,6 @@ function chunkErrorEvent(payload: unknown): LLMStreamEvent {
   };
 }
 
-function stepLogEvent(label: string): (p: unknown) => LLMStreamEvent {
-  return () => ({type: LLMStreamEventType.Log, data: label});
-}
-
 /**
  * sourceloop/file-utils' @multipartRequestBody resolves a one-file
  * upload to a single Express.Multer.File object (matching legacy
@@ -133,14 +122,11 @@ function emitSkipsAndReturn(
 }
 
 const CHUNK_MAPPERS: Record<string, (p: unknown) => LLMStreamEvent> = {
-  'text-delta': textDeltaEvent,
   'tool-call': toolCallEvent,
   'tool-call-approval': toolStatusEvent,
   'tool-call-suspended': toolStatusEvent,
   tripwire: tripwireEvent,
   error: chunkErrorEvent,
-  'step-start': stepLogEvent('Mastra: reasoning step started'),
-  'step-finish': stepLogEvent('Mastra: reasoning step complete'),
 };
 
 /**
@@ -170,6 +156,8 @@ function mapChunkToEvent(chunk: {
  */
 @injectable({scope: BindingScope.REQUEST})
 export class WorkflowRunner {
+  private bufferedAssistantText = '';
+
   constructor(
     @inject.context() private lb4Ctx: Context,
     @inject(AiIntegrationBindings.Mastra) private mastra: Mastra,
@@ -195,6 +183,7 @@ export class WorkflowRunner {
     sessionId?: string,
   ): AsyncIterable<LLMStreamEvent> {
     const queue = new AsyncEventQueue<LLMStreamEvent>();
+    this.bufferedAssistantText = '';
 
     const agent = this.buildAgent();
     const memory = await agent.getMemory();
@@ -331,8 +320,10 @@ export class WorkflowRunner {
       for await (const chunk of stream.fullStream) {
         this.handleChunk(chunk, queue);
       }
+      this.flushBufferedAssistantText(queue);
       await this.emitUsage(stream, queue);
     } catch (err) {
+      this.flushBufferedAssistantText(queue);
       queue.push({
         type: LLMStreamEventType.Error,
         data: {
@@ -348,12 +339,36 @@ export class WorkflowRunner {
     chunk: {type: string; payload: unknown},
     queue: AsyncEventQueue<LLMStreamEvent>,
   ): void {
+    if (chunk.type === 'text-delta') {
+      this.bufferedAssistantText +=
+        (chunk.payload as {text?: string})?.text ?? '';
+      return;
+    }
+    if (chunk.type === 'step-start') {
+      return;
+    }
+    if (chunk.type === 'step-finish' || chunk.type === 'finish') {
+      this.flushBufferedAssistantText(queue);
+      return;
+    }
+    this.flushBufferedAssistantText(queue);
     const event = mapChunkToEvent(chunk);
     if (event) queue.push(event);
     // 'finish' chunks: nothing to do in P3. HITL resume path
     // (ApprovalController + RunRegistry consumer) lands in v3.1
     // (Phase 4 of the migration plan). Persisting runId without a
     // consumer would accumulate unread TTL entries.
+  }
+
+  private flushBufferedAssistantText(
+    queue: AsyncEventQueue<LLMStreamEvent>,
+  ): void {
+    if (!this.bufferedAssistantText) return;
+    queue.push({
+      type: LLMStreamEventType.Message,
+      data: {message: this.bufferedAssistantText},
+    });
+    this.bufferedAssistantText = '';
   }
 
   private async emitUsage(

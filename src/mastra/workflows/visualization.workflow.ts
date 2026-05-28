@@ -4,7 +4,7 @@ import type {DataSetHelper} from '../../components/db-query/services';
 import type {IDataSetStore} from '../../components/db-query/types';
 import type {IVisualizer} from '../../components/visualization/types';
 import {
-  emitStepStatus,
+  emitToolStatus,
   getDataSetHelper,
   getDatasetStore,
   getVisualizers,
@@ -77,9 +77,11 @@ function pickVisualizer(
 const inputSchema = z.object({
   datasetId: z.string(),
   userQuery: z.string(),
+  type: z.string().optional(),
 });
 
 const outputSchema = z.object({
+  visualization: z.string().optional(),
   chartConfig: z.unknown(),
   datasetId: z.string().optional(),
   sql: z.string().optional(),
@@ -111,10 +113,10 @@ const selectVisualisationStep = createStep({
     userQuery: z.string(),
   }),
   execute: async ({inputData, requestContext}) => {
-    emitStepStatus(
+    emitToolStatus(
       requestContext,
       'select-visualisation',
-      'Selecting chart type',
+      'Selecting best visualization for the data',
     );
     let chartType = inputData.type ?? DEFAULT_CHART_TYPE;
     if (!inputData.type) {
@@ -153,11 +155,6 @@ const callQueryGenerationStep = createStep({
     userQuery: z.string(),
   }),
   execute: async ({inputData, mastra, requestContext}) => {
-    emitStepStatus(
-      requestContext,
-      'call-query-generation',
-      'Generating data for chart',
-    );
     if (inputData.datasetId) {
       return {
         datasetId: inputData.datasetId,
@@ -220,7 +217,11 @@ const getDatasetDataStep = createStep({
     description: z.string().optional(),
   }),
   execute: async ({inputData, requestContext}) => {
-    emitStepStatus(requestContext, 'get-dataset-data', 'Fetching rows');
+    emitToolStatus(
+      requestContext,
+      'get-dataset-data',
+      'Preparing visualization',
+    );
     const upstream = pickFromBranch<{
       datasetId?: string;
       chartType?: string;
@@ -253,7 +254,6 @@ const renderVisualizationStep = createStep({
   inputSchema: z.any(),
   outputSchema,
   execute: async ({inputData, requestContext}) => {
-    emitStepStatus(requestContext, 'render-visualization', 'Building chart');
     const upstream = pickFromBranch<{
       datasetId?: string;
       rows?: unknown[];
@@ -268,7 +268,19 @@ const renderVisualizationStep = createStep({
     const description = upstream.description;
     const datasetId = upstream.datasetId ?? '';
     const chosen = pickVisualizer(getVisualizers(requestContext), chartType);
-    if (!chosen) return {chartConfig: {}, datasetId, sql, description};
+    emitToolStatus(
+      requestContext,
+      'render-visualization',
+      `Configuring ${chosen?.name ?? chartType}`,
+    );
+    if (!chosen)
+      return {
+        visualization: chartType,
+        chartConfig: {},
+        datasetId,
+        sql,
+        description,
+      };
     try {
       const config = await chosen.getConfig({
         prompt: userQuery,
@@ -280,9 +292,21 @@ const renderVisualizationStep = createStep({
         done: true,
         type: chartType,
       });
-      return {chartConfig: config, datasetId, sql, description};
+      return {
+        visualization: chosen.name,
+        chartConfig: config,
+        datasetId,
+        sql,
+        description,
+      };
     } catch {
-      return {chartConfig: {}, datasetId, sql, description};
+      return {
+        visualization: chartType,
+        chartConfig: {},
+        datasetId,
+        sql,
+        description,
+      };
     }
   },
 });
