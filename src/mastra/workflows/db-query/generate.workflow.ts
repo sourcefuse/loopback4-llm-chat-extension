@@ -24,6 +24,14 @@ import {
 
 const MAX_VALIDATION_ATTEMPTS = 3;
 
+// Step ids referenced from createStep, emitToolStatus, getStepResult and
+// branch-output unwrap — declared once to satisfy SonarQube S1192.
+const STEP_CHECK_CACHE = 'check-cache';
+const STEP_GET_TABLES = 'get-tables';
+const STEP_CHECK_TEMPLATES = 'check-templates';
+const STEP_GET_COLUMNS = 'get-columns';
+const STEP_SQL_AND_VALIDATE = 'sql-and-validate';
+
 /** Workflow status enum exported so the post-cache step's union type
  * stays under SonarQube's S4622 threshold (max 2 unions inline). */
 type DbQueryStatus = 'AsIs' | 'FromTemplate' | 'Failed' | 'Continue';
@@ -88,7 +96,7 @@ const outputSchema = z.object({
  * CheckCacheNode (`git show 4be9767^:src/components/db-query/nodes/check-cache.node.ts`).
  */
 const checkCacheStep = createStep({
-  id: 'check-cache',
+  id: STEP_CHECK_CACHE,
   inputSchema,
   outputSchema: z.object({
     cacheHit: z.boolean(),
@@ -125,7 +133,7 @@ Return ONLY the verdict, no other text.`;
       if (similar) {
         emitToolStatus(
           requestContext,
-          'check-cache',
+          STEP_CHECK_CACHE,
           'Found similar query in cache, using it as example',
         );
         return {cacheHit: false};
@@ -134,7 +142,7 @@ Return ONLY the verdict, no other text.`;
       if (match) {
         emitToolStatus(
           requestContext,
-          'check-cache',
+          STEP_CHECK_CACHE,
           'Found relevant query in cache',
         );
         const idx = parseInt(match[1], 10) - 1;
@@ -164,13 +172,13 @@ Return ONLY the verdict, no other text.`;
  * array, so the rest of the workflow can be reasoned about.
  */
 const getTablesStep = createStep({
-  id: 'get-tables',
+  id: STEP_GET_TABLES,
   inputSchema,
   outputSchema: z.object({tables: z.array(z.string())}),
   execute: async ({requestContext}) => {
     emitToolStatus(
       requestContext,
-      'get-tables',
+      STEP_GET_TABLES,
       'Extracting relevant tables from the schema',
     );
     const schemaStore = getSchemaStore(requestContext);
@@ -197,7 +205,7 @@ const getTablesStep = createStep({
  * matched template id is consumed.
  */
 const checkTemplatesStep = createStep({
-  id: 'check-templates',
+  id: STEP_CHECK_TEMPLATES,
   inputSchema,
   outputSchema: z.object({
     matched: z.boolean(),
@@ -233,7 +241,7 @@ Return 'match <index>' for an exact match or 'no_match'. No other text.`;
       if (match) {
         emitToolStatus(
           requestContext,
-          'check-templates',
+          STEP_CHECK_TEMPLATES,
           'Matched query template',
         );
         const idx = parseInt(match[1], 10) - 1;
@@ -262,14 +270,14 @@ const postCacheAndTablesStep = createStep({
     prompt: z.string(),
   }),
   execute: async ({getStepResult, getInitData, inputData}) => {
-    const cache = (getStepResult('check-cache') ?? {cacheHit: false}) as {
+    const cache = (getStepResult(STEP_CHECK_CACHE) ?? {cacheHit: false}) as {
       cacheHit: boolean;
       datasetId?: string;
     };
-    const tables = (getStepResult('get-tables') ?? {tables: []}) as {
+    const tables = (getStepResult(STEP_GET_TABLES) ?? {tables: []}) as {
       tables: string[];
     };
-    const templates = (getStepResult('check-templates') ?? {
+    const templates = (getStepResult(STEP_CHECK_TEMPLATES) ?? {
       matched: false,
     }) as {matched: boolean; templateId?: string};
     // After `.parallel()`, `inputData` is the parallel-step output map keyed by
@@ -387,7 +395,7 @@ const failedStep = createStep({
  * table names.
  */
 const getColumnsStep = createStep({
-  id: 'get-columns',
+  id: STEP_GET_COLUMNS,
   inputSchema: z.any(),
   outputSchema: z.object({
     prompt: z.string(),
@@ -397,7 +405,7 @@ const getColumnsStep = createStep({
   execute: async ({inputData, requestContext}) => {
     emitToolStatus(
       requestContext,
-      'get-columns',
+      STEP_GET_COLUMNS,
       'Extracting relevant columns from the schema',
     );
     const data = inputData as {
@@ -449,7 +457,7 @@ const generateChecklistStep = createStep({
   }),
   execute: async ({inputData, requestContext}) => {
     const wrapped = inputData as Record<string, unknown>;
-    const fromGetColumns = wrapped['get-columns'] as
+    const fromGetColumns = wrapped[STEP_GET_COLUMNS] as
       | {prompt?: string; tables?: string[]}
       | undefined;
     const prompt =
@@ -487,7 +495,7 @@ Return ONLY the checklist as plain text bullets, no preamble.`;
  * `git show 4be9767^:src/components/db-query/nodes/{syntactic,semantic}-validator.node.ts`.
  */
 const sqlAndValidateStep = createStep({
-  id: 'sql-and-validate',
+  id: STEP_SQL_AND_VALIDATE,
   // Loose input schema: dountil feeds this step its own output on each
   // iteration after the first, but on iter 0 the upstream step's payload
   // arrives — schema unions across the two are awkward in zod, so the
@@ -506,7 +514,7 @@ const sqlAndValidateStep = createStep({
   execute: async ({inputData, requestContext}) => {
     emitToolStatus(
       requestContext,
-      'sql-and-validate',
+      STEP_SQL_AND_VALIDATE,
       'Generating SQL query from the prompt',
     );
     const data = inputData as {
@@ -536,14 +544,14 @@ const sqlAndValidateStep = createStep({
         if (stage === 'syntactic') {
           emitToolStatus(
             requestContext,
-            'sql-and-validate',
+            STEP_SQL_AND_VALIDATE,
             'Validating generated SQL query',
           );
           return;
         }
         emitToolStatus(
           requestContext,
-          'sql-and-validate',
+          STEP_SQL_AND_VALIDATE,
           "Verifying if the query fully satisfies the user's requirement",
         );
       },

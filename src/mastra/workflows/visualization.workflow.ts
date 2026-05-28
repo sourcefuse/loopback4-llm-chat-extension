@@ -11,6 +11,7 @@ import {
 } from './db-query/_helpers';
 
 const DEFAULT_CHART_TYPE = 'bar';
+const STEP_GET_DATASET_DATA = 'get-dataset-data';
 
 /**
  * Unwrap the branch-wrapped or direct upstream input. Mastra wraps the
@@ -204,7 +205,7 @@ const callQueryGenerationStep = createStep({
  * when the consumer hasn't bound the db-query component.
  */
 const getDatasetDataStep = createStep({
-  id: 'get-dataset-data',
+  id: STEP_GET_DATASET_DATA,
   // Accept both shapes: direct selectVisualisation output and the
   // branch-wrapped post-callQueryGeneration output. Body unwraps.
   inputSchema: z.any(),
@@ -219,7 +220,7 @@ const getDatasetDataStep = createStep({
   execute: async ({inputData, requestContext}) => {
     emitToolStatus(
       requestContext,
-      'get-dataset-data',
+      STEP_GET_DATASET_DATA,
       'Preparing visualization',
     );
     const upstream = pickFromBranch<{
@@ -261,7 +262,7 @@ const renderVisualizationStep = createStep({
       userQuery?: string;
       sql?: string;
       description?: string;
-    }>(inputData, 'get-dataset-data');
+    }>(inputData, STEP_GET_DATASET_DATA);
     const chartType = upstream.chartType ?? DEFAULT_CHART_TYPE;
     const userQuery = upstream.userQuery ?? '';
     const sql = upstream.sql;

@@ -110,18 +110,35 @@ It does not return anything, instead it fires an event internally that renders t
     // visualizationWorkflow's final step is `.then(renderVisualizationStep)`
     // (not a `.branch()`), so the result lands directly on the top level
     // — no branch-key unwrap needed.
-    const rawResult =
-      (result as {result?: Record<string, unknown>}).result ?? {};
-    const workflowResult = rawResult as {
+    const workflowResult = ((result as {result?: Record<string, unknown>})
+      .result ?? {}) as {
       chartConfig?: unknown;
       visualization?: string;
       datasetId?: string;
       sql?: string;
       description?: string;
     };
-    // Emit final Tool event so the UI can render the chart inline.
-    // UI consumers expect `visualization` to hold the chart type and
-    // `config` to hold chart settings.
+    this.emitVisualizationResult(writer, toolCallId, workflowResult);
+    return workflowResult;
+  }
+
+  /**
+   * Emit the final Tool event the UI renders the chart from, then a
+   * Completed ToolStatus. The UI's renderVizFromToolEvent reads
+   * `data.visualization` as the chart TYPE and `data.config` as the
+   * chart settings (see sandbox app.js renderChart signature).
+   */
+  private emitVisualizationResult(
+    writer: ((e: LLMStreamEvent) => void) | undefined,
+    toolCallId: string,
+    workflowResult: {
+      chartConfig?: unknown;
+      visualization?: string;
+      datasetId?: string;
+      sql?: string;
+      description?: string;
+    },
+  ): void {
     writer?.({
       type: LLMStreamEventType.Tool,
       data: {
@@ -141,6 +158,5 @@ It does not return anything, instead it fires an event internally that renders t
       type: LLMStreamEventType.ToolStatus,
       data: {id: toolCallId, status: ToolStatus.Completed},
     });
-    return workflowResult;
   }
 }
