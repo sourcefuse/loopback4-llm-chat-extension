@@ -1,7 +1,6 @@
 import {BindingScope, injectable, Provider} from '@loopback/core';
-import {Observability, SamplingStrategyType} from '@mastra/observability';
-import {LangSmithExporter} from '@mastra/langsmith';
-import {parseSampleRate} from './util';
+import {Observability} from '@mastra/observability';
+import {buildLangSmithExporter, makeObservability} from './util';
 
 /**
  * Mastra Observability wired with the LangSmith exporter. Consumer binds
@@ -19,32 +18,12 @@ import {parseSampleRate} from './util';
 @injectable({scope: BindingScope.SINGLETON})
 export class MastraLangSmithObservability implements Provider<Observability> {
   value(): Observability {
-    if (!process.env.LANGSMITH_API_KEY && !process.env.LANGCHAIN_API_KEY) {
+    const exporter = buildLangSmithExporter();
+    if (!exporter) {
       throw new Error(
         'LANGSMITH_API_KEY (or LANGCHAIN_API_KEY) env var required for MastraLangSmithObservability',
       );
     }
-    return new Observability({
-      configs: {
-        default: {
-          serviceName: process.env.OTEL_SERVICE_NAME ?? 'lb4-llm-chat',
-          exporters: [
-            new LangSmithExporter({
-              apiKey:
-                process.env.LANGSMITH_API_KEY ?? process.env.LANGCHAIN_API_KEY,
-              apiUrl:
-                process.env.LANGSMITH_ENDPOINT ??
-                process.env.LANGCHAIN_ENDPOINT,
-              projectName:
-                process.env.LANGSMITH_PROJECT ?? process.env.LANGCHAIN_PROJECT,
-            }),
-          ],
-          sampling: {
-            type: SamplingStrategyType.RATIO,
-            probability: parseSampleRate(process.env.OTEL_SAMPLE_RATE),
-          },
-        },
-      },
-    });
+    return makeObservability([exporter]);
   }
 }

@@ -63,6 +63,10 @@
     "./mastra-langsmith": {
       "type": "./dist/providers/mastra/observability/langsmith.provider.d.ts",
       "default": "./dist/providers/mastra/observability/langsmith.provider.js"
+    },
+    "./mastra-observability": {
+      "type": "./dist/providers/mastra/observability/multi.provider.d.ts",
+      "default": "./dist/providers/mastra/observability/multi.provider.js"
     }
   },
   "typesVersions": {
@@ -102,6 +106,9 @@
       ],
       "mastra-langsmith": [
         "dist/providers/mastra/observability/langsmith.provider.d.ts"
+      ],
+      "mastra-observability": [
+        "dist/providers/mastra/observability/multi.provider.d.ts"
       ]
     }
   },
