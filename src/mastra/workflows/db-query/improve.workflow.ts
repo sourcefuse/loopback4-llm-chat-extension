@@ -55,10 +55,12 @@ const inputSchema = z.object({
   prompt: z.string(),
 });
 
+// Returns datasetId + sql only — never a row count or result rows. The AI
+// is told the dataset was updated and rendered; it never sees actual data
+// unless the consumer opts in via `readAccessForAI` (resolved in the tool).
 const outputSchema = z.object({
   datasetId: z.string(),
   sql: z.string(),
-  rowCount: z.number(),
 });
 
 /**
@@ -204,7 +206,7 @@ const saveImprovedStep = createStep({
     // FAIL shape: empty datasetId + empty sql. Consumers (UI, SSE
     // ToolStatus.Failed handlers) distinguish success from silent-
     // update-failure by checking datasetId presence.
-    const failResult = {datasetId: '', sql: '', rowCount: 0};
+    const failResult = {datasetId: '', sql: ''};
     if (!data.datasetId || !data.sql) return failResult;
     const store = getDatasetStore(requestContext);
     if (!store) return failResult;
@@ -222,7 +224,7 @@ const saveImprovedStep = createStep({
       // surfaces it instead of echoing the requested sql as if saved.
       return failResult;
     }
-    return {datasetId: data.datasetId, sql: data.sql, rowCount: 0};
+    return {datasetId: data.datasetId, sql: data.sql};
   },
 });
 
@@ -230,7 +232,7 @@ const failedStep = createStep({
   id: 'failed',
   inputSchema: z.any(),
   outputSchema,
-  execute: async () => ({datasetId: '', sql: '', rowCount: 0}),
+  execute: async () => ({datasetId: '', sql: ''}),
 });
 
 export const improveQueryWorkflow = createWorkflow({

@@ -9,7 +9,6 @@ import {
   injectable,
   service,
 } from '@loopback/core';
-import {Agent} from '@mastra/core/agent';
 import {Mastra} from '@mastra/core';
 import {RequestContext} from '@mastra/core/request-context';
 import type {MastraModelConfig} from '@mastra/core/llm';
@@ -22,6 +21,7 @@ import {UsageAccumulator} from '../../services/usage-accumulator.service';
 import {AsyncEventQueue} from './async-event-queue';
 import {DbQueryAIExtensionBindings} from '../../components/db-query/keys';
 import type {
+  DbQueryConfig,
   IDataSetStore,
   IDbConnector,
   IQueryTemplateStore,
@@ -185,7 +185,25 @@ export class WorkflowRunner {
     const queue = new AsyncEventQueue<LLMStreamEvent>();
     this.bufferedAssistantText = '';
 
-    const agent = this.buildAgent();
+    // Stream the chatAgent REGISTERED on the Mastra singleton (not a detached
+    // `new Agent()`). A registered agent carries the Mastra instance's
+    // observability context, so its spans + tool-call spans reach the
+    // configured exporter (Langfuse). Per-request model / tools /
+    // instructions are resolved by the agent's dynamic params from the
+    // RequestContext built below.
+    const agent = this.mastra.getAgent('chatAgent');
+    if (!agent) {
+      queue.push({
+        type: LLMStreamEventType.Error,
+        data: {
+          message:
+            'ChatAgent not registered in Mastra — check MastraProvider boot order',
+        },
+      });
+      queue.close();
+      yield* queue;
+      return;
+    }
     const memory = await agent.getMemory();
     if (!memory) {
       queue.push({
@@ -467,47 +485,6 @@ export class WorkflowRunner {
     }
   }
 
-  /**
-   * Build a per-request Agent. Memory is reused from the singleton ChatAgent
-   * so storage pools are shared; only the Agent + tool registry shape is
-   * per-request.
-   */
-  private buildAgent(): Agent {
-    const singleton = this.mastra.getAgent('chatAgent');
-    if (!singleton) {
-      throw new Error(
-        'ChatAgent not registered in MastraProvider — boot order issue',
-      );
-    }
-    const memory =
-      typeof singleton.getMemory === 'function'
-        ? (singleton as {getMemory: () => unknown}).getMemory()
-        : (singleton as {memory?: unknown}).memory;
-
-    // Fail-closed: WorkflowRunner refuses to fall back to a billable
-    // OpenAI default. Consumers must either bind MastraChatLLM or set
-    // MASTRA_DEFAULT_CHAT_MODEL (the singleton ChatAgent reads the env
-    // var at boot). The env-var read happens once here so a misconfigured
-    // chat turn fails fast with a clear message rather than silently
-    // routing to whichever provider OPENAI_API_KEY belongs to.
-    const model = this.chatLlm ?? process.env.MASTRA_DEFAULT_CHAT_MODEL;
-    if (!model) {
-      throw new Error(
-        'WorkflowRunner: bind AiIntegrationBindings.MastraChatLLM in your ' +
-          'component OR set MASTRA_DEFAULT_CHAT_MODEL env var (e.g. ' +
-          '"google/gemini-1.5-flash"). No silent OpenAI fallback.',
-      );
-    }
-    return new Agent({
-      id: 'chat-agent',
-      name: 'ChatAgent',
-      instructions: this.buildInstructions(),
-      model,
-      tools: this.buildToolMap(),
-      memory: memory as ConstructorParameters<typeof Agent>[0]['memory'],
-    });
-  }
-
   private buildToolMap(): Record<string, Tool> {
     if (!this.mastraTools) return {};
     return Object.fromEntries(
@@ -546,6 +523,7 @@ export class WorkflowRunner {
       queryCache,
       templateCache,
       globalContext,
+      config,
     ] = await Promise.all([
       this.lb4Ctx.get<IDbConnector>(DbQueryAIExtensionBindings.Connector, opt),
       this.lb4Ctx.get<IAuthUserWithPermissions>(
@@ -576,6 +554,7 @@ export class WorkflowRunner {
         opt,
       ),
       this.lb4Ctx.get<string[]>(DbQueryAIExtensionBindings.GlobalContext, opt),
+      this.lb4Ctx.get<DbQueryConfig>(DbQueryAIExtensionBindings.Config, opt),
     ]);
     const visBindings = this.lb4Ctx.findByTag({[VISUALIZATION_KEY]: true});
     const visualizers = await Promise.all(
@@ -585,10 +564,18 @@ export class WorkflowRunner {
       resourceId: args.resourceId,
       eventWriter: args.eventWriter,
       chatLlm: this.chatLlm as MastraRcShape['chatLlm'],
+      // Per-request chat-agent config consumed by the registered chatAgent's
+      // dynamic params (model/tools/instructions resolve from these). model
+      // falls back to MASTRA_DEFAULT_CHAT_MODEL inside the agent when chatLlm
+      // is unbound — fail-closed is enforced at MastraProvider boot.
+      agentModel: this.chatLlm,
+      agentTools: this.buildToolMap(),
+      agentInstructions: this.buildInstructions(),
       globalContext,
       dbConnector,
       authUser,
       datasetStore,
+      config,
       templateStore,
       schemaStore,
       schemaHelper,

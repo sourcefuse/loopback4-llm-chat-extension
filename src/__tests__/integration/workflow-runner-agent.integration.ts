@@ -17,10 +17,9 @@ import {WorkflowRunner} from '../../mastra/bridge/workflow-runner';
 import {LLMStreamEvent, LLMStreamEventType} from '../../graphs/event.types';
 import {UsageAccumulator} from '../../services/usage-accumulator.service';
 
-// WorkflowRunner.buildAgent now refuses to silently fall back to OpenAI.
-// This integration test injects `chatLlm` directly so the env var only
-// has to exist (it never gets read). Set defensively for the rare path
-// where the constructor-bound chatLlm is undefined.
+// WorkflowRunner streams the chatAgent registered on this Mastra instance
+// (via getAgent), so the registered agent's static mock model drives output.
+// Env var is set defensively; the registered agent never reads it here.
 process.env.MASTRA_DEFAULT_CHAT_MODEL ??= 'mock/test-model';
 
 /**

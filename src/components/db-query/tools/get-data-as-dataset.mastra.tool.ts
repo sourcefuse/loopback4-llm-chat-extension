@@ -6,6 +6,8 @@ import {z} from 'zod';
 import {LLMStreamEvent, LLMStreamEventType} from '../../../graphs/event.types';
 import {IMastraGraphTool, ToolStatus} from '../../../graphs/types';
 import {AiIntegrationBindings} from '../../../keys';
+import {DbQueryConfig, IDataSetStore} from '../types';
+import {buildDatasetReadout} from '../utils';
 
 /**
  * Mastra-shaped NL2SQL tool. Final form — calls
@@ -71,7 +73,6 @@ export class MastraGetDataAsDatasetTool implements IMastraGraphTool {
   private extractQueryBranchResult(result: unknown): {
     datasetId?: string;
     sql?: string;
-    rowCount?: number;
   } {
     // Mastra wraps the matched branch's output under the branch step id
     // (mirroring `.parallel()` fan-in shape), so unwrap the
@@ -85,7 +86,6 @@ export class MastraGetDataAsDatasetTool implements IMastraGraphTool {
     return branchOutput as {
       datasetId?: string;
       sql?: string;
-      rowCount?: number;
     };
   }
 
@@ -119,25 +119,40 @@ export class MastraGetDataAsDatasetTool implements IMastraGraphTool {
       throw new Error(`Query generation failed: ${result.status}`);
     }
     const workflowResult = this.extractQueryBranchResult(result);
+    const datasetId = workflowResult.datasetId ?? '';
     // Emit final Tool event so the UI's chat bubble can attach the
     // SQL/template badge and the like/dislike footer (app.js reads
-    // evtData.data.datasetId off the `tool` event).
+    // evtData.data.datasetId off the `tool` event). No row count is sent —
+    // the UI grid fetches and renders rows itself from the datasetId.
     writer?.({
       type: LLMStreamEventType.Tool,
       data: {
         id: toolCallId,
         tool: this.key,
         data: {
-          datasetId: workflowResult.datasetId ?? '',
+          datasetId,
           sql: workflowResult.sql ?? '',
-          rowCount: workflowResult.rowCount ?? 0,
         },
       },
     });
     writer?.({
       type: LLMStreamEventType.ToolStatus,
-      data: {id: toolCallId, status: ToolStatus.Completed},
+      data: {
+        id: toolCallId,
+        status: datasetId ? ToolStatus.Completed : ToolStatus.Failed,
+      },
     });
-    return workflowResult;
+    const rc = (ctx as {requestContext?: {get: (k: string) => unknown}})
+      ?.requestContext;
+    // Hand the AI a "done + datasetId" acknowledgement, never the actual
+    // data (unless the consumer opted in via readAccessForAI). Returning a
+    // string — not {datasetId, sql, rowCount} — keeps the row count and
+    // result rows out of the model's context.
+    return buildDatasetReadout({
+      datasetId,
+      verb: 'generated',
+      store: rc?.get('datasetStore') as IDataSetStore | undefined,
+      config: rc?.get('config') as DbQueryConfig | undefined,
+    });
   }
 }

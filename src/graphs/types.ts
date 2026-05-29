@@ -10,7 +10,8 @@ export enum ToolStatus {
 
 /**
  * Mastra-shaped tool interface used by the Mastra createTool wrappers and
- * consumed by WorkflowRunner.buildAgent() via MastraToolStore.
+ * consumed by WorkflowRunner (built into the per-request tool map) via
+ * MastraToolStore.
  */
 export interface IMastraGraphTool {
   key: string;

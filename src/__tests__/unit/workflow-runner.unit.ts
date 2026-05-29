@@ -1,14 +1,14 @@
 import {Context} from '@loopback/core';
 import {expect, sinon} from '@loopback/testlab';
-import {Agent} from '@mastra/core/agent';
 import {WorkflowRunner} from '../../mastra/bridge/workflow-runner';
 import {InProcessRunRegistry} from '../../mastra/bridge/run-registry';
 import {UsageAccumulator} from '../../services/usage-accumulator.service';
 import {LLMStreamEvent, LLMStreamEventType} from '../../graphs/event.types';
 import {ToolStatus} from '../../graphs/types';
 
-// Satisfy WorkflowRunner.buildAgent fail-closed check. Real LLM calls
-// in this suite are stubbed via Agent.prototype overrides.
+// Set defensively; the unit suite drives a stubbed Mastra (getAgent returns
+// a stub agent whose getMemory/stream are sinon stubs), so the real model is
+// never resolved here.
 process.env.MASTRA_DEFAULT_CHAT_MODEL ??= 'mock/test-model';
 
 type Chunk =
@@ -62,20 +62,22 @@ describe('WorkflowRunner Unit', () => {
     createThread = sinon.stub();
     getThreadById = sinon.stub();
     memoryStub = {createThread, getThreadById};
-    getMemoryStub = sinon
-      .stub(Agent.prototype, 'getMemory')
-      .resolves(memoryStub as unknown as never);
-    streamStub = sinon.stub(Agent.prototype, 'stream');
+    // run() now streams the agent returned by `mastra.getAgent('chatAgent')`
+    // (the registered, observability-bound agent) instead of a detached
+    // `new Agent()`. Stub that agent's getMemory + stream directly.
+    getMemoryStub = sinon.stub().resolves(memoryStub);
+    streamStub = sinon.stub();
     mastraStub = {
-      getAgent: sinon.stub().returns({getMemory: () => memoryStub}),
+      getAgent: sinon
+        .stub()
+        .returns({getMemory: getMemoryStub, stream: streamStub}),
     };
     usage = new UsageAccumulator();
     runRegistry = new InProcessRunRegistry();
   });
 
   afterEach(() => {
-    getMemoryStub.restore();
-    streamStub.restore();
+    sinon.restore();
   });
 
   function makeRunner(resourceIdValue?: string): WorkflowRunner {

@@ -59,6 +59,10 @@
     "./mastra-langfuse": {
       "type": "./dist/providers/mastra/observability/langfuse.provider.d.ts",
       "default": "./dist/providers/mastra/observability/langfuse.provider.js"
+    },
+    "./mastra-langsmith": {
+      "type": "./dist/providers/mastra/observability/langsmith.provider.d.ts",
+      "default": "./dist/providers/mastra/observability/langsmith.provider.js"
     }
   },
   "typesVersions": {
@@ -95,6 +99,9 @@
       ],
       "mastra-langfuse": [
         "dist/providers/mastra/observability/langfuse.provider.d.ts"
+      ],
+      "mastra-langsmith": [
+        "dist/providers/mastra/observability/langsmith.provider.d.ts"
       ]
     }
   },

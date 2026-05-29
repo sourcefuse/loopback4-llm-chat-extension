@@ -84,10 +84,14 @@ const inputSchema = z.object({
   prompt: z.string(),
 });
 
+// NOTE: the workflow deliberately returns only datasetId + sql — never a
+// row count or result rows. Mirrors the v2 SaveDataSetNode contract where
+// the AI is told "done, dataset rendered" and never sees actual data. Any
+// AI-visible result rows are gated behind the consumer's
+// `readAccessForAI` flag and resolved in the tool layer, not here.
 const outputSchema = z.object({
   datasetId: z.string(),
   sql: z.string(),
-  rowCount: z.number(),
 });
 
 // `isImprovementStep` + `classifyChangeStep` lived here in earlier
@@ -322,7 +326,7 @@ const returnCachedStep = createStep({
   outputSchema,
   execute: async ({inputData, requestContext}) => {
     const data = inputData as {datasetId?: string};
-    const fallback = {datasetId: data.datasetId ?? '', sql: '', rowCount: 0};
+    const fallback = {datasetId: data.datasetId ?? '', sql: ''};
     const store = getDatasetStore(requestContext);
     if (!store || !data.datasetId) return fallback;
     try {
@@ -330,7 +334,6 @@ const returnCachedStep = createStep({
       return {
         datasetId: dataset.id ?? data.datasetId,
         sql: dataset.query ?? '',
-        rowCount: 0,
       };
     } catch {
       return fallback;
@@ -355,7 +358,7 @@ const saveDatasetFromTemplateStep = createStep({
       prompt?: string;
       tables?: string[];
     };
-    const fallback = {datasetId: '', sql: '', rowCount: 0};
+    const fallback = {datasetId: '', sql: ''};
     if (!data.templateId || !data.prompt) return fallback;
     const persist = resolvePersistDeps(
       getDatasetStore(requestContext),
@@ -383,7 +386,7 @@ const saveDatasetFromTemplateStep = createStep({
       schemaHash,
       votes: 0,
     });
-    return {datasetId: dataset.id ?? '', sql: resolved.sql, rowCount: 0};
+    return {datasetId: dataset.id ?? '', sql: resolved.sql};
   },
 });
 
@@ -391,7 +394,7 @@ const failedStep = createStep({
   id: 'failed',
   inputSchema: z.any(),
   outputSchema,
-  execute: async () => ({datasetId: '', sql: '', rowCount: 0}),
+  execute: async () => ({datasetId: '', sql: ''}),
 });
 
 /**
@@ -610,7 +613,7 @@ const saveDatasetStep = createStep({
       prompt?: string;
       tables?: string[];
     };
-    const fallback = {datasetId: '', sql: data.sql ?? '', rowCount: 0};
+    const fallback = {datasetId: '', sql: data.sql ?? ''};
     if (!data.sql) return fallback;
     const persist = resolvePersistDeps(
       getDatasetStore(requestContext),
@@ -631,28 +634,14 @@ const saveDatasetStep = createStep({
       schemaHash,
       votes: 0,
     });
-    // Execute the query so the tool reports the real row count. Without
-    // this the agent saw a hardcoded rowCount:0 and told the user "no
-    // records" even though the dataset persisted fine and the grid
-    // renders rows. Best-effort: a failure here must not undo the save.
-    const rowCount = await countRows(getDbConnector(requestContext), data.sql);
-    return {datasetId: dataset.id ?? '', sql: data.sql, rowCount};
+    // Return datasetId + sql only. The AI must NOT learn the row count or
+    // see result rows here — that would be data access it never had in v2
+    // (the AI's job is to produce the query; the UI renders the grid from
+    // the datasetId). Any AI-visible rows are opt-in via the consumer's
+    // `readAccessForAI` flag and resolved in the tool layer.
+    return {datasetId: dataset.id ?? '', sql: data.sql};
   },
 });
-
-async function countRows(
-  dbConnector: ReturnType<typeof getDbConnector>,
-  sql: string,
-): Promise<number> {
-  if (!dbConnector) return 0;
-  try {
-    const rows = await dbConnector.execute<unknown>(sql);
-    return Array.isArray(rows) ? rows.length : 0;
-  } catch {
-    // Count is advisory; never fail the save over it.
-    return 0;
-  }
-}
 
 export const generateQueryWorkflow = createWorkflow({
   id: 'generate-query',

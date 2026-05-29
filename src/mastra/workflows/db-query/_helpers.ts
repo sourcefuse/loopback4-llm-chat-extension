@@ -1,4 +1,6 @@
 import type {RequestContext} from '@mastra/core/request-context';
+import type {MastraModelConfig} from '@mastra/core/llm';
+import type {Tool} from '@mastra/core/tools';
 import type {IAuthUserWithPermissions} from '@sourceloop/core';
 import {generateText} from 'ai';
 import type {LanguageModel} from 'ai';
@@ -12,6 +14,7 @@ import type {
 } from '../../../components/db-query/services';
 import type {SchemaStore} from '../../../components/db-query/services/schema.store';
 import type {
+  DbQueryConfig,
   IDataSetStore,
   IDbConnector,
   IQueryTemplateStore,
@@ -33,6 +36,15 @@ export interface MastraRcShape {
   resourceId: string;
   eventWriter: (event: LLMStreamEvent) => void;
   chatLlm?: LanguageModel;
+  // Per-request chat-agent configuration. The chatAgent registered on the
+  // Mastra singleton resolves its model / tools / instructions from these
+  // keys (function-typed Agent params, see MastraProvider). Threading them
+  // through RequestContext — instead of building a detached `new Agent()`
+  // per request — keeps the agent registered with the Mastra instance so
+  // its spans reach the configured observability exporter (Langfuse).
+  agentModel?: MastraModelConfig;
+  agentTools?: Record<string, Tool>;
+  agentInstructions?: string;
   // Per-request domain rules (v2 `{checks}`) injected into the SQL
   // generation prompt — e.g. "exchange rate joins must use the active
   // rate (end_date IS NULL)", "use partial case-insensitive name match".
@@ -41,6 +53,11 @@ export interface MastraRcShape {
   dbConnector?: IDbConnector;
   authUser?: IAuthUserWithPermissions;
   datasetStore?: IDataSetStore;
+  // Consumer DbQueryConfig — gates whether the AI may read result rows
+  // (`readAccessForAI`, default off) and the row cap (`maxRowsForAI`).
+  // Matches the v2 SaveDataSetNode contract: by default the AI never
+  // sees actual data, only the datasetId + a "done" acknowledgement.
+  config?: DbQueryConfig;
   templateStore?: IQueryTemplateStore;
   schemaStore?: SchemaStore;
   schemaHelper?: DbSchemaHelperService;
@@ -74,6 +91,9 @@ export function getAuthUser(
 }
 export function getDatasetStore(rc?: MastraRc): IDataSetStore | undefined {
   return rc?.get('datasetStore');
+}
+export function getDbQueryConfig(rc?: MastraRc): DbQueryConfig | undefined {
+  return rc?.get('config');
 }
 export function getTemplateStore(
   rc?: MastraRc,
