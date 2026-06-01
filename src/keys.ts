@@ -72,6 +72,24 @@ export namespace AiIntegrationBindings {
   export const MastraFileLLM = BindingKey.create<MastraModelConfig>(
     'services.ai-reporting.mastraFileLlm',
   );
+  // Tier bindings — mirror the v2 LangGraph extension's CheapLLM/SmartLLM/
+  // SmartNonThinkingLLM tiers under Mastra-typed keys. All optional: when a
+  // tier slot is unbound the workflow steps fall back to MastraChatLLM, so
+  // consumers who don't care about tier routing see zero behaviour change.
+  // Set them to route high-volume / low-stakes calls (description gen,
+  // checklist gen, cache-judge, template-judge, get-columns) to a cheaper
+  // model, heavy reasoning (sql-gen, semantic-validator) to a stronger one,
+  // and strict-structured-output sites (line visualizer) to a reasoning
+  // model with thinking disabled.
+  export const MastraCheapLLM = BindingKey.create<MastraModelConfig>(
+    'services.ai-reporting.mastraCheapLlm',
+  );
+  export const MastraSmartLLM = BindingKey.create<MastraModelConfig>(
+    'services.ai-reporting.mastraSmartLlm',
+  );
+  export const MastraSmartNonThinkingLLM = BindingKey.create<MastraModelConfig>(
+    'services.ai-reporting.mastraSmartNonThinkingLlm',
+  );
   export const MastraStorage = BindingKey.create<MastraCompositeStore>(
     'services.ai-reporting.mastraStorage',
   );

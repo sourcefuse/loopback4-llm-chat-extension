@@ -1,18 +1,18 @@
 import {createStep, createWorkflow} from '@mastra/core/workflows';
-import {generateText} from 'ai';
 import {z} from 'zod';
 import {
   buildGenerateSqlPrompt,
   computeSchemaHash,
   emitToolStatus,
   getAuthUser,
-  getChatLlm,
+  getCheapLlm,
   getDatasetStore,
   getDbConnector,
   getGlobalContext,
   getQueryCache,
   getSchemaHelper,
   getSchemaStore,
+  getSmartLlm,
   getTablesWithColumns,
   getTemplateCache,
   getTemplateHelper,
@@ -21,6 +21,7 @@ import {
   resolvePersistDeps,
   resolveTemplateById,
   runSqlAttempt,
+  tracedGenerateText,
 } from './_helpers';
 
 const MAX_VALIDATION_ATTEMPTS = 3;
@@ -117,11 +118,13 @@ const checkCacheStep = createStep({
     cacheHit: z.boolean(),
     datasetId: z.string().optional(),
   }),
-  execute: async ({inputData, requestContext}) => {
+  execute: async ({inputData, requestContext, tracingContext}) => {
     const data = inputData as {prompt?: string};
     if (!data.prompt) return {cacheHit: false};
     const cache = getQueryCache(requestContext);
-    const chatLlm = getChatLlm(requestContext);
+    // Cache judge: route to cheap tier (main: CheapLLM). Falls back to
+    // chatLlm when MastraCheapLLM unbound.
+    const chatLlm = getCheapLlm(requestContext);
     if (!cache || !chatLlm) return {cacheHit: false};
     let docs: Array<{pageContent: string; metadata: {id?: string}}> = [];
     try {
@@ -142,7 +145,13 @@ ${queries}
 
 Return ONLY the verdict, no other text.`;
     try {
-      const verdict = await generateText({model: chatLlm, prompt: judgePrompt});
+      const verdict = await tracedGenerateText({
+        model: chatLlm,
+        prompt: judgePrompt,
+        tracing: tracingContext,
+        label: 'cache-judge',
+        resultType: 'reasoning',
+      });
       const text = verdict.text.trim();
       const similar = text.match(/Similar\s+(\d+)/i);
       if (similar) {
@@ -226,11 +235,12 @@ const checkTemplatesStep = createStep({
     matched: z.boolean(),
     templateId: z.string().optional(),
   }),
-  execute: async ({inputData, requestContext}) => {
+  execute: async ({inputData, requestContext, tracingContext}) => {
     const data = inputData as {prompt?: string};
     if (!data.prompt) return {matched: false};
     const cache = getTemplateCache(requestContext);
-    const chatLlm = getChatLlm(requestContext);
+    // Template judge: cheap tier (main: CheapLLM).
+    const chatLlm = getCheapLlm(requestContext);
     if (!cache || !chatLlm) return {matched: false};
     let docs: Array<{pageContent: string; metadata: {id?: string}}> = [];
     try {
@@ -250,7 +260,13 @@ ${templates}
 
 Return 'match <index>' for an exact match or 'no_match'. No other text.`;
     try {
-      const verdict = await generateText({model: chatLlm, prompt: judgePrompt});
+      const verdict = await tracedGenerateText({
+        model: chatLlm,
+        prompt: judgePrompt,
+        tracing: tracingContext,
+        label: 'template-judge',
+        resultType: 'reasoning',
+      });
       const text = verdict.text.trim();
       const match = text.match(/match\s+(\d+)/i);
       if (match) {
@@ -416,7 +432,7 @@ const getColumnsStep = createStep({
     tables: z.array(z.string()),
     templateId: z.string().optional(),
   }),
-  execute: async ({inputData, requestContext}) => {
+  execute: async ({inputData, requestContext, tracingContext}) => {
     emitToolStatus(
       requestContext,
       STEP_GET_COLUMNS,
@@ -430,7 +446,8 @@ const getColumnsStep = createStep({
     const prompt = data.prompt ?? '';
     const tables = data.tables ?? [];
     const templateId = data.templateId;
-    const chatLlm = getChatLlm(requestContext);
+    // Column-relevance / get-columns: cheap tier (main: CheapLLM).
+    const chatLlm = getCheapLlm(requestContext);
     if (!chatLlm || tables.length === 0) {
       return {prompt, tables, templateId};
     }
@@ -440,6 +457,7 @@ const getColumnsStep = createStep({
     );
     const narrowed = await pickRelevantTables({
       chatLlm,
+      tracing: tracingContext,
       prompt,
       tablesWithColumns,
       upstreamTables: tables,
@@ -469,7 +487,7 @@ const generateChecklistStep = createStep({
     checklist: z.string(),
     attempts: z.number(),
   }),
-  execute: async ({inputData, requestContext}) => {
+  execute: async ({inputData, requestContext, tracingContext}) => {
     const wrapped = inputData as Record<string, unknown>;
     const fromGetColumns = wrapped[STEP_GET_COLUMNS] as
       | {prompt?: string; tables?: string[]}
@@ -478,7 +496,8 @@ const generateChecklistStep = createStep({
       fromGetColumns?.prompt ?? (wrapped.prompt as string | undefined) ?? '';
     const tables =
       fromGetColumns?.tables ?? (wrapped.tables as string[] | undefined) ?? [];
-    const chatLlm = getChatLlm(requestContext);
+    // Checklist generation: cheap tier (main: CheapLLM via generate-checklist.node).
+    const chatLlm = getCheapLlm(requestContext);
     let checklist = '';
     if (chatLlm && prompt) {
       // Only restate constraints the user EXPLICITLY stated. The earlier
@@ -498,7 +517,13 @@ Available tables: ${tables.join(', ') || '(none)'}
 
 Return ONLY the explicit constraints as plain-text bullets, or an empty response if there are none.`;
       try {
-        const result = await generateText({model: chatLlm, prompt: llmPrompt});
+        const result = await tracedGenerateText({
+          model: chatLlm,
+          prompt: llmPrompt,
+          tracing: tracingContext,
+          label: 'generate-checklist',
+          resultType: 'planning',
+        });
         checklist = normaliseChecklist(result.text);
       } catch {
         // LLM unavailable / failed — proceed with empty checklist so
@@ -535,7 +560,7 @@ const sqlAndValidateStep = createStep({
     tables: z.array(z.string()),
     checklist: z.string(),
   }),
-  execute: async ({inputData, requestContext}) => {
+  execute: async ({inputData, requestContext, tracingContext}) => {
     emitToolStatus(
       requestContext,
       STEP_SQL_AND_VALIDATE,
@@ -555,7 +580,10 @@ const sqlAndValidateStep = createStep({
       tables,
     );
     const attempt = await runSqlAttempt({
-      chatLlm: getChatLlm(requestContext),
+      // SQL generation + semantic validation: smart tier (main: SmartLLM
+      // for both sql-generation.node and semantic-validator.node).
+      chatLlm: getSmartLlm(requestContext),
+      tracing: tracingContext,
       dbConnector: getDbConnector(requestContext),
       prompt,
       tables,

@@ -331,4 +331,42 @@ describe('WorkflowRunner Unit', () => {
     };
     expect(streamOpts.memory.resource).to.equal('tenant-a:user-1');
   });
+
+  it('forwards MastraCheapLLM / MastraSmartLLM / MastraSmartNonThinkingLLM into the RequestContext when bound', async () => {
+    // Tier slots are appended at the END of the constructor signature so
+    // existing fixtures don't have to re-number. Wiring sentinels through
+    // ensures both that (a) the optional injects don't break boot and
+    // (b) workflow steps invoked from tools see them via the typed RC.
+    const cheapSentinel = {kind: 'cheap'};
+    const smartSentinel = {kind: 'smart'};
+    const sntSentinel = {kind: 'snt'};
+    createThread.resolves({id: 't1'});
+    stubStreamWith([{type: 'text-delta', payload: {text: '.'}}]);
+
+    const runner = new WorkflowRunner(
+      new Context('test'),
+      mastraStub as never,
+      undefined,
+      runRegistry,
+      'tenant-a:user-1',
+      undefined,
+      usage,
+      undefined,
+      undefined,
+      cheapSentinel as never,
+      smartSentinel as never,
+      sntSentinel as never,
+    );
+
+    await collect(runner.run('q', undefined, new AbortController().signal));
+
+    const streamOpts = streamStub.firstCall.args[1] as {
+      requestContext: {get: (k: string) => unknown};
+    };
+    expect(streamOpts.requestContext.get('cheapLlm')).to.equal(cheapSentinel);
+    expect(streamOpts.requestContext.get('smartLlm')).to.equal(smartSentinel);
+    expect(streamOpts.requestContext.get('smartNonThinkingLlm')).to.equal(
+      sntSentinel,
+    );
+  });
 });

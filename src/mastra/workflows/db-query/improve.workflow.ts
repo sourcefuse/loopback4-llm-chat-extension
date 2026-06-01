@@ -3,11 +3,11 @@ import {z} from 'zod';
 import {
   buildImproveSqlPrompt,
   emitToolStatus,
-  getChatLlm,
   getDatasetStore,
   getDbConnector,
   getGlobalContext,
   getSchemaStore,
+  getSmartLlm,
   getTablesWithColumns,
   runSqlAttempt,
 } from './_helpers';
@@ -138,7 +138,7 @@ const fixQueryStep = createStep({
     tables: z.array(z.string()),
     checklist: z.string(),
   }),
-  execute: async ({inputData, requestContext}) => {
+  execute: async ({inputData, requestContext, tracingContext}) => {
     emitToolStatus(
       requestContext,
       'fix-query',
@@ -162,7 +162,10 @@ const fixQueryStep = createStep({
       tables,
     );
     const attempt = await runSqlAttempt({
-      chatLlm: getChatLlm(requestContext),
+      // Fix-query (sql gen + semantic validation): smart tier (main:
+      // SmartLLM in sql-generation.node + semantic-validator.node).
+      chatLlm: getSmartLlm(requestContext),
+      tracing: tracingContext,
       dbConnector: getDbConnector(requestContext),
       prompt,
       tables,

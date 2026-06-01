@@ -174,6 +174,16 @@ export class WorkflowRunner {
     private mastraTools?: MastraToolStore,
     @inject(AiIntegrationBindings.MastraFileLLM, {optional: true})
     private fileLlm?: MastraModelConfig,
+    // Tier slots — optional; when unbound, workflow steps fall back to
+    // chatLlm via the getCheapLlm/getSmartLlm/getSmartNonThinkingLlm
+    // accessors. Bound positions appended at the END so existing test
+    // fixtures that pass positional args don't have to be renumbered.
+    @inject(AiIntegrationBindings.MastraCheapLLM, {optional: true})
+    private cheapLlm?: MastraModelConfig,
+    @inject(AiIntegrationBindings.MastraSmartLLM, {optional: true})
+    private smartLlm?: MastraModelConfig,
+    @inject(AiIntegrationBindings.MastraSmartNonThinkingLLM, {optional: true})
+    private smartNonThinkingLlm?: MastraModelConfig,
   ) {}
 
   async *run(
@@ -564,6 +574,10 @@ export class WorkflowRunner {
       resourceId: args.resourceId,
       eventWriter: args.eventWriter,
       chatLlm: this.chatLlm as MastraRcShape['chatLlm'],
+      cheapLlm: this.cheapLlm as MastraRcShape['cheapLlm'],
+      smartLlm: this.smartLlm as MastraRcShape['smartLlm'],
+      smartNonThinkingLlm: this
+        .smartNonThinkingLlm as MastraRcShape['smartNonThinkingLlm'],
       // Per-request chat-agent config consumed by the registered chatAgent's
       // dynamic params (model/tools/instructions resolve from these). model
       // falls back to MASTRA_DEFAULT_CHAT_MODEL inside the agent when chatLlm

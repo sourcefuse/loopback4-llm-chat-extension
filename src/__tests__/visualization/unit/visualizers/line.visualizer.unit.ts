@@ -7,8 +7,12 @@ describe('LineVisualizer Unit', function () {
   let generateObjectStub: sinon.SinonStub;
 
   beforeEach(() => {
+    // Constructor: (smartNonThinkingModel optional, chatModel). Pass
+    // undefined for the optional tier slot so the chat-model fallback
+    // path is exercised — matches what the test exercised before tier
+    // wiring (when the visualizer only knew about MastraChatLLM).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    visualizer = new LineVisualizer({} as any);
+    visualizer = new LineVisualizer(undefined, {} as any);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     generateObjectStub = sinon.stub(visualizer, 'callGen' as any);
   });

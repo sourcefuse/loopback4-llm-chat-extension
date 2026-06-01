@@ -41,9 +41,18 @@ export class LineVisualizer implements IVisualizer {
   }) => Promise<{object: AnyObject}>;
 
   constructor(
+    // Line visualizer's schema has 3 required cols + arrays; structured-output
+    // strict mode misbehaves with "thinking" model chunks on some providers
+    // (this was main's exact reason for `SmartNonThinkingLLM` here).
+    // Prefer the Mastra non-thinking slot when bound; fall back to chat LLM.
+    @inject(AiIntegrationBindings.MastraSmartNonThinkingLLM, {optional: true})
+    smartNonThinkingModel: MastraModelConfig | undefined,
     @inject(AiIntegrationBindings.MastraChatLLM)
-    private readonly model: MastraModelConfig,
-  ) {}
+    chatModel: MastraModelConfig,
+  ) {
+    this.model = smartNonThinkingModel ?? chatModel;
+  }
+  private readonly model: MastraModelConfig;
 
   async getConfig(state: VisualizationGraphState): Promise<AnyObject> {
     if (!state.sql || !state.queryDescription || !state.prompt) {

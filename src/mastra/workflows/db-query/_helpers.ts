@@ -1,6 +1,8 @@
 import type {RequestContext} from '@mastra/core/request-context';
 import type {MastraModelConfig} from '@mastra/core/llm';
 import type {Tool} from '@mastra/core/tools';
+import {SpanType} from '@mastra/core/observability';
+import type {TracingContext} from '@mastra/core/observability';
 import type {IAuthUserWithPermissions} from '@sourceloop/core';
 import {generateText} from 'ai';
 import type {LanguageModel} from 'ai';
@@ -8,6 +10,12 @@ import {
   LLMStreamEventType,
   type LLMStreamEvent,
 } from '../../../graphs/event.types';
+
+/** Inferred return type of `generateText` without further constraining
+ * the (tools, output) generics — used as `tracedGenerateText`'s return
+ * type so callers see the same `{text, usage, ...}` shape as a direct
+ * `generateText` call. */
+type GenerateTextReturn = Awaited<ReturnType<typeof generateText>>;
 import type {
   DbSchemaHelperService,
   TemplateHelper,
@@ -36,6 +44,14 @@ export interface MastraRcShape {
   resourceId: string;
   eventWriter: (event: LLMStreamEvent) => void;
   chatLlm?: LanguageModel;
+  // Tier slots — see AiIntegrationBindings.Mastra(Cheap|Smart|SmartNonThinking)LLM.
+  // Accessors below fall back to `chatLlm` when a tier is unbound, so workflow
+  // steps stay runnable under partial configuration. Wiring high-volume calls
+  // (cache/template judge, checklist, get-columns) to a cheaper tier closes the
+  // cost regression vs main where these all ran on `CheapLLM`.
+  cheapLlm?: LanguageModel;
+  smartLlm?: LanguageModel;
+  smartNonThinkingLlm?: LanguageModel;
   // Per-request chat-agent configuration. The chatAgent registered on the
   // Mastra singleton resolves its model / tools / instructions from these
   // keys (function-typed Agent params, see MastraProvider). Threading them
@@ -80,6 +96,31 @@ export type MastraRc = RequestContext<MastraRcShape>;
 
 export function getChatLlm(rc?: MastraRc): LanguageModel | undefined {
   return rc?.get('chatLlm');
+}
+/**
+ * Cheap-tier accessor — falls back to `chatLlm` when unbound so the step
+ * stays runnable. Use for high-volume, low-stakes calls: cache/template
+ * judge, checklist gen, get-columns, fix-query, etc.
+ */
+export function getCheapLlm(rc?: MastraRc): LanguageModel | undefined {
+  return rc?.get('cheapLlm') ?? rc?.get('chatLlm');
+}
+/**
+ * Smart-tier accessor — falls back to `chatLlm` when unbound. Use for
+ * heavier reasoning: SQL generation, semantic validation.
+ */
+export function getSmartLlm(rc?: MastraRc): LanguageModel | undefined {
+  return rc?.get('smartLlm') ?? rc?.get('chatLlm');
+}
+/**
+ * Reasoning-model-with-thinking-disabled accessor — falls back to
+ * `chatLlm`. Use where strict structured-output mode (generateObject)
+ * misbehaves with "thinking" chunks, e.g. line visualizer schema.
+ */
+export function getSmartNonThinkingLlm(
+  rc?: MastraRc,
+): LanguageModel | undefined {
+  return rc?.get('smartNonThinkingLlm') ?? rc?.get('chatLlm');
 }
 export function getDbConnector(rc?: MastraRc): IDbConnector | undefined {
   return rc?.get('dbConnector');
@@ -127,6 +168,58 @@ export function getVisualizers(rc?: MastraRc): IVisualizer[] {
 }
 export function getGlobalContext(rc?: MastraRc): string[] {
   return rc?.get('globalContext') ?? [];
+}
+
+/**
+ * Wrap an AI SDK `generateText` call in a Mastra MODEL_GENERATION child
+ * span so workflow LLM calls show up as proper LLM rows in
+ * Langfuse/LangSmith — not absorbed into the surrounding `workflow_step`
+ * span. Without this the exporters see one big `gpt-4o` for the agent
+ * reply and nothing else even though cheap/smart tiers fire underneath.
+ *
+ * `tracing.currentSpan` is the workflow step's span; the child span
+ * carries the resolved model id + provider so the exporter can render
+ * tier-specific GENERATION rows.
+ */
+export async function tracedGenerateText(args: {
+  model: LanguageModel;
+  prompt: string;
+  tracing?: TracingContext;
+  /** Short label used as the span name, e.g. `'cache-judge'`. */
+  label: string;
+  resultType?:
+    | 'tool_selection'
+    | 'response_generation'
+    | 'reasoning'
+    | 'planning';
+}): Promise<GenerateTextReturn> {
+  const {
+    model,
+    prompt,
+    tracing,
+    label,
+    resultType = 'response_generation',
+  } = args;
+  const modelId = (model as {modelId?: string}).modelId;
+  const provider = modelId?.includes('/') ? modelId.split('/')[0] : undefined;
+  const span = tracing?.currentSpan?.createChildSpan({
+    type: SpanType.MODEL_GENERATION,
+    name: label,
+    attributes: {model: modelId, provider, resultType},
+  });
+  try {
+    const result = await generateText({model, prompt});
+    span?.end({
+      attributes: {model: modelId, provider, resultType},
+      // `end` accepts AI SDK's raw `usage` shape via EndGenerationOptions —
+      // Mastra converts it to its own UsageStats.
+      usage: result.usage,
+    } as never);
+    return result;
+  } catch (err) {
+    span?.error({error: err as Error});
+    throw err;
+  }
 }
 
 export function emitToolStatus(
@@ -223,6 +316,7 @@ async function runGenerationStage(args: {
   initialSql?: string;
   buildPrompt: (input: SqlGenInput) => string;
   buildDescription?: (sql: string, prompt: string) => string;
+  tracing?: TracingContext;
 }): Promise<SqlGenStage> {
   const fallback: SqlGenStage = {sql: args.initialSql ?? ''};
   if (!args.chatLlm || !args.prompt) return fallback;
@@ -237,6 +331,7 @@ async function runGenerationStage(args: {
       feedback: args.feedback,
       originalSql: args.initialSql,
     }),
+    args.tracing,
   );
   if (gen.error) return {...fallback, error: gen.error};
   if (!gen.sql) return fallback;
@@ -253,6 +348,7 @@ async function runValidationStage(args: {
   prompt: string;
   checklist?: string;
   onStatus?: (stage: 'syntactic' | 'semantic') => void;
+  tracing?: TracingContext;
 }): Promise<{passed: boolean; feedback?: string}> {
   const {sql} = args;
   if (!sql)
@@ -266,6 +362,7 @@ async function runValidationStage(args: {
     chatLlm: args.chatLlm,
     prompt: args.prompt,
     checklist: args.checklist,
+    tracing: args.tracing,
   });
 }
 
@@ -287,6 +384,7 @@ export async function runSqlAttempt(args: {
   initialSql?: string;
   buildDescription?: (sql: string, prompt: string) => string;
   onStatus?: (stage: 'syntactic' | 'semantic') => void;
+  tracing?: TracingContext;
 }): Promise<SqlAttemptResult> {
   const stage = await runGenerationStage(args);
   if (stage.error) {
@@ -299,6 +397,7 @@ export async function runSqlAttempt(args: {
     prompt: args.prompt,
     checklist: args.checklist,
     onStatus: args.onStatus,
+    tracing: args.tracing,
   });
   return {
     sql: stage.sql,
@@ -316,9 +415,16 @@ export async function runSqlAttempt(args: {
 export async function generateSqlOnce(
   chatLlm: LanguageModel,
   promptTemplate: string,
+  tracing?: TracingContext,
 ): Promise<{sql: string; error?: string}> {
   try {
-    const result = await generateText({model: chatLlm, prompt: promptTemplate});
+    const result = await tracedGenerateText({
+      model: chatLlm,
+      prompt: promptTemplate,
+      tracing,
+      label: 'sql-generation',
+      resultType: 'planning',
+    });
     return {sql: stripSqlFences(result.text)};
   } catch (err) {
     return {sql: '', error: (err as Error).message};
@@ -402,8 +508,9 @@ export async function validateSqlSemantic(args: {
   chatLlm: LanguageModel | undefined;
   prompt: string;
   checklist?: string;
+  tracing?: TracingContext;
 }): Promise<{passed: boolean; feedback?: string}> {
-  const {sql, chatLlm, prompt, checklist} = args;
+  const {sql, chatLlm, prompt, checklist, tracing} = args;
   if (!sql || !chatLlm || !checklist) return {passed: true};
   const semanticPrompt = `You are a SQL semantic validator. Decide whether the SQL below satisfies every item in the validation checklist for the user's request.
 
@@ -416,9 +523,12 @@ If every checklist item is satisfied, return ONLY: <valid/>
 Otherwise return: <invalid>one short sentence per failed item</invalid>
 Do not return any other text.`;
   try {
-    const verdict = await generateText({
+    const verdict = await tracedGenerateText({
       model: chatLlm,
       prompt: semanticPrompt,
+      tracing,
+      label: 'semantic-validate',
+      resultType: 'reasoning',
     });
     const text = verdict.text.trim();
     if (text.includes('<valid/>')) return {passed: true};
@@ -488,8 +598,9 @@ export async function pickRelevantTables(args: {
   prompt: string;
   tablesWithColumns: Record<string, string[]>;
   upstreamTables: string[];
+  tracing?: TracingContext;
 }): Promise<string[] | null> {
-  const {chatLlm, prompt, tablesWithColumns, upstreamTables} = args;
+  const {chatLlm, prompt, tablesWithColumns, upstreamTables, tracing} = args;
   if (Object.keys(tablesWithColumns).length === 0) return null;
   const llmPrompt = `You are an AI assistant that identifies relevant columns from database tables based on a user's query.
 Return a JSON object where each table name is a key and the value is an array of relevant column names.
@@ -501,7 +612,13 @@ User query: ${prompt}
 
 Return ONLY valid JSON. Include primary-key and foreign-key columns even if not directly mentioned.`;
   try {
-    const result = await generateText({model: chatLlm, prompt: llmPrompt});
+    const result = await tracedGenerateText({
+      model: chatLlm,
+      prompt: llmPrompt,
+      tracing,
+      label: 'get-columns',
+      resultType: 'planning',
+    });
     const cleaned = stripJsonFences(result.text);
     const parsed = JSON.parse(cleaned) as Record<string, string[]>;
     const filtered = Object.keys(parsed).filter(t =>
