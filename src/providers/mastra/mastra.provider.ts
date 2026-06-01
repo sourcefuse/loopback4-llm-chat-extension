@@ -9,6 +9,7 @@ import type {Tool} from '@mastra/core/tools';
 import type {RequestContext} from '@mastra/core/request-context';
 import type {Observability} from '@mastra/observability';
 import {AiIntegrationBindings} from '../../keys';
+import {createMaxTokenCountProcessor} from '../../mastra/processors/max-token-count.processor';
 import {generateQueryWorkflow} from '../../mastra/workflows/db-query/generate.workflow';
 import {improveQueryWorkflow} from '../../mastra/workflows/db-query/improve.workflow';
 import {visualizationWorkflow} from '../../mastra/workflows/visualization.workflow';
@@ -96,6 +97,11 @@ export class MastraProvider implements Provider<Mastra> {
       rc: RequestContext | undefined,
       key: string,
     ): T | undefined => rc?.get(key) as T | undefined;
+    // Drop-in for the v2 LangGraph `ContextCompressionNode` — trims oldest
+    // non-system messages when running token count exceeds MAX_TOKEN_COUNT
+    // (env or AIIntegrationConfig.maxTokenCount, default 8192). Stays inert
+    // when no env is set and message count is small.
+    const maxTokenCountProcessor = createMaxTokenCountProcessor();
     const chatAgent = new Agent({
       id: 'chat-agent',
       name: 'ChatAgent',
@@ -107,6 +113,7 @@ export class MastraProvider implements Provider<Mastra> {
       tools: ({requestContext}) =>
         pick<Record<string, Tool>>(requestContext, 'agentTools') ?? {},
       memory,
+      inputProcessors: [maxTokenCountProcessor],
     });
 
     return new Mastra({
