@@ -5,7 +5,10 @@ import {AnyObject} from '@loopback/repository';
 import z, {type ZodTypeAny} from 'zod';
 import {generateObject} from 'ai';
 import type {MastraModelConfig} from '@mastra/core/llm';
-import {buildProviderOptions} from '../../../mastra/workflows/db-query/_helpers';
+import {
+  buildProviderOptions,
+  resolveEnvTemperature,
+} from '../../../mastra/workflows/db-query/_helpers';
 import {visualizer} from '../decorators/visualizer.decorator';
 
 @visualizer()
@@ -40,6 +43,7 @@ export class LineVisualizer implements IVisualizer {
     schema: unknown;
     prompt: string;
     providerOptions?: Record<string, Record<string, unknown>>;
+    temperature?: number;
   }) => Promise<{object: AnyObject}>;
 
   constructor(
@@ -86,10 +90,12 @@ ${state.prompt}
     // (same reason this visualizer historically used SmartNonThinkingLLM
     // on the v2 LangGraph extension). No-op on non-Claude/Bedrock models.
     const providerOptions = buildProviderOptions({forceThinkingOff: true});
+    const temperature = resolveEnvTemperature();
     const {object} = await this.callGen({
       model: this.model,
       schema,
       prompt,
+      ...(temperature !== undefined ? {temperature} : {}),
       ...(providerOptions ? {providerOptions} : {}),
     });
     const settings = object as AnyObject;

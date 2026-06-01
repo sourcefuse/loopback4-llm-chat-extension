@@ -1,5 +1,8 @@
 import {expect} from '@loopback/testlab';
-import {buildProviderOptions} from '../../mastra/workflows/db-query/_helpers';
+import {
+  buildProviderOptions,
+  resolveEnvTemperature,
+} from '../../mastra/workflows/db-query/_helpers';
 
 describe('buildProviderOptions (CLAUDE_THINKING wiring)', () => {
   const ORIGINAL_THINKING = process.env.CLAUDE_THINKING;
@@ -67,5 +70,59 @@ describe('buildProviderOptions (CLAUDE_THINKING wiring)', () => {
     delete process.env.CLAUDE_THINKING;
     const opts = buildProviderOptions({forceThinkingOff: true});
     expect(opts?.anthropic.thinking).to.deepEqual({type: 'disabled'});
+  });
+});
+
+describe('resolveEnvTemperature (CLAUDE_TEMPERATURE / BEDROCK_TEMPERATURE / OPENAI_TEMPERATURE wiring)', () => {
+  const KEYS = [
+    'CLAUDE_TEMPERATURE',
+    'BEDROCK_TEMPERATURE',
+    'OPENAI_TEMPERATURE',
+  ] as const;
+  const ORIGINAL: Record<string, string | undefined> = {};
+  before(() => {
+    for (const k of KEYS) ORIGINAL[k] = process.env[k];
+  });
+  afterEach(() => {
+    for (const k of KEYS) {
+      if (ORIGINAL[k] === undefined) delete process.env[k];
+      else process.env[k] = ORIGINAL[k];
+    }
+  });
+
+  it('returns undefined when none of the temperature envs are set', () => {
+    for (const k of KEYS) delete process.env[k];
+    expect(resolveEnvTemperature()).to.be.undefined();
+  });
+
+  it('returns the CLAUDE_TEMPERATURE value when set, parsed as float', () => {
+    for (const k of KEYS) delete process.env[k];
+    process.env.CLAUDE_TEMPERATURE = '0.3';
+    expect(resolveEnvTemperature()).to.equal(0.3);
+  });
+
+  it('falls back to BEDROCK_TEMPERATURE when CLAUDE is unset', () => {
+    for (const k of KEYS) delete process.env[k];
+    process.env.BEDROCK_TEMPERATURE = '0.7';
+    expect(resolveEnvTemperature()).to.equal(0.7);
+  });
+
+  it('falls back to OPENAI_TEMPERATURE when CLAUDE and BEDROCK are unset', () => {
+    for (const k of KEYS) delete process.env[k];
+    process.env.OPENAI_TEMPERATURE = '0';
+    expect(resolveEnvTemperature()).to.equal(0);
+  });
+
+  it('CLAUDE wins over BEDROCK and OPENAI when all set', () => {
+    process.env.CLAUDE_TEMPERATURE = '0.1';
+    process.env.BEDROCK_TEMPERATURE = '0.5';
+    process.env.OPENAI_TEMPERATURE = '0.9';
+    expect(resolveEnvTemperature()).to.equal(0.1);
+  });
+
+  it('returns undefined for non-numeric values so AI SDK falls back to provider default', () => {
+    for (const k of KEYS) delete process.env[k];
+    process.env.CLAUDE_TEMPERATURE = 'not-a-number';
+    expect(resolveEnvTemperature()).to.be.undefined();
   });
 });

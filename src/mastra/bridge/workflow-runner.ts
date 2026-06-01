@@ -35,7 +35,10 @@ import {VISUALIZATION_KEY} from '../../components/visualization/keys';
 import type {IVisualizer} from '../../components/visualization/types';
 import {AuthenticationBindings} from 'loopback4-authentication';
 import type {IAuthUserWithPermissions} from '@sourceloop/core';
-import {buildProviderOptions} from '../workflows/db-query/_helpers';
+import {
+  buildProviderOptions,
+  resolveEnvTemperature,
+} from '../workflows/db-query/_helpers';
 import type {MastraRcShape} from '../workflows/db-query/_helpers';
 
 /**
@@ -310,6 +313,7 @@ export class WorkflowRunner {
     // LangGraph extension's behaviour where reasoning models honour the
     // same envs. No-op on OpenAI / OpenRouter / Google / Cerebras models.
     const providerOptions = buildProviderOptions();
+    const temperature = resolveEnvTemperature();
     const streamPromise = agent.stream(
       [{role: 'user', content: augmentedQuery}],
       {
@@ -317,6 +321,7 @@ export class WorkflowRunner {
         abortSignal: abort,
         requestContext: ctx,
         memory: {thread: thread.id, resource: resourceId},
+        ...(temperature !== undefined ? {temperature} : {}),
         ...(providerOptions ? {providerOptions: providerOptions as never} : {}),
       },
     );
@@ -468,9 +473,11 @@ export class WorkflowRunner {
       data: `Reading file: ${file.originalname}`,
     });
     const providerOptions = buildProviderOptions();
+    const temperature = resolveEnvTemperature();
     try {
       const result = await generateText({
         model: model as never,
+        ...(temperature !== undefined ? {temperature} : {}),
         messages: [
           {
             role: 'system',

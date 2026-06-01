@@ -171,6 +171,29 @@ export function getGlobalContext(rc?: MastraRc): string[] {
 }
 
 /**
+ * Resolve an AI SDK call-time `temperature` from env, mirroring main's
+ * per-provider knobs:
+ *   - `CLAUDE_TEMPERATURE`     (Anthropic)
+ *   - `BEDROCK_TEMPERATURE`    (AWS Bedrock)
+ *   - `OPENAI_TEMPERATURE`     (OpenAI / OpenRouter)
+ *
+ * On v2 these were silently dropped because the Mastra provider classes
+ * are stateless (built per AI SDK convention — temperature is a call-time
+ * setting, not a construction one). First non-empty env wins in the order
+ * above. Returns `undefined` when none are set so the AI SDK falls back
+ * to the provider's own default.
+ */
+export function resolveEnvTemperature(): number | undefined {
+  const raw =
+    process.env.CLAUDE_TEMPERATURE ??
+    process.env.BEDROCK_TEMPERATURE ??
+    process.env.OPENAI_TEMPERATURE;
+  if (raw === undefined || raw === '') return undefined;
+  const parsed = parseFloat(raw);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+/**
  * Build the AI SDK `providerOptions` payload that enables / disables
  * Anthropic + Bedrock reasoning ("thinking") per env:
  *   - `CLAUDE_THINKING=true`    → enable thinking on Anthropic + Bedrock calls
@@ -259,10 +282,12 @@ export async function tracedGenerateText(args: {
     attributes: {model: modelId, provider, resultType},
   });
   const providerOptions = buildProviderOptions({forceThinkingOff});
+  const temperature = resolveEnvTemperature();
   try {
     const result = await generateText({
       model,
       prompt,
+      ...(temperature !== undefined ? {temperature} : {}),
       ...(providerOptions ? {providerOptions: providerOptions as never} : {}),
     });
     span?.end({
