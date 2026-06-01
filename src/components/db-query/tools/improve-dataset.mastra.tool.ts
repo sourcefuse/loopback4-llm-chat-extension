@@ -94,9 +94,17 @@ export class MastraImproveDatasetTool implements IMastraGraphTool {
       );
     }
     const run = await workflow.createRun();
+    // Forward tool tracing context so the workflow nests under the agent's
+    // root span (one trace per /reply). See get-data-as-dataset for the
+    // long version of this rationale.
+    const toolCtx = ctx as {
+      requestContext?: unknown;
+      tracing?: {currentSpan?: unknown};
+    };
     const result = await run.start({
       inputData,
-      requestContext: (ctx as {requestContext?: unknown})?.requestContext,
+      requestContext: toolCtx.requestContext,
+      tracing: toolCtx.tracing,
     } as never);
     if (result.status === 'suspended') {
       // HITL — emit AwaitingApproval, return empty. Resume in v3.1.

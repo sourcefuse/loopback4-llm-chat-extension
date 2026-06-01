@@ -102,9 +102,22 @@ export class MastraGetDataAsDatasetTool implements IMastraGraphTool {
       );
     }
     const run = await workflow.createRun();
+    // Forward the tool's tracing context (carrying the current TOOL span)
+    // into the workflow start so Mastra nests the workflow trace UNDER the
+    // agent's `invoke_agent` root span. Without this every tool call
+    // becomes a separate root trace in Langfuse/LangSmith — the v2
+    // LangGraph extension produced exactly one root per /reply via the
+    // CallbackHandler attached at `graph.stream()`, this preserves that
+    // UX for Mastra. `tracing` is the supported field on
+    // `WorkflowRunStartOptions extends Partial<ObservabilityContext>`.
+    const toolCtx = ctx as {
+      requestContext?: unknown;
+      tracing?: {currentSpan?: unknown};
+    };
     const result = await run.start({
       inputData,
-      requestContext: (ctx as {requestContext?: unknown})?.requestContext,
+      requestContext: toolCtx.requestContext,
+      tracing: toolCtx.tracing,
     } as never);
     if (result.status === 'suspended') {
       // HITL — emit AwaitingApproval, return empty so the Agent pauses.
