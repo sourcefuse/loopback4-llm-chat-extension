@@ -5,6 +5,7 @@ import {AnyObject} from '@loopback/repository';
 import z, {type ZodTypeAny} from 'zod';
 import {generateObject} from 'ai';
 import type {MastraModelConfig} from '@mastra/core/llm';
+import {buildProviderOptions} from '../../../mastra/workflows/db-query/_helpers';
 import {visualizer} from '../decorators/visualizer.decorator';
 
 @visualizer()
@@ -28,6 +29,7 @@ export class PieVisualizer implements IVisualizer {
     model: unknown;
     schema: unknown;
     prompt: string;
+    providerOptions?: Record<string, Record<string, unknown>>;
   }) => Promise<{object: AnyObject}>;
 
   constructor(
@@ -59,7 +61,13 @@ ${state.prompt}
 </inputs>`;
 
     const schema: ZodTypeAny = this.schema;
-    const {object} = await this.callGen({model: this.model, schema, prompt});
+    const providerOptions = buildProviderOptions();
+    const {object} = await this.callGen({
+      model: this.model,
+      schema,
+      prompt,
+      ...(providerOptions ? {providerOptions} : {}),
+    });
     return object;
   }
 }

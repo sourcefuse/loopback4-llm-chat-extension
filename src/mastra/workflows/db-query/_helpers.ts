@@ -171,6 +171,52 @@ export function getGlobalContext(rc?: MastraRc): string[] {
 }
 
 /**
+ * Build the AI SDK `providerOptions` payload that enables / disables
+ * Anthropic + Bedrock reasoning ("thinking") per env:
+ *   - `CLAUDE_THINKING=true`    → enable thinking on Anthropic + Bedrock calls
+ *   - `CLAUDE_THINKING_BUDGET`  → max reasoning token budget (default 1024)
+ *
+ * Mirrors the v2 LangGraph extension's behaviour (`anthropic.provider.ts`
+ * + `bedrock.provider.ts` on main) which read the same env vars and
+ * passed them into the LangChain provider config. The Mastra equivalent
+ * applies them at `agent.stream()` / `generateText()` call-time via AI
+ * SDK provider options — the provider classes themselves stay stateless.
+ *
+ * `forceThinkingOff: true` overrides env to `disabled` regardless. Used
+ * by call sites that target a "non-thinking" tier (e.g. line visualizer
+ * `generateObject`, which strict-mode hates with thinking chunks).
+ *
+ * Returns `undefined` when nothing needs to be set (thinking off + no
+ * override) so call sites can spread `...(opts ?? {})` cleanly.
+ */
+export function buildProviderOptions(
+  opts: {
+    forceThinkingOff?: boolean;
+  } = {},
+): Record<string, Record<string, unknown>> | undefined {
+  const envOn = process.env.CLAUDE_THINKING === 'true';
+  const enabled = opts.forceThinkingOff ? false : envOn;
+  if (!enabled && !opts.forceThinkingOff) {
+    // No env opt-in + no explicit-off-override → don't set providerOptions
+    // at all so the model uses its default (off for Bedrock/Anthropic).
+    return undefined;
+  }
+  const budgetTokens = parseInt(
+    process.env.CLAUDE_THINKING_BUDGET ?? '1024',
+    10,
+  );
+  const type = enabled ? 'enabled' : 'disabled';
+  return {
+    anthropic: {
+      thinking: enabled ? {type, budgetTokens} : {type},
+    },
+    bedrock: {
+      reasoningConfig: enabled ? {type, budgetTokens} : {type},
+    },
+  };
+}
+
+/**
  * Wrap an AI SDK `generateText` call in a Mastra MODEL_GENERATION child
  * span so workflow LLM calls show up as proper LLM rows in
  * Langfuse/LangSmith — not absorbed into the surrounding `workflow_step`
@@ -192,6 +238,10 @@ export async function tracedGenerateText(args: {
     | 'response_generation'
     | 'reasoning'
     | 'planning';
+  /** When true, forces Anthropic/Bedrock thinking off regardless of
+   * `CLAUDE_THINKING` env (e.g. line-visualizer strict structured output
+   * that misbehaves with thinking chunks). */
+  forceThinkingOff?: boolean;
 }): Promise<GenerateTextReturn> {
   const {
     model,
@@ -199,6 +249,7 @@ export async function tracedGenerateText(args: {
     tracing,
     label,
     resultType = 'response_generation',
+    forceThinkingOff,
   } = args;
   const modelId = (model as {modelId?: string}).modelId;
   const provider = modelId?.includes('/') ? modelId.split('/')[0] : undefined;
@@ -207,8 +258,13 @@ export async function tracedGenerateText(args: {
     name: label,
     attributes: {model: modelId, provider, resultType},
   });
+  const providerOptions = buildProviderOptions({forceThinkingOff});
   try {
-    const result = await generateText({model, prompt});
+    const result = await generateText({
+      model,
+      prompt,
+      ...(providerOptions ? {providerOptions: providerOptions as never} : {}),
+    });
     span?.end({
       attributes: {model: modelId, provider, resultType},
       // `end` accepts AI SDK's raw `usage` shape via EndGenerationOptions —

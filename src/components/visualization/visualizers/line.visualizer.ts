@@ -5,6 +5,7 @@ import {AnyObject} from '@loopback/repository';
 import z, {type ZodTypeAny} from 'zod';
 import {generateObject} from 'ai';
 import type {MastraModelConfig} from '@mastra/core/llm';
+import {buildProviderOptions} from '../../../mastra/workflows/db-query/_helpers';
 import {visualizer} from '../decorators/visualizer.decorator';
 
 @visualizer()
@@ -38,6 +39,7 @@ export class LineVisualizer implements IVisualizer {
     model: unknown;
     schema: unknown;
     prompt: string;
+    providerOptions?: Record<string, Record<string, unknown>>;
   }) => Promise<{object: AnyObject}>;
 
   constructor(
@@ -79,7 +81,17 @@ ${state.prompt}
 </inputs>`;
 
     const schema: ZodTypeAny = this.schema;
-    const {object} = await this.callGen({model: this.model, schema, prompt});
+    // Force Anthropic/Bedrock thinking OFF for this call — line viz's
+    // strict structured-output schema misbehaves with reasoning chunks
+    // (same reason this visualizer historically used SmartNonThinkingLLM
+    // on the v2 LangGraph extension). No-op on non-Claude/Bedrock models.
+    const providerOptions = buildProviderOptions({forceThinkingOff: true});
+    const {object} = await this.callGen({
+      model: this.model,
+      schema,
+      prompt,
+      ...(providerOptions ? {providerOptions} : {}),
+    });
     const settings = object as AnyObject;
     if (
       settings.seriesColumns === '' ||

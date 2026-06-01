@@ -35,6 +35,7 @@ import {VISUALIZATION_KEY} from '../../components/visualization/keys';
 import type {IVisualizer} from '../../components/visualization/types';
 import {AuthenticationBindings} from 'loopback4-authentication';
 import type {IAuthUserWithPermissions} from '@sourceloop/core';
+import {buildProviderOptions} from '../workflows/db-query/_helpers';
 import type {MastraRcShape} from '../workflows/db-query/_helpers';
 
 /**
@@ -304,6 +305,11 @@ export class WorkflowRunner {
     // Pump fullStream chunks into the queue. The pre-processing block above
     // and any tool-side eventWriter calls push onto the same queue; total
     // order is preserved by sequential push semantics.
+    // `providerOptions` carries Anthropic/Bedrock thinking config derived
+    // from CLAUDE_THINKING / CLAUDE_THINKING_BUDGET env — preserves the v2
+    // LangGraph extension's behaviour where reasoning models honour the
+    // same envs. No-op on OpenAI / OpenRouter / Google / Cerebras models.
+    const providerOptions = buildProviderOptions();
     const streamPromise = agent.stream(
       [{role: 'user', content: augmentedQuery}],
       {
@@ -311,6 +317,7 @@ export class WorkflowRunner {
         abortSignal: abort,
         requestContext: ctx,
         memory: {thread: thread.id, resource: resourceId},
+        ...(providerOptions ? {providerOptions: providerOptions as never} : {}),
       },
     );
 
@@ -460,6 +467,7 @@ export class WorkflowRunner {
       type: LLMStreamEventType.Status,
       data: `Reading file: ${file.originalname}`,
     });
+    const providerOptions = buildProviderOptions();
     try {
       const result = await generateText({
         model: model as never,
@@ -483,6 +491,7 @@ export class WorkflowRunner {
             ],
           },
         ],
+        ...(providerOptions ? {providerOptions: providerOptions as never} : {}),
       });
       return `[Attached file "${file.originalname}"]\n${result.text.trim()}`;
     } catch (err) {
