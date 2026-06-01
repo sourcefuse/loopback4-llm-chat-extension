@@ -228,6 +228,20 @@ export function buildProviderOptions(
     process.env.CLAUDE_THINKING_BUDGET ?? '1024',
     10,
   );
+  // OpenRouter reasoning shape — Claude via OpenRouter does NOT honour
+  // `providerOptions.anthropic.thinking` (those only apply when using the
+  // direct @ai-sdk/anthropic provider). OpenRouter's AI SDK provider
+  // accepts `reasoning: {enabled, max_tokens|effort}` instead, so we emit
+  // BOTH shapes — AI SDK strips unknown providerOptions keys per provider,
+  // so the same object works for direct Anthropic, Bedrock, AND OpenRouter
+  // Claude/o-series routes.
+  // `max_tokens` is OpenRouter's required snake_case API key — disable the
+  // naming-convention rule locally rather than camelCasing it (would break
+  // the wire request).
+  const openRouterReasoning = enabled
+    ? // eslint-disable-next-line @typescript-eslint/naming-convention
+      {enabled: true, max_tokens: budgetTokens}
+    : {enabled: false};
   const type = enabled ? 'enabled' : 'disabled';
   return {
     anthropic: {
@@ -235,6 +249,9 @@ export function buildProviderOptions(
     },
     bedrock: {
       reasoningConfig: enabled ? {type, budgetTokens} : {type},
+    },
+    openrouter: {
+      reasoning: openRouterReasoning,
     },
   };
 }

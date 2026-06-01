@@ -30,13 +30,18 @@ describe('buildProviderOptions (CLAUDE_THINKING wiring)', () => {
     expect(buildProviderOptions()).to.be.undefined();
   });
 
-  it('emits enabled thinking for both Anthropic and Bedrock when CLAUDE_THINKING=true', () => {
+  it('emits enabled thinking for Anthropic, Bedrock AND OpenRouter when CLAUDE_THINKING=true', () => {
     process.env.CLAUDE_THINKING = 'true';
     delete process.env.CLAUDE_THINKING_BUDGET;
     const opts = buildProviderOptions();
     expect(opts).to.deepEqual({
       anthropic: {thinking: {type: 'enabled', budgetTokens: 1024}},
       bedrock: {reasoningConfig: {type: 'enabled', budgetTokens: 1024}},
+      // OpenRouter's AI SDK provider uses its own `reasoning` shape; the
+      // anthropic.thinking key does NOT propagate through OpenRouter, so
+      // we emit both shapes — AI SDK strips unknown keys per provider.
+      // eslint-disable-next-line @typescript-eslint/naming-convention
+      openrouter: {reasoning: {enabled: true, max_tokens: 1024}},
     });
   });
 
@@ -52,6 +57,11 @@ describe('buildProviderOptions (CLAUDE_THINKING wiring)', () => {
       type: 'enabled',
       budgetTokens: 8192,
     });
+    expect(opts?.openrouter.reasoning).to.deepEqual({
+      enabled: true,
+      // eslint-disable-next-line @typescript-eslint/naming-convention
+      max_tokens: 8192,
+    });
   });
 
   it('forceThinkingOff overrides CLAUDE_THINKING=true and emits disabled', () => {
@@ -63,6 +73,7 @@ describe('buildProviderOptions (CLAUDE_THINKING wiring)', () => {
     expect(opts).to.deepEqual({
       anthropic: {thinking: {type: 'disabled'}},
       bedrock: {reasoningConfig: {type: 'disabled'}},
+      openrouter: {reasoning: {enabled: false}},
     });
   });
 
