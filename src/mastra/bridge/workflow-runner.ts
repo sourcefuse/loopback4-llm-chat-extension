@@ -11,9 +11,10 @@ import {
 } from '@loopback/core';
 import {Mastra} from '@mastra/core';
 import {RequestContext} from '@mastra/core/request-context';
-import type {MastraModelConfig} from '@mastra/core/llm';
-import {generateText} from 'ai';
+import {resolveModelConfig, type MastraModelConfig} from '@mastra/core/llm';
+import {generateText, type LanguageModel} from 'ai';
 import {AiIntegrationBindings, IRunRegistry} from '../../keys';
+import {MastraInternalBindings} from '../internal-bindings';
 import {LLMStreamEvent, LLMStreamEventType} from '../../graphs/event.types';
 import {MastraToolStore, ToolStatus} from '../../graphs/types';
 import type {Tool} from '@mastra/core/tools';
@@ -27,6 +28,7 @@ import type {
   IQueryTemplateStore,
 } from '../../components/db-query/types';
 import type {
+  DataSetHelper,
   DbSchemaHelperService,
   TemplateHelper,
 } from '../../components/db-query/services';
@@ -36,6 +38,28 @@ import type {IVisualizer} from '../../components/visualization/types';
 import {AuthenticationBindings} from 'loopback4-authentication';
 import type {IAuthUserWithPermissions} from '@sourceloop/core';
 import type {MastraRcShape} from '../workflows/db-query/_helpers';
+
+type RecordLike = Record<string, unknown>;
+type AgentStreamChunk = {type: string; payload?: unknown};
+type AgentStreamUsage = {inputTokens?: number; outputTokens?: number};
+type AgentStreamResult = {
+  fullStream: AsyncIterable<AgentStreamChunk>;
+  usage: Promise<AgentStreamUsage>;
+};
+
+function asRecord(value: unknown): RecordLike {
+  return typeof value === 'object' && value !== null
+    ? (value as RecordLike)
+    : {};
+}
+
+function readString(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined;
+}
+
+function asToolArgs(value: unknown): RecordLike {
+  return asRecord(value);
+}
 
 /**
  * Safe conversion of any thrown value to a non-empty error message.
@@ -48,41 +72,41 @@ function toErrorMessage(err: unknown, fallback: string): string {
 }
 
 function toolCallEvent(payload: unknown): LLMStreamEvent {
-  const p = payload as {toolCallId: string; toolName: string; args?: unknown};
+  const p = asRecord(payload);
   return {
     type: LLMStreamEventType.Tool,
     data: {
-      id: p.toolCallId,
-      tool: p.toolName,
-      data: (p.args ?? {}) as Record<string, unknown>,
+      id: readString(p.toolCallId) ?? 'unknown',
+      tool: readString(p.toolName) ?? 'unknown',
+      data: asToolArgs(p.args),
     },
   };
 }
 
 function toolStatusEvent(payload: unknown): LLMStreamEvent {
-  const p = payload as {toolCallId?: string; toolName?: string; args?: unknown};
+  const p = asRecord(payload);
   return {
     type: LLMStreamEventType.ToolStatus,
     data: {
-      id: p.toolCallId ?? 'unknown',
+      id: readString(p.toolCallId) ?? 'unknown',
       status: ToolStatus.AwaitingApproval,
-      data: {toolName: p.toolName, args: p.args},
+      data: {toolName: readString(p.toolName), args: p.args},
     },
   };
 }
 
 function tripwireEvent(payload: unknown): LLMStreamEvent {
-  const p = payload as {processorId?: string; reason?: string};
+  const p = asRecord(payload);
   return {
     type: LLMStreamEventType.Error,
     data: {
-      message: `Blocked by ${p.processorId ?? 'processor'}: ${p.reason ?? 'tripwire'}`,
+      message: `Blocked by ${readString(p.processorId) ?? 'processor'}: ${readString(p.reason) ?? 'tripwire'}`,
     },
   };
 }
 
 function chunkErrorEvent(payload: unknown): LLMStreamEvent {
-  const err = (payload as {error?: unknown}).error;
+  const err = asRecord(payload).error;
   return {
     type: LLMStreamEventType.Error,
     data: {message: toErrorMessage(err, 'error')},
@@ -100,6 +124,29 @@ function normaliseFileList(
 ): Express.Multer.File[] {
   if (Array.isArray(files)) return files;
   return files ? [files] : [];
+}
+
+function resolvePrincipalId(
+  user: IAuthUserWithPermissions | undefined,
+): string | undefined {
+  if (!user) return undefined;
+  if (typeof user.id === 'string') return user.id;
+  return user.userTenantId;
+}
+
+function toModelRouterFallbackConfig(
+  modelName: string,
+): MastraModelConfig | undefined {
+  const [providerId, ...modelParts] = modelName.split('/');
+  if (!providerId || modelParts.length === 0) return undefined;
+  return {providerId, modelId: modelParts.join('/')};
+}
+
+function isAiSdkLanguageModel(
+  model: unknown,
+): model is Exclude<LanguageModel, string> {
+  const specVersion = readString(asRecord(model).specificationVersion);
+  return specVersion === 'v2' || specVersion === 'v3';
 }
 
 /**
@@ -137,7 +184,7 @@ const CHUNK_MAPPERS: Record<string, (p: unknown) => LLMStreamEvent> = {
  */
 function mapChunkToEvent(chunk: {
   type: string;
-  payload: unknown;
+  payload?: unknown;
 }): LLMStreamEvent | undefined {
   const mapper = CHUNK_MAPPERS[chunk.type];
   return mapper ? mapper(chunk.payload) : undefined;
@@ -160,20 +207,18 @@ export class WorkflowRunner {
 
   constructor(
     @inject.context() private lb4Ctx: Context,
-    @inject(AiIntegrationBindings.Mastra) private mastra: Mastra,
-    @inject(AiIntegrationBindings.MastraChatLLM, {optional: true})
+    @inject(MastraInternalBindings.Mastra) private mastra: Mastra,
+    @inject(AiIntegrationBindings.ChatLLM, {optional: true})
     private chatLlm?: MastraModelConfig,
-    @inject(AiIntegrationBindings.RunRegistry)
+    @inject(MastraInternalBindings.RunRegistry)
     private runRegistry?: IRunRegistry,
-    @inject(AiIntegrationBindings.ResourceId, {optional: true})
+    @inject(MastraInternalBindings.ResourceId, {optional: true})
     private resourceIdValue?: string,
     @inject(AiIntegrationBindings.SystemContext, {optional: true})
     private systemContext?: string[],
     @service(UsageAccumulator) private usage?: UsageAccumulator,
-    @inject(AiIntegrationBindings.MastraTools, {optional: true})
+    @inject(MastraInternalBindings.Tools, {optional: true})
     private mastraTools?: MastraToolStore,
-    @inject(AiIntegrationBindings.MastraFileLLM, {optional: true})
-    private fileLlm?: MastraModelConfig,
   ) {}
 
   async *run(
@@ -228,6 +273,7 @@ export class WorkflowRunner {
     // first, then prefer thread.resourceId on resume.
     let thread;
     let resourceId: string;
+    const requesterResourceId = await this.resolveRequesterResourceId();
     if (sessionId) {
       thread = await memory.getThreadById({threadId: sessionId});
       if (!thread) {
@@ -259,9 +305,34 @@ export class WorkflowRunner {
         yield* queue;
         return;
       }
+      if (!requesterResourceId) {
+        queue.push({
+          type: LLMStreamEventType.Error,
+          data: {
+            message:
+              'Unable to authorize thread resume: requester resource identity ' +
+              'is unavailable. Ensure an authenticated user with tenantId + id is present, ' +
+              'or bind an internal resourceId resolver.',
+          },
+        });
+        queue.close();
+        yield* queue;
+        return;
+      }
+      if (thread.resourceId !== requesterResourceId) {
+        queue.push({
+          type: LLMStreamEventType.Error,
+          data: {
+            message: `Thread ${sessionId} does not belong to the authenticated requester`,
+          },
+        });
+        queue.close();
+        yield* queue;
+        return;
+      }
       resourceId = thread.resourceId;
     } else {
-      resourceId = this.resourceIdValue ?? randomUUID();
+      resourceId = requesterResourceId ?? randomUUID();
       thread = await memory.createThread({resourceId});
       queue.push({
         type: LLMStreamEventType.Init,
@@ -270,7 +341,7 @@ export class WorkflowRunner {
     }
 
     // File summarisation — port of v2 SummariseFileNode. For each
-    // attached file, ask the FileLLM (falls back to ChatLLM) to produce
+    // attached file, ask the ChatLLM to produce
     // a focused summary against the user's prompt, then merge the
     // summary into the query so the chat Agent sees the file content
     // as part of its input. AI SDK file content lives in user-message
@@ -287,14 +358,13 @@ export class WorkflowRunner {
       resourceId,
       eventWriter: e => queue.push(e),
     });
-    const ctx = new RequestContext<MastraRcShape>(
-      Object.entries(rcShape) as never,
-    );
+    const ctx = new RequestContext<MastraRcShape>();
+    this.populateRequestContext(ctx, rcShape);
 
     // Pump fullStream chunks into the queue. The pre-processing block above
     // and any tool-side eventWriter calls push onto the same queue; total
     // order is preserved by sequential push semantics.
-    const streamPromise = agent.stream(
+    const streamPromise: Promise<AgentStreamResult> = agent.stream(
       [{role: 'user', content: augmentedQuery}],
       {
         maxSteps: 60,
@@ -325,16 +395,11 @@ export class WorkflowRunner {
    * event before closing the queue.
    */
   private async pumpStream(
-    streamPromise: Promise<unknown>,
+    streamPromise: Promise<AgentStreamResult>,
     queue: AsyncEventQueue<LLMStreamEvent>,
   ): Promise<void> {
-    type ChunkLike = {type: string; payload: unknown};
-    type StreamLike = {
-      fullStream: AsyncIterable<ChunkLike>;
-      usage: Promise<{inputTokens?: number; outputTokens?: number}>;
-    };
     try {
-      const stream = (await streamPromise) as unknown as StreamLike;
+      const stream = await streamPromise;
       for await (const chunk of stream.fullStream) {
         this.handleChunk(chunk, queue);
       }
@@ -354,12 +419,12 @@ export class WorkflowRunner {
   }
 
   private handleChunk(
-    chunk: {type: string; payload: unknown},
+    chunk: {type: string; payload?: unknown},
     queue: AsyncEventQueue<LLMStreamEvent>,
   ): void {
     if (chunk.type === 'text-delta') {
       this.bufferedAssistantText +=
-        (chunk.payload as {text?: string})?.text ?? '';
+        readString(asRecord(chunk.payload).text) ?? '';
       return;
     }
     if (chunk.type === 'step-start') {
@@ -415,11 +480,10 @@ export class WorkflowRunner {
 
   /**
    * Port of v2 SummariseFileNode. For each attached file, run a single
-   * FileLLM call (falls back to ChatLLM when MastraFileLLM is not
-   * bound) summarising the file against the user's prompt, then merge
-   * the summary into the query so the chat Agent sees the file content
-   * as part of its input. Emits a Status event per file so the UI can
-   * show progress, matching the v2 SSE contract.
+   * ChatLLM call summarising the file against the user's prompt, then
+   * merge the summary into the query so the chat Agent sees the file
+   * content as part of its input. Emits a Status event per file so the
+   * UI can show progress, matching the v2 SSE contract.
    */
   private async summariseAndMergeFiles(
     query: string,
@@ -428,8 +492,9 @@ export class WorkflowRunner {
   ): Promise<string> {
     const list = normaliseFileList(files);
     if (!list.length) return query;
-    const model =
-      this.fileLlm ?? this.chatLlm ?? process.env.MASTRA_DEFAULT_CHAT_MODEL;
+    const modelConfig = this.resolveFileSummaryModelConfig();
+    if (!modelConfig) return emitSkipsAndReturn(list, query, push);
+    const model = await this.resolveAiLanguageModel(modelConfig);
     if (!model) return emitSkipsAndReturn(list, query, push);
     const summaries: string[] = [];
     for (const file of list) {
@@ -443,7 +508,7 @@ export class WorkflowRunner {
   private async summariseFile(
     query: string,
     file: Express.Multer.File,
-    model: MastraModelConfig | string,
+    model: Exclude<LanguageModel, string>,
     push: (e: LLMStreamEvent) => void,
   ): Promise<string | undefined> {
     push({
@@ -452,7 +517,7 @@ export class WorkflowRunner {
     });
     try {
       const result = await generateText({
-        model: model as never,
+        model,
         messages: [
           {
             role: 'system',
@@ -483,6 +548,35 @@ export class WorkflowRunner {
       });
       return undefined;
     }
+  }
+
+  private resolveFileSummaryModelConfig(): MastraModelConfig | undefined {
+    if (this.chatLlm) return this.chatLlm;
+    const defaultModel = process.env.MASTRA_DEFAULT_CHAT_MODEL;
+    if (!defaultModel) return undefined;
+    return toModelRouterFallbackConfig(defaultModel);
+  }
+
+  private async resolveAiLanguageModel(
+    modelConfig: MastraModelConfig,
+  ): Promise<Exclude<LanguageModel, string> | undefined> {
+    const mastraForResolve =
+      typeof asRecord(this.mastra).listGateways === 'function'
+        ? this.mastra
+        : undefined;
+    const model = await resolveModelConfig(
+      modelConfig,
+      undefined,
+      mastraForResolve,
+    );
+    return isAiSdkLanguageModel(model) ? model : undefined;
+  }
+
+  private async resolveChatLlmModel(): Promise<
+    Exclude<LanguageModel, string> | undefined
+  > {
+    if (!this.chatLlm) return undefined;
+    return this.resolveAiLanguageModel(this.chatLlm);
   }
 
   private buildToolMap(): Record<string, Tool> {
@@ -524,6 +618,7 @@ export class WorkflowRunner {
       templateCache,
       globalContext,
       config,
+      chatLlm,
     ] = await Promise.all([
       this.lb4Ctx.get<IDbConnector>(DbQueryAIExtensionBindings.Connector, opt),
       this.lb4Ctx.get<IAuthUserWithPermissions>(
@@ -544,7 +639,7 @@ export class WorkflowRunner {
         opt,
       ),
       this.lb4Ctx.get<TemplateHelper>('services.TemplateHelper', opt),
-      this.lb4Ctx.get<unknown>('services.DataSetHelper', opt),
+      this.lb4Ctx.get<DataSetHelper>('services.DataSetHelper', opt),
       this.lb4Ctx.get<MastraRcShape['queryCache']>(
         DbQueryAIExtensionBindings.QueryCache,
         opt,
@@ -555,6 +650,7 @@ export class WorkflowRunner {
       ),
       this.lb4Ctx.get<string[]>(DbQueryAIExtensionBindings.GlobalContext, opt),
       this.lb4Ctx.get<DbQueryConfig>(DbQueryAIExtensionBindings.Config, opt),
+      this.resolveChatLlmModel(),
     ]);
     const visBindings = this.lb4Ctx.findByTag({[VISUALIZATION_KEY]: true});
     const visualizers = await Promise.all(
@@ -563,7 +659,7 @@ export class WorkflowRunner {
     return {
       resourceId: args.resourceId,
       eventWriter: args.eventWriter,
-      chatLlm: this.chatLlm as MastraRcShape['chatLlm'],
+      chatLlm,
       // Per-request chat-agent config consumed by the registered chatAgent's
       // dynamic params (model/tools/instructions resolve from these). model
       // falls back to MASTRA_DEFAULT_CHAT_MODEL inside the agent when chatLlm
@@ -585,5 +681,28 @@ export class WorkflowRunner {
       templateCache,
       visualizers,
     };
+  }
+
+  private async resolveRequesterResourceId(): Promise<string | undefined> {
+    if (this.resourceIdValue) return this.resourceIdValue;
+    const user = await this.lb4Ctx.get<IAuthUserWithPermissions>(
+      AuthenticationBindings.CURRENT_USER,
+      {optional: true},
+    );
+    const principalId = resolvePrincipalId(user);
+    if (!principalId || !user?.tenantId) return undefined;
+    return `${user.tenantId}:${principalId}`;
+  }
+
+  private populateRequestContext(
+    ctx: RequestContext<MastraRcShape>,
+    values: MastraRcShape,
+  ): void {
+    for (const key of Object.keys(values) as Array<keyof MastraRcShape>) {
+      const value = values[key];
+      if (value !== undefined) {
+        ctx.set(key, value);
+      }
+    }
   }
 }

@@ -33,6 +33,7 @@ process.env.MASTRA_DEFAULT_CHAT_MODEL ??= 'mock/test-model';
  * test catches it before WorkflowRunner is exercised in production.
  */
 describe('WorkflowRunner Agent Integration', () => {
+  const requesterResourceId = 'tenant-integration:user-integration';
   let storage: LibSQLStore;
   let mastra: Mastra;
   let runner: WorkflowRunner;
@@ -69,7 +70,7 @@ describe('WorkflowRunner Agent Integration', () => {
       mastra,
       makeMockModel('Hello world') as never,
       new InProcessRunRegistry(),
-      undefined,
+      requesterResourceId,
       undefined,
       usage,
     );
@@ -126,7 +127,7 @@ describe('WorkflowRunner Agent Integration', () => {
       mastra,
       makeMockModel('Hello world') as never,
       new InProcessRunRegistry(),
-      undefined,
+      requesterResourceId,
       undefined,
       usage,
     );

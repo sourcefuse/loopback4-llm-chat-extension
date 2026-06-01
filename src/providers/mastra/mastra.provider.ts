@@ -9,6 +9,7 @@ import type {Tool} from '@mastra/core/tools';
 import type {RequestContext} from '@mastra/core/request-context';
 import type {Observability} from '@mastra/observability';
 import {AiIntegrationBindings} from '../../keys';
+import {MastraInternalBindings} from '../../mastra/internal-bindings';
 import {generateQueryWorkflow} from '../../mastra/workflows/db-query/generate.workflow';
 import {improveQueryWorkflow} from '../../mastra/workflows/db-query/improve.workflow';
 import {visualizationWorkflow} from '../../mastra/workflows/visualization.workflow';
@@ -29,15 +30,15 @@ import {visualizationWorkflow} from '../../mastra/workflows/visualization.workfl
 @injectable({scope: BindingScope.SINGLETON})
 export class MastraProvider implements Provider<Mastra> {
   constructor(
-    @inject(AiIntegrationBindings.MastraStorage)
+    @inject(MastraInternalBindings.Storage)
     private storage: MastraCompositeStore,
-    @inject(AiIntegrationBindings.MastraVectorStore, {optional: true})
+    @inject(AiIntegrationBindings.VectorStore, {optional: true})
     private vector?: MastraVector,
-    @inject(AiIntegrationBindings.MastraEmbedder, {optional: true})
+    @inject(AiIntegrationBindings.EmbeddingModel, {optional: true})
     private embedder?: MastraEmbeddingModel<string>,
     @inject(AiIntegrationBindings.SystemContext, {optional: true})
     private systemContext?: string[],
-    @inject(AiIntegrationBindings.MastraObservability, {optional: true})
+    @inject(MastraInternalBindings.Observability, {optional: true})
     private observability?: Observability,
   ) {}
 

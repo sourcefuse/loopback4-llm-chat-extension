@@ -13,6 +13,23 @@ import {
 const DEFAULT_CHART_TYPE = 'bar';
 const STEP_GET_DATASET_DATA = 'get-dataset-data';
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return isRecord(value) ? value : {};
+}
+
+function readString(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined;
+}
+
+function extractWorkflowResult(value: unknown): Record<string, unknown> {
+  const root = asRecord(value);
+  return asRecord(root.result);
+}
+
 /**
  * Unwrap the branch-wrapped or direct upstream input. Mastra wraps the
  * matched branch's output under the branch step's id (mirroring the
@@ -20,13 +37,13 @@ const STEP_GET_DATASET_DATA = 'get-dataset-data';
  * accept both shapes. Extracted to keep step bodies under SonarQube's
  * cyclomatic threshold.
  */
-function pickFromBranch<T extends Record<string, unknown>>(
+function pickFromBranch(
   inputData: unknown,
   branchKey: string,
-): T {
-  const wrapped = inputData as Record<string, unknown>;
-  const fromBranch = wrapped[branchKey] as T | undefined;
-  return (fromBranch ?? wrapped) as T;
+): Record<string, unknown> {
+  const wrapped = asRecord(inputData);
+  const fromBranch = wrapped[branchKey];
+  return isRecord(fromBranch) ? fromBranch : wrapped;
 }
 
 async function fetchDatasetDescriptor(
@@ -48,7 +65,8 @@ async function fetchDatasetRows(
 ): Promise<unknown[]> {
   if (!helper || !datasetId) return [];
   try {
-    return ((await helper.getDataFromDataset(datasetId)) as unknown[]) ?? [];
+    const rows = await helper.getDataFromDataset(datasetId);
+    return Array.isArray(rows) ? rows : [];
   } catch {
     return [];
   }
@@ -164,7 +182,7 @@ const callQueryGenerationStep = createStep({
         userQuery: inputData.userQuery,
       };
     }
-    const generate = mastra?.getWorkflow?.('generateQueryWorkflow' as never);
+    const generate = mastra?.getWorkflow?.('generateQueryWorkflow');
     if (!generate) {
       return {
         datasetId: '',
@@ -179,15 +197,14 @@ const callQueryGenerationStep = createStep({
         prompt: `Generate a query to fetch data for visualization based on the following user prompt: ${inputData.userQuery}.`,
       },
       requestContext,
-    } as never);
+    });
     // generateQueryWorkflow ends with a `.branch()` so its result is keyed
     // by `save-dataset` or `failed`; unwrap the success branch.
-    const rawOut = (result as {result?: Record<string, unknown>}).result ?? {};
-    const out =
-      (rawOut['save-dataset'] as {datasetId?: string} | undefined) ??
-      (rawOut as {datasetId?: string});
+    const rawOut = extractWorkflowResult(result);
+    const saveDatasetOut = asRecord(rawOut['save-dataset']);
+    const datasetId = readString(saveDatasetOut.datasetId ?? rawOut.datasetId);
     return {
-      datasetId: out?.datasetId ?? '',
+      datasetId: datasetId ?? '',
       needsQuery: false,
       chartType: inputData.chartType,
       userQuery: inputData.userQuery,
@@ -223,20 +240,16 @@ const getDatasetDataStep = createStep({
       STEP_GET_DATASET_DATA,
       'Preparing visualization',
     );
-    const upstream = pickFromBranch<{
-      datasetId?: string;
-      chartType?: string;
-      userQuery?: string;
-    }>(inputData, 'call-query-generation');
-    const datasetId = upstream.datasetId ?? '';
-    const chartType = upstream.chartType ?? DEFAULT_CHART_TYPE;
-    const userQuery = upstream.userQuery ?? '';
+    const upstream = pickFromBranch(inputData, 'call-query-generation');
+    const datasetId = readString(upstream.datasetId) ?? '';
+    const chartType = readString(upstream.chartType) ?? DEFAULT_CHART_TYPE;
+    const userQuery = readString(upstream.userQuery) ?? '';
     const {sql, description} = await fetchDatasetDescriptor(
       getDatasetStore(requestContext),
       datasetId,
     );
     const rows = await fetchDatasetRows(
-      getDataSetHelper(requestContext) as DataSetHelper | undefined,
+      getDataSetHelper(requestContext),
       datasetId,
     );
     return {datasetId, rows, chartType, userQuery, sql, description};
@@ -255,19 +268,12 @@ const renderVisualizationStep = createStep({
   inputSchema: z.any(),
   outputSchema,
   execute: async ({inputData, requestContext}) => {
-    const upstream = pickFromBranch<{
-      datasetId?: string;
-      rows?: unknown[];
-      chartType?: string;
-      userQuery?: string;
-      sql?: string;
-      description?: string;
-    }>(inputData, STEP_GET_DATASET_DATA);
-    const chartType = upstream.chartType ?? DEFAULT_CHART_TYPE;
-    const userQuery = upstream.userQuery ?? '';
-    const sql = upstream.sql;
-    const description = upstream.description;
-    const datasetId = upstream.datasetId ?? '';
+    const upstream = pickFromBranch(inputData, STEP_GET_DATASET_DATA);
+    const chartType = readString(upstream.chartType) ?? DEFAULT_CHART_TYPE;
+    const userQuery = readString(upstream.userQuery) ?? '';
+    const sql = readString(upstream.sql);
+    const description = readString(upstream.description);
+    const datasetId = readString(upstream.datasetId) ?? '';
     const chosen = pickVisualizer(getVisualizers(requestContext), chartType);
     emitToolStatus(
       requestContext,

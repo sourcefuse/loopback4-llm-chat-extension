@@ -1,2 +1,2 @@
 export * from './openrouter.provider';
-export * from './openrouter.mastra.provider';
+export {OpenRouter as MastraOpenRouter} from './openrouter.provider';

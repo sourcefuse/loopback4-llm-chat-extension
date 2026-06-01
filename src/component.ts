@@ -52,6 +52,7 @@ import {PgVectorStore} from './sub-modules/db/postgresql';
 import {DefaultMastraStorageProvider} from './providers/mastra/storage.provider';
 import {MastraProvider} from './providers/mastra/mastra.provider';
 import {DefaultMastraToolsProvider} from './providers/mastra/mastra-tools.provider';
+import {MastraInternalBindings} from './mastra/internal-bindings';
 import {InProcessRunRegistry} from './mastra/bridge/run-registry';
 import {WorkflowRunner} from './mastra/bridge/workflow-runner';
 import {MastraLifecycleObserver} from './observers/mastra-lifecycle.observer';
@@ -61,6 +62,17 @@ import {MastraAskAboutDatasetTool} from './components/db-query/tools/ask-about-d
 import {MastraGenerateVisualizationTool} from './components/visualization/tools/generate-visualization.mastra.tool';
 
 const debug = require('debug')('ai-integration:log-events:component');
+
+function hasPgVectorEnv(): boolean {
+  return Boolean(
+    process.env.DB_HOST &&
+    process.env.DB_PORT &&
+    process.env.DB_USER &&
+    process.env.DB_PASSWORD &&
+    process.env.DB_DATABASE,
+  );
+}
+
 export class AiIntegrationsComponent implements Component {
   constructor(
     @inject(CoreBindings.APPLICATION_INSTANCE)
@@ -81,22 +93,24 @@ export class AiIntegrationsComponent implements Component {
       // Mastra v3 singletons — consumers can override MastraStorage with
       // PostgresStore/MongoDBStore/etc. The defaults work zero-config.
       createBindingFromClass(DefaultMastraStorageProvider, {
-        key: AiIntegrationBindings.MastraStorage.key,
+        key: MastraInternalBindings.Storage.key,
       }).inScope(BindingScope.SINGLETON),
       createBindingFromClass(MastraProvider, {
-        key: AiIntegrationBindings.Mastra.key,
+        key: MastraInternalBindings.Mastra.key,
       }).inScope(BindingScope.SINGLETON),
       createBindingFromClass(InProcessRunRegistry, {
-        key: AiIntegrationBindings.RunRegistry.key,
+        key: MastraInternalBindings.RunRegistry.key,
       }).inScope(BindingScope.SINGLETON),
       createBindingFromClass(DefaultMastraToolsProvider, {
-        key: AiIntegrationBindings.MastraTools.key,
+        key: MastraInternalBindings.Tools.key,
       }).inScope(BindingScope.SINGLETON),
     ];
 
-    this.providers = {
-      [AiIntegrationBindings.VectorStore.key]: PgVectorStore,
-    };
+    this.providers = hasPgVectorEnv()
+      ? {
+          [AiIntegrationBindings.VectorStore.key]: PgVectorStore,
+        }
+      : {};
 
     this.services = [
       // utils

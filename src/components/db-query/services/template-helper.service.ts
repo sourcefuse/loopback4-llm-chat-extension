@@ -1,16 +1,13 @@
-import {PromptTemplate} from '@langchain/core/prompts';
-import {RunnableSequence} from '@langchain/core/runnables';
+import {generateText} from 'ai';
 import {inject} from '@loopback/core';
 import {AiIntegrationBindings} from '../../../keys';
 import {LLMProvider} from '../../../types';
-import {stripThinkingTokens} from '../../../utils';
 import {
   DatabaseSchema,
   QueryTemplate,
   QueryTemplateMetadata,
   TemplatePlaceholder,
 } from '../types';
-import type {RunnableConfig} from '@langchain/core/runnables';
 
 const MAX_TEMPLATE_RECURSION_DEPTH = 3;
 
@@ -25,7 +22,7 @@ export class TemplateHelper {
     private readonly llm: LLMProvider,
   ) {}
 
-  extractionPrompt = PromptTemplate.fromTemplate(`
+  private readonly extractionPromptTemplate = `
 <instructions>
 You are an expert at extracting parameter values from natural language prompts.
 Given a user prompt, a SQL template, and a list of placeholders with their descriptions and types, extract the value for each placeholder from the prompt.
@@ -51,21 +48,25 @@ Rules per type:
 - sql_expression: Return a complete, valid SQL fragment with proper SQL syntax including quotes where needed. Example: <date_filter>created_at > '2024-01-01'</date_filter>
 
 Do not return any other text or explanation, just the XML tags.
-</output-format>`);
+</output-format>`;
+
+  private _buildExtractionPrompt(
+    prompt: string,
+    template: string,
+    placeholders: string,
+  ): string {
+    return this.extractionPromptTemplate
+      .replace('{prompt}', prompt)
+      .replace('{template}', template)
+      .replace('{placeholders}', placeholders);
+  }
 
   async extractPlaceholderValues(
     placeholders: TemplatePlaceholder[],
     prompt: string,
     sqlTemplate: string,
-    config: RunnableConfig,
     schema?: DatabaseSchema,
   ): Promise<Record<string, string | null>> {
-    const chain = RunnableSequence.from([
-      this.extractionPrompt,
-      this.llm,
-      stripThinkingTokens,
-    ]);
-
     const placeholderDescriptions = placeholders
       .map(p => {
         let desc = `- ${p.name} (type: ${p.type}): ${p.description}`;
@@ -76,16 +77,16 @@ Do not return any other text or explanation, just the XML tags.
       })
       .join('\n');
 
-    const response = await chain.invoke(
-      {
+    const response = await generateText({
+      model: this.llm,
+      prompt: this._buildExtractionPrompt(
         prompt,
-        template: sqlTemplate,
-        placeholders: placeholderDescriptions,
-      },
-      config,
-    );
+        sqlTemplate,
+        placeholderDescriptions,
+      ),
+    });
 
-    return this._parseXmlValues(response, placeholders);
+    return this._parseXmlValues(response.text, placeholders);
   }
 
   private _getColumnContext(
@@ -170,7 +171,6 @@ Do not return any other text or explanation, just the XML tags.
   async resolveTemplate(
     template: QueryTemplate,
     prompt: string,
-    config: RunnableConfig,
     schema?: DatabaseSchema,
     templateFetcher?: (id: string) => Promise<QueryTemplate | undefined>,
     depth = 0,
@@ -185,7 +185,6 @@ Do not return any other text or explanation, just the XML tags.
     let sql = await this._resolveTemplateRefs(
       template,
       prompt,
-      config,
       schema,
       templateFetcher,
       depth,
@@ -202,7 +201,6 @@ Do not return any other text or explanation, just the XML tags.
         extractablePlaceholders,
         prompt,
         sql,
-        config,
         schema,
       );
     }
@@ -219,7 +217,6 @@ Do not return any other text or explanation, just the XML tags.
   private async _resolveTemplateRefs(
     template: QueryTemplate,
     prompt: string,
-    config: RunnableConfig,
     schema: DatabaseSchema | undefined,
     templateFetcher:
       | ((id: string) => Promise<QueryTemplate | undefined>)
@@ -249,7 +246,6 @@ Do not return any other text or explanation, just the XML tags.
       const resolved = await this.resolveTemplate(
         refTemplate,
         prompt,
-        config,
         schema,
         templateFetcher,
         depth + 1,

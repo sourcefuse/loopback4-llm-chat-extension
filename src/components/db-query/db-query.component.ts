@@ -15,7 +15,12 @@ import {DatasetServiceComponent} from './dataset-service.component';
 import {DbQueryAIExtensionBindings} from './keys';
 import {TableSeedObserver} from './observers';
 import {DatasetRetriever, TemplateRetriever} from './providers';
-import {DataSetHelper, DbSchemaHelperService, TemplateHelper} from './services';
+import {
+  DataSetHelper,
+  DbSchemaHelperService,
+  SemanticCacheService,
+  TemplateHelper,
+} from './services';
 import {PermissionHelper} from './services/permission-helper.service';
 import {SchemaStore} from './services/schema.store';
 import {TableSearchService} from './services/search/table-search.service';
@@ -48,6 +53,7 @@ export class DbQueryComponent implements Component {
       PermissionHelper,
       DataSetHelper,
       SchemaStore,
+      SemanticCacheService,
       TableSearchService,
       TemplateHelper,
     ];

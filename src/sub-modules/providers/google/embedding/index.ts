@@ -1,2 +1,2 @@
 export * from './gemini-embedding.provider';
-export * from './gemini-embedding.mastra.provider';
+export {GeminiEmbedding as MastraGeminiEmbedding} from './gemini-embedding.provider';

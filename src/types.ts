@@ -1,15 +1,5 @@
-import {ChatAnthropic} from '@langchain/anthropic';
-import {BedrockEmbeddings, ChatBedrockConverse} from '@langchain/aws';
-import {ChatCerebras} from '@langchain/cerebras';
-import {
-  ChatGoogleGenerativeAI,
-  GoogleGenerativeAIEmbeddings,
-} from '@langchain/google-genai';
-import {ChatOllama, OllamaEmbeddings} from '@langchain/ollama';
-import {ChatOpenAI, OpenAIEmbeddings} from '@langchain/openai';
+import type {EmbeddingModel, LanguageModel} from 'ai';
 import {AnyObject} from '@loopback/repository';
-import {ChatGroq} from '@langchain/groq';
-import {ChatOpenRouter} from '@langchain/openrouter';
 
 export enum SupportedDBs {
   PostgreSQL = 'PostgreSQL',
@@ -34,25 +24,9 @@ export type AIIntegrationConfig = {
 
 export type FileMessageBuilder = (file: Express.Multer.File) => AnyObject;
 
-export type LLMProviderType =
-  | ChatOllama
-  | ChatCerebras
-  | ChatOpenAI
-  | ChatAnthropic
-  | ChatBedrockConverse
-  | ChatGoogleGenerativeAI
-  | ChatGroq
-  | ChatOpenRouter;
+export type LLMProvider = LanguageModel;
 
-export type LLMProvider = LLMProviderType & {
-  getFile?: FileMessageBuilder;
-};
-
-export type EmbeddingProvider =
-  | OpenAIEmbeddings
-  | OllamaEmbeddings
-  | BedrockEmbeddings
-  | GoogleGenerativeAIEmbeddings;
+export type EmbeddingProvider = EmbeddingModel;
 
 export enum ChannelType {
   Chat = 'chat',

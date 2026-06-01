@@ -2,7 +2,7 @@
 /**
  * Forward-only, idempotent backfill of the legacy `chats` / `messages`
  * tables into the Mastra storage adapter bound at
- * `AiIntegrationBindings.MastraStorage`.
+ * `MastraInternalBindings.Storage`.
  *
  * Usage from a consumer app:
  * APP_MODULE=./dist/application npx backfill-mastra-threads --dry-run
@@ -18,7 +18,7 @@
  * Refs: the migration plan.
  */
 import type {Application as CoreApplication} from '@loopback/core';
-import {AiIntegrationBindings} from '../keys';
+import {MastraInternalBindings} from '../mastra/internal-bindings';
 import {Chat} from '../models/chat.model';
 import {Message} from '../models/message.model';
 import {MessageMetadataType} from '../graphs/message-metadata.type';
@@ -51,7 +51,7 @@ const DRY_RUN = process.argv.includes('--dry-run');
 
 /**
  * Tenant-scoped resourceId — MUST match the format the runtime
- * `AiIntegrationBindings.ResourceId` resolver returns, otherwise
+ * resource identity format `${tenantId}:${userId}` used by runtime, otherwise
  * threads end up orphaned (DB rows exist but no live request hits
  * them at Memory.scope='resource').
  *
@@ -124,11 +124,11 @@ type MemoryLike = {
 };
 
 async function resolveMemory(app: BootableApplication): Promise<MemoryLike> {
-  const mastra = await app.get(AiIntegrationBindings.Mastra);
+  const mastra = await app.get(MastraInternalBindings.Mastra);
   const memory = await mastra.getAgent('chatAgent')?.getMemory();
   if (!memory) {
     throw new Error(
-      'Mastra Memory not configured on chatAgent. Verify AiIntegrationBindings.MastraStorage is bound.',
+      'Mastra Memory not configured on chatAgent. Verify internal Mastra storage binding is available.',
     );
   }
   return memory as unknown as MemoryLike;

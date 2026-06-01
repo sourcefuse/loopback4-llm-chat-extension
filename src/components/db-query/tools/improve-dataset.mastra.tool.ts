@@ -1,13 +1,30 @@
 import {inject} from '@loopback/core';
 import {Mastra} from '@mastra/core';
 import {createTool} from '@mastra/core/tools';
-import type {Tool} from '@mastra/core/tools';
+import type {Tool, ToolExecutionContext} from '@mastra/core/tools';
 import {z} from 'zod';
 import {LLMStreamEvent, LLMStreamEventType} from '../../../graphs/event.types';
 import {IMastraGraphTool, ToolStatus} from '../../../graphs/types';
-import {AiIntegrationBindings} from '../../../keys';
-import {DbQueryConfig, IDataSetStore} from '../types';
+import {MastraInternalBindings} from '../../../mastra/internal-bindings';
 import {buildDatasetReadout} from '../utils';
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function readString(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined;
+}
+
+function asEventWriter(
+  value: unknown,
+): ((e: LLMStreamEvent) => void) | undefined {
+  return typeof value === 'function'
+    ? (value as (e: LLMStreamEvent) => void)
+    : undefined;
+}
 
 /**
  * Mastra-shaped dataset-improvement tool. Final form — calls
@@ -16,7 +33,7 @@ import {buildDatasetReadout} from '../utils';
 export class MastraImproveDatasetTool implements IMastraGraphTool {
   key = 'improve-dataset';
   constructor(
-    @inject(AiIntegrationBindings.Mastra) private readonly mastra: Mastra,
+    @inject(MastraInternalBindings.Mastra) private readonly mastra: Mastra,
   ) {}
 
   build(): Tool {
@@ -35,11 +52,8 @@ export class MastraImproveDatasetTool implements IMastraGraphTool {
           ),
       }),
       execute: async (inputData, ctx) => {
-        const writer = ctx?.requestContext?.get('eventWriter') as
-          | ((e: LLMStreamEvent) => void)
-          | undefined;
-        const toolCallId =
-          (ctx as unknown as {toolCallId?: string})?.toolCallId ?? this.key;
+        const writer = asEventWriter(ctx.requestContext?.get('eventWriter'));
+        const toolCallId = ctx.agent?.toolCallId ?? this.key;
         writer?.({
           type: LLMStreamEventType.ToolStatus,
           data: {id: toolCallId, status: ToolStatus.Running},
@@ -69,15 +83,19 @@ export class MastraImproveDatasetTool implements IMastraGraphTool {
   } {
     // improveQueryWorkflow ends with a `.branch()` keyed by
     // `save-improved` vs `failed`; unwrap whichever fired.
-    const rawResult =
-      (result as {result?: Record<string, unknown>}).result ?? {};
+    const root = asRecord(result);
+    const rawResult = asRecord(root.result);
+    const saveResult = asRecord(rawResult['save-improved']);
+    const failedResult = asRecord(rawResult.failed);
     const branchOutput =
-      (rawResult['save-improved'] as Record<string, unknown> | undefined) ??
-      (rawResult['failed'] as Record<string, unknown> | undefined) ??
-      rawResult;
-    return branchOutput as {
-      datasetId?: string;
-      sql?: string;
+      Object.keys(saveResult).length > 0
+        ? saveResult
+        : Object.keys(failedResult).length > 0
+          ? failedResult
+          : rawResult;
+    return {
+      datasetId: readString(branchOutput.datasetId),
+      sql: readString(branchOutput.sql),
     };
   }
 
@@ -85,9 +103,9 @@ export class MastraImproveDatasetTool implements IMastraGraphTool {
     writer: ((e: LLMStreamEvent) => void) | undefined,
     toolCallId: string,
     inputData: {datasetId: string; prompt: string},
-    ctx: unknown,
+    ctx: ToolExecutionContext,
   ): Promise<unknown> {
-    const workflow = this.mastra.getWorkflow('improveQueryWorkflow' as never);
+    const workflow = this.mastra.getWorkflow('improveQueryWorkflow');
     if (!workflow) {
       throw new Error(
         "improveQueryWorkflow not registered in Mastra — check MastraProvider's workflows config",
@@ -97,15 +115,11 @@ export class MastraImproveDatasetTool implements IMastraGraphTool {
     // Forward tool tracing context so the workflow nests under the agent's
     // root span (one trace per /reply). See get-data-as-dataset for the
     // long version of this rationale.
-    const toolCtx = ctx as {
-      requestContext?: unknown;
-      tracing?: {currentSpan?: unknown};
-    };
     const result = await run.start({
       inputData,
-      requestContext: toolCtx.requestContext,
-      tracing: toolCtx.tracing,
-    } as never);
+      requestContext: ctx.requestContext,
+      tracing: ctx.tracing,
+    });
     if (result.status === 'suspended') {
       // HITL — emit AwaitingApproval, return empty. Resume in v3.1.
       writer?.({
@@ -141,16 +155,15 @@ export class MastraImproveDatasetTool implements IMastraGraphTool {
         status: datasetId ? ToolStatus.Completed : ToolStatus.Failed,
       },
     });
-    const rc = (ctx as {requestContext?: {get: (k: string) => unknown}})
-      ?.requestContext;
+    const rc = ctx.requestContext;
     // Acknowledge "done + datasetId" to the AI, never the actual data
     // (unless the consumer opted in via readAccessForAI). Returning a
     // string keeps the row count and result rows out of the model context.
     return buildDatasetReadout({
       datasetId,
       verb: 'updated',
-      store: rc?.get('datasetStore') as IDataSetStore | undefined,
-      config: rc?.get('config') as DbQueryConfig | undefined,
+      store: rc?.get('datasetStore'),
+      config: rc?.get('config'),
     });
   }
 }

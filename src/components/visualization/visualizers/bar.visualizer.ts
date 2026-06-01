@@ -42,7 +42,7 @@ export class BarVisualizer implements IVisualizer {
   }) => Promise<{object: AnyObject}>;
 
   constructor(
-    @inject(AiIntegrationBindings.MastraChatLLM)
+    @inject(AiIntegrationBindings.ChatLLM)
     private readonly model: MastraModelConfig,
   ) {}
 

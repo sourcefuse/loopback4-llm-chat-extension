@@ -1,38 +1,57 @@
-import {Document} from '@langchain/core/documents';
-import {BaseRetriever} from '@langchain/core/retrievers';
-import {VectorStore} from '@langchain/core/vectorstores';
-import {inject, Provider, ValueOrPromise} from '@loopback/core';
-import {AnyObject} from '@loopback/repository';
-import {MemoryVectorStore} from '@langchain/classic/vectorstores/memory';
-import {AiIntegrationBindings} from '../../../keys';
-import {DbQueryStoredTypes} from '../types';
+import {inject, Provider, service, ValueOrPromise} from '@loopback/core';
+import {
+  DbQueryStoredTypes,
+  ISemanticCacheRetriever,
+  QueryTemplateMetadata,
+} from '../types';
 import {AuthenticationBindings} from 'loopback4-authentication';
 import {IAuthUserWithPermissions} from '@sourceloop/core';
+import {SemanticCacheService} from '../services';
 
-export class TemplateRetriever implements Provider<BaseRetriever> {
+export class TemplateRetriever implements Provider<
+  ISemanticCacheRetriever<QueryTemplateMetadata>
+> {
   constructor(
-    @inject(AiIntegrationBindings.VectorStore)
-    private readonly vectorStore: VectorStore,
+    @service(SemanticCacheService)
+    private readonly semanticCache: SemanticCacheService,
     @inject(AuthenticationBindings.CURRENT_USER)
     private readonly user: IAuthUserWithPermissions,
   ) {}
-  value(): ValueOrPromise<BaseRetriever<AnyObject>> {
-    if (this.vectorStore instanceof MemoryVectorStore) {
-      return this.vectorStore.asRetriever({
-        k: 5,
-        filter: (doc: Document) =>
-          doc.metadata.type === DbQueryStoredTypes.Template &&
-          doc.metadata.tenantId === this.user.tenantId,
-        searchType: 'similarity',
-      });
-    }
-    return this.vectorStore.asRetriever({
-      k: 5,
-      filter: {
-        type: DbQueryStoredTypes.Template,
-        tenantId: this.user.tenantId,
+
+  value(): ValueOrPromise<ISemanticCacheRetriever<QueryTemplateMetadata>> {
+    return {
+      invoke: async query => {
+        const tenantId = this.user.tenantId;
+        if (!tenantId) return [];
+        const docs = await this.semanticCache.search<QueryTemplateMetadata>(
+          query,
+          {
+            type: DbQueryStoredTypes.Template,
+            tenantId,
+            topK: 5,
+          },
+        );
+
+        const out: Array<{
+          pageContent: string;
+          metadata: QueryTemplateMetadata;
+        }> = [];
+        for (const doc of docs) {
+          const templateId =
+            (doc.metadata.templateId as string | undefined) ??
+            (doc.metadata.id as string | undefined);
+          if (!templateId) continue;
+          out.push({
+            pageContent: doc.pageContent,
+            metadata: {
+              ...doc.metadata,
+              templateId,
+              id: templateId,
+            },
+          });
+        }
+        return out;
       },
-      searchType: 'similarity',
-    });
+    };
   }
 }

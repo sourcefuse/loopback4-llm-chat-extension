@@ -1,11 +1,29 @@
 import {inject} from '@loopback/core';
 import {Mastra} from '@mastra/core';
 import {createTool} from '@mastra/core/tools';
-import type {Tool} from '@mastra/core/tools';
+import type {Tool, ToolExecutionContext} from '@mastra/core/tools';
 import {z} from 'zod';
 import {LLMStreamEvent, LLMStreamEventType} from '../../../graphs/event.types';
 import {IMastraGraphTool, ToolStatus} from '../../../graphs/types';
-import {AiIntegrationBindings} from '../../../keys';
+import {MastraInternalBindings} from '../../../mastra/internal-bindings';
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function readString(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined;
+}
+
+function asEventWriter(
+  value: unknown,
+): ((e: LLMStreamEvent) => void) | undefined {
+  return typeof value === 'function'
+    ? (value as (e: LLMStreamEvent) => void)
+    : undefined;
+}
 
 /**
  * Mastra-shaped visualization tool. Final form — calls
@@ -17,7 +35,7 @@ import {AiIntegrationBindings} from '../../../keys';
 export class MastraGenerateVisualizationTool implements IMastraGraphTool {
   key = 'generate-visualization';
   constructor(
-    @inject(AiIntegrationBindings.Mastra) private readonly mastra: Mastra,
+    @inject(MastraInternalBindings.Mastra) private readonly mastra: Mastra,
   ) {}
 
   build(): Tool {
@@ -47,11 +65,8 @@ It does not return anything, instead it fires an event internally that renders t
           ),
       }),
       execute: async (inputData, ctx) => {
-        const writer = ctx?.requestContext?.get('eventWriter') as
-          | ((e: LLMStreamEvent) => void)
-          | undefined;
-        const toolCallId =
-          (ctx as unknown as {toolCallId?: string})?.toolCallId ?? this.key;
+        const writer = asEventWriter(ctx.requestContext?.get('eventWriter'));
+        const toolCallId = ctx.agent?.toolCallId ?? this.key;
         writer?.({
           type: LLMStreamEventType.ToolStatus,
           data: {id: toolCallId, status: ToolStatus.Running},
@@ -83,9 +98,9 @@ It does not return anything, instead it fires an event internally that renders t
     datasetId: string,
     userQuery: string,
     requestedType: string | undefined,
-    ctx: unknown,
+    ctx: ToolExecutionContext,
   ): Promise<unknown> {
-    const workflow = this.mastra.getWorkflow('visualizationWorkflow' as never);
+    const workflow = this.mastra.getWorkflow('visualizationWorkflow');
     if (!workflow) {
       throw new Error(
         "visualizationWorkflow not registered in Mastra — check MastraProvider's workflows config",
@@ -95,15 +110,11 @@ It does not return anything, instead it fires an event internally that renders t
     // Forward tool tracing context so the workflow nests under the agent's
     // root span (one trace per /reply). See get-data-as-dataset for the
     // long version of this rationale.
-    const toolCtx = ctx as {
-      requestContext?: unknown;
-      tracing?: {currentSpan?: unknown};
-    };
     const result = await run.start({
       inputData: {datasetId, userQuery, type: requestedType},
-      requestContext: toolCtx.requestContext,
-      tracing: toolCtx.tracing,
-    } as never);
+      requestContext: ctx.requestContext,
+      tracing: ctx.tracing,
+    });
     if (result.status === 'suspended') {
       // HITL — emit AwaitingApproval, return empty. Resume in v3.1.
       writer?.({
@@ -118,13 +129,14 @@ It does not return anything, instead it fires an event internally that renders t
     // visualizationWorkflow's final step is `.then(renderVisualizationStep)`
     // (not a `.branch()`), so the result lands directly on the top level
     // — no branch-key unwrap needed.
-    const workflowResult = ((result as {result?: Record<string, unknown>})
-      .result ?? {}) as {
-      chartConfig?: unknown;
-      visualization?: string;
-      datasetId?: string;
-      sql?: string;
-      description?: string;
+    const root = asRecord(result);
+    const rawResult = asRecord(root.result);
+    const workflowResult = {
+      chartConfig: rawResult.chartConfig,
+      visualization: readString(rawResult.visualization),
+      datasetId: readString(rawResult.datasetId),
+      sql: readString(rawResult.sql),
+      description: readString(rawResult.description),
     };
     this.emitVisualizationResult(writer, toolCallId, workflowResult);
     return workflowResult;
