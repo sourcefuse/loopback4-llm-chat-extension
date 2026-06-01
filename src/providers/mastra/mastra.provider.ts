@@ -42,6 +42,15 @@ export class MastraProvider implements Provider<Mastra> {
   ) {}
 
   async value(): Promise<Mastra> {
+    // Thread-title generation fires a SECOND LLM call after `memory: save`
+    // on the first turn of each new thread (visible as a small extra
+    // `llm: openai/gpt-4o` span in Langfuse/LangSmith after the main one).
+    // It's a Mastra-only cost — the v2 LangGraph extension had no thread
+    // title concept at all. Default OFF so consumers don't pay for it
+    // silently; opt in with `MASTRA_GENERATE_TITLE=true`. When enabled,
+    // `MASTRA_TITLE_MODEL` lets the consumer route the title call to a
+    // cheaper model (e.g. "openai/gpt-4o-mini") to keep the cost trivial.
+    const generateTitle = buildGenerateTitleOption();
     const memory = new Memory({
       storage: this.storage,
       vector: this.vector ?? false,
@@ -53,7 +62,7 @@ export class MastraProvider implements Provider<Mastra> {
             ? {topK: 5, messageRange: 3, scope: 'resource'}
             : false,
         workingMemory: {enabled: false},
-        generateTitle: true,
+        generateTitle,
       },
     });
 
@@ -112,4 +121,22 @@ export class MastraProvider implements Provider<Mastra> {
       observability: this.observability,
     });
   }
+}
+
+/**
+ * Resolve `generateTitle` from env. Default: `false` — saves an extra LLM
+ * call per new thread, matching v2 LangGraph extension cost.
+ *
+ * - `MASTRA_GENERATE_TITLE=true` → enable. Without `MASTRA_TITLE_MODEL`,
+ *   Mastra uses the agent's main chat model.
+ * - `MASTRA_GENERATE_TITLE=true` + `MASTRA_TITLE_MODEL=openai/gpt-4o-mini`
+ *   → enable AND route the title call to the cheaper model.
+ */
+function buildGenerateTitleOption():
+  | boolean
+  | {model: MastraModelConfig; instructions?: string} {
+  if (process.env.MASTRA_GENERATE_TITLE !== 'true') return false;
+  const titleModel = process.env.MASTRA_TITLE_MODEL;
+  if (!titleModel) return true;
+  return {model: titleModel as MastraModelConfig};
 }
