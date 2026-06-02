@@ -1,21 +1,26 @@
-import {
-  AIMessage,
-  MessageContent,
-  MessageContentComplex,
-  MessageContentText,
-} from '@langchain/core/messages';
+type TextContentPart = {
+  type?: string;
+  text?: string;
+};
 
-export function isTextContent(
-  content: MessageContent | MessageContentComplex | string,
-): content is MessageContentText {
+type TextLikeContent = string | TextContentPart | TextContentPart[];
+
+export function isTextContent(content: unknown): content is TextLikeContent {
   if (typeof content === 'string') {
     return true;
   }
-  if ((content as MessageContentText).text !== undefined) {
+  if (
+    typeof content === 'object' &&
+    content !== null &&
+    typeof (content as TextContentPart).text === 'string'
+  ) {
     return true;
   }
   if (Array.isArray(content)) {
-    return content.filter(v => v.type === 'text').every(isTextContent);
+    return content
+      .filter(v => typeof v === 'object' && v !== null)
+      .filter(v => (v as TextContentPart).type === 'text')
+      .every(isTextContent);
   }
   return false;
 }
@@ -30,23 +35,30 @@ summary of file - ${fileName}:
 ${summary}`;
 }
 
-export function getTextContent(content: MessageContent | string): string {
+export function getTextContent(content: unknown): string {
   if (typeof content === 'string') {
     return content;
   }
-  if (isTextContent(content)) {
-    return typeof content === 'string'
-      ? content
-      : content
-          .map(c => (isTextContent(c) ? c.text : ''))
-          .filter(v => !!v)
-          .join('');
+  if (!isTextContent(content)) {
+    return '';
+  }
+  if (Array.isArray(content)) {
+    return content
+      .map(part => (typeof part.text === 'string' ? part.text : ''))
+      .filter(Boolean)
+      .join('');
+  }
+  if (typeof content === 'object' && content !== null) {
+    return (content as TextContentPart).text ?? '';
   }
   return '';
 }
 
-export function stripThinkingTokens(text: AIMessage): string {
-  const message = getTextContent(text.content ?? text);
+export function stripThinkingTokens(text: unknown): string {
+  const message =
+    typeof text === 'object' && text !== null && 'content' in text
+      ? getTextContent((text as {content?: unknown}).content)
+      : getTextContent(text);
   // remove all the content between <think> and <thinking> tags
   let stripped = message.replace(/<think(ing)?>.*?<\/think(ing)?>/gs, '');
   // also strip any string that ends with <thinking> or <think>
@@ -54,7 +66,7 @@ export function stripThinkingTokens(text: AIMessage): string {
   return stripped.trim();
 }
 
-export function approxTokenCounter(content: MessageContent): number {
+export function approxTokenCounter(content: unknown): number {
   const text = getTextContent(content);
   // Approximate token count: 1 token ~ 4 characters
   // This is a rough estimate, actual tokenization may vary

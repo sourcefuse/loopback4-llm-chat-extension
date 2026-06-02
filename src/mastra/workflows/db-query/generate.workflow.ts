@@ -123,7 +123,7 @@ const checkCacheStep = createStep({
     if (!data.prompt) return {cacheHit: false};
     const cache = getQueryCache(requestContext);
     // Cache judge: route to cheap tier (main: CheapLLM). Falls back to
-    // chatLlm when MastraCheapLLM unbound.
+    // chatLlm when CheapLLM unbound.
     const chatLlm = getCheapLlm(requestContext);
     if (!cache || !chatLlm) return {cacheHit: false};
     let docs: Array<{pageContent: string; metadata: {id?: string}}> = [];

@@ -1,2 +1,2 @@
 export * from './openai.provider';
-export * from './openai.mastra.provider';
+export {OpenAI as MastraOpenAI} from './openai.provider';

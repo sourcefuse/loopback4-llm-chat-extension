@@ -10,7 +10,7 @@ describe('LineVisualizer Unit', function () {
     // Constructor: (smartNonThinkingModel optional, chatModel). Pass
     // undefined for the optional tier slot so the chat-model fallback
     // path is exercised — matches what the test exercised before tier
-    // wiring (when the visualizer only knew about MastraChatLLM).
+    // wiring (when the visualizer only knew about ChatLLM).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     visualizer = new LineVisualizer(undefined, {} as any);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

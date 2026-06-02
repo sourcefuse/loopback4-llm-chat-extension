@@ -1,2 +1,2 @@
 export * from './anthropic.provider';
-export * from './anthropic.mastra.provider';
+export {Claude as MastraClaude} from './anthropic.provider';

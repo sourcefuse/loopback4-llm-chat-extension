@@ -139,7 +139,7 @@ parameter:
 | `resourceId` | Tenant-scoped identity for Memory.scope='resource'.. |
 | `eventWriter` | `(LLMStreamEvent) → void` push onto SSE queue. Tools + steps use this to emit `Log` / `ToolStatus`. |
 | `dbConnector` | Optional `IDbConnector` from `DbQueryAIExtensionBindings.Connector`. |
-| `chatLlm` | Optional consumer-bound `MastraChatLLM` (`MastraModelConfig`). LLM-driven steps use it with `generateText({model, prompt})` from `ai` v6. |
+| `chatLlm` | Optional consumer-bound `ChatLLM` (`MastraModelConfig`). LLM-driven steps use it with `generateText({model, prompt})` from `ai` v6. |
 | `lb4Ctx` | Full LB4 `Context`. Any step that needs a preserved helper resolves it lazily via `lb4Ctx.get<X>(key, {optional: true})` — `DbSchemaHelperService`, `SchemaStore`, `TableSearchService`, `PermissionHelper`, `DataSetHelper`, `TemplateHelper`. |
 
 ## Branch lineage

@@ -1,2 +1,2 @@
 export * from './ollama.provider';
-export * from './ollama.mastra.provider';
+export {Ollama as MastraOllama} from './ollama.provider';

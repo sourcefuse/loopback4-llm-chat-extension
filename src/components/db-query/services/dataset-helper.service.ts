@@ -1,12 +1,14 @@
-import {VectorStore} from '@langchain/core/vectorstores';
 import {inject, service} from '@loopback/core';
+import debugFactory from 'debug';
 import {Filter} from '@loopback/repository';
 import {HttpErrors} from '@loopback/rest';
-import {AiIntegrationBindings} from '../../../keys';
 import {DbQueryAIExtensionBindings} from '../keys';
 import {DbQueryStoredTypes, IDataSet, IDataSetStore} from '../types';
 import {PermissionHelper} from './permission-helper.service';
 import {DatasetUpdateDTO} from '../models/dataset-update-dto.model';
+import {SemanticCacheService} from './semantic-cache.service';
+
+const debug = debugFactory('ai-integration:dataset-helper');
 
 export class DataSetHelper {
   constructor(
@@ -14,8 +16,8 @@ export class DataSetHelper {
     private readonly store: IDataSetStore,
     @service(PermissionHelper)
     private readonly permissionHelper: PermissionHelper,
-    @inject(AiIntegrationBindings.VectorStore)
-    private readonly vectorStore: VectorStore,
+    @service(SemanticCacheService)
+    private readonly semanticCache: SemanticCacheService,
   ) {}
 
   async checkPermissions(datasetId: string) {
@@ -51,18 +53,22 @@ export class DataSetHelper {
 
   async updateById(id: string, data: DatasetUpdateDTO) {
     const dataset = await this.store.updateLikes(id, data.liked, data.comment);
-    // clear from cache and re-add if likes > 0
-    await this.vectorStore.delete({
-      filter: {
+    // The vote/like update above is the canonical write and has committed.
+    // Refreshing the semantic cache (clear, then re-add when likes > 0) is
+    // best-effort maintenance — a vector-store hiccup must not fail the
+    // user's like action. Log and continue; the cache self-heals on the
+    // next search/upsert.
+    try {
+      await this.semanticCache.deleteByFilter({
+        type: DbQueryStoredTypes.DataSet,
         datasetId: id,
         tenantId: dataset.tenantId,
-      },
-    });
-    if (dataset.votes > 0) {
-      await this.vectorStore.addDocuments([
-        {
+      });
+      if (dataset.votes > 0) {
+        await this.semanticCache.upsertDocument({
           pageContent: dataset.prompt,
           metadata: {
+            id,
             datasetId: id,
             votes: dataset.votes,
             description: dataset.description,
@@ -70,8 +76,10 @@ export class DataSetHelper {
             tenantId: dataset.tenantId,
             query: dataset.query,
           },
-        },
-      ]);
+        });
+      }
+    } catch (err) {
+      debug('dataset %s cache refresh failed (non-fatal): %O', id, err);
     }
   }
 

@@ -1,2 +1,2 @@
 export * from './bedrock-embedding.provider';
-export * from './bedrock-embedding.mastra.provider';
+export {BedrockEmbedding as MastraBedrockEmbedding} from './bedrock-embedding.provider';

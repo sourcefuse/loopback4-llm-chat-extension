@@ -15,14 +15,14 @@ import type {IDataSetStore} from '../types';
  * Mastra-shaped dataset Q&A tool. Read-only chain: load the saved
  * dataset, build a single-turn instruction containing the query +
  * compressed schema + context, hand to a one-shot Mastra Agent backed
- * by the consumer-bound MastraChatLLM. No workflow needed — the legacy
+ * by the consumer-bound ChatLLM. No workflow needed — the legacy
  * RunnableSequence (PromptTemplate -> LLM -> stripThinkingTokens)
  * collapses to one agent.generate() call.
  */
 export class MastraAskAboutDatasetTool implements IMastraGraphTool {
   key = 'ask-about-dataset';
   constructor(
-    @inject(AiIntegrationBindings.MastraChatLLM, {optional: true})
+    @inject(AiIntegrationBindings.ChatLLM, {optional: true})
     private readonly chatLlm: MastraModelConfig | undefined,
     @inject(DbQueryAIExtensionBindings.DatasetStore)
     private readonly store: IDataSetStore,
@@ -66,7 +66,7 @@ export class MastraAskAboutDatasetTool implements IMastraGraphTool {
         const model = this.chatLlm ?? process.env.MASTRA_DEFAULT_CHAT_MODEL;
         if (!model) {
           throw new Error(
-            'ask-about-dataset: bind AiIntegrationBindings.MastraChatLLM ' +
+            'ask-about-dataset: bind AiIntegrationBindings.ChatLLM ' +
               'or set MASTRA_DEFAULT_CHAT_MODEL. No silent OpenAI fallback.',
           );
         }

@@ -1,8 +1,4 @@
-import {
-  PGVectorStore as PGStore,
-  PGVectorStoreArgs,
-} from '@langchain/community/vectorstores/pgvector';
-import {VectorStore} from '@langchain/core/vectorstores';
+import {PgVector} from '@mastra/pg';
 import {
   BindingScope,
   inject,
@@ -10,44 +6,45 @@ import {
   Provider,
   ValueOrPromise,
 } from '@loopback/core';
-import * as pg from 'pg';
-import {EmbeddingProvider} from '../../../../types';
-import {AiIntegrationBindings} from '../../../../keys';
 import {juggler} from '@loopback/repository';
+import type {MastraVector} from '@mastra/core/vector';
+
 @injectable({scope: BindingScope.SINGLETON})
-export class PgVectorStore implements Provider<VectorStore> {
+export class PgVectorStore implements Provider<MastraVector> {
   constructor(
-    @inject(AiIntegrationBindings.EmbeddingModel)
-    private readonly embeddingModel: EmbeddingProvider,
     @inject(`datasources.writerdb`)
     private pgDataSource: juggler.DataSource,
   ) {}
-  value(): ValueOrPromise<VectorStore> {
+
+  value(): ValueOrPromise<MastraVector> {
     if (
       !process.env.DB_HOST ||
       !process.env.DB_PORT ||
       !process.env.DB_USER ||
+      !process.env.DB_PASSWORD ||
       !process.env.DB_DATABASE
     ) {
       throw new Error(
-        'Database connection details are not set. Please set DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, and DB_DATABASE environment variables.',
+        'DB env vars not set. Required: DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_DATABASE.',
       );
     }
-    const reusablePool = this.pgDataSource.connector?.pg as pg.Pool;
-    const dsConfig = this.pgDataSource.connector?.settings;
 
-    const config: PGVectorStoreArgs = {
-      pool: reusablePool,
-      schemaName: dsConfig.schema || 'public',
-      tableName: 'semantic_cache',
-      extensionSchemaName: dsConfig.schema || 'public',
-      columns: {
-        idColumnName: 'id',
-        vectorColumnName: 'vector',
-        contentColumnName: 'content',
-        metadataColumnName: 'metadata',
-      },
-    };
-    return PGStore.initialize(this.embeddingModel, config);
+    const dsSchema = this.pgDataSource.connector?.settings?.schema as
+      | string
+      | undefined;
+    return new PgVector({
+      id: 'mastra-pgvector',
+      connectionString: this.buildConnString(),
+      schemaName: process.env.MASTRA_PGVECTOR_SCHEMA ?? dsSchema ?? 'public',
+    });
+  }
+
+  private buildConnString(): string {
+    const user = encodeURIComponent(process.env.DB_USER!);
+    const password = encodeURIComponent(process.env.DB_PASSWORD!);
+    const host = encodeURIComponent(process.env.DB_HOST!);
+    const port = encodeURIComponent(process.env.DB_PORT!);
+    const database = encodeURIComponent(process.env.DB_DATABASE!);
+    return `postgresql://${user}:${password}@${host}:${port}/${database}`;
   }
 }

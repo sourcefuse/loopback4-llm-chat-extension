@@ -1,53 +1,57 @@
-import {expect, sinon} from '@loopback/testlab';
+import {expect} from '@loopback/testlab';
+import {createMockModel} from '@mastra/core/test-utils/llm-mock';
 import {DbKnowledgeGraphService} from '../../../components';
 import {EmbeddingProvider, LLMProvider} from '../../../types';
 
 describe(`DbKnowledgeGraphService Unit`, function () {
   let service: DbKnowledgeGraphService;
-  let llmStub: sinon.SinonStub;
-  let embedStub: sinon.SinonStub;
 
   beforeEach(() => {
-    llmStub = sinon.stub();
-    embedStub = sinon.stub();
-    service = new DbKnowledgeGraphService(
-      llmStub as unknown as LLMProvider,
-      {
-        embedDocuments: embedStub,
-      } as unknown as EmbeddingProvider,
-      {
-        models: [],
-        knowledgeGraph: {
-          graphWeight: 0.5,
-          vectorWeight: 0.5,
-          clusterThreshold: 0.7,
-          conceptThreshold: 0.8,
-        },
-      },
-    );
-  });
-
-  it('should generate a knowledge graph for a schema and should be able to find from it', async () => {
-    embedStub.callsFake(async doc => {
-      if (doc[0].startsWith('employee_salaries')) {
-        return [[0.1, 0.2, 0.3]];
-      }
-      if (doc[0].startsWith('employees')) {
-        return [[0.1, 0.2, 0.3]];
-      }
-      if (doc[0].startsWith('orders')) {
-        return [[0.9, 0.8, 0.7]];
-      }
-      return [[0.1, 0.2, 0.6]];
-    });
-    llmStub.resolves({
-      content: JSON.stringify({
+    const llm = createMockModel({
+      mockText: JSON.stringify({
         concept: 'employees',
         description: 'test description',
         domain: 'test domain',
         confidence: 0.9,
       }),
+      version: 'v2',
+    }) as LLMProvider;
+
+    const embeddingModel = {
+      specificationVersion: 'v2',
+      provider: 'test-provider',
+      modelId: 'test-embedding-model',
+      maxEmbeddingsPerCall: 128,
+      supportsParallelCalls: true,
+      doEmbed: async ({values}: {values: Array<string>}) => ({
+        embeddings: values.map(value => {
+          if (value.startsWith('employee_salaries')) {
+            return [0.1, 0.2, 0.3];
+          }
+          if (value.startsWith('employees')) {
+            return [0.1, 0.2, 0.3];
+          }
+          if (value.startsWith('orders')) {
+            return [0.9, 0.8, 0.7];
+          }
+          return [0.1, 0.2, 0.6];
+        }),
+        usage: {tokens: 0},
+      }),
+    } as unknown as EmbeddingProvider;
+
+    service = new DbKnowledgeGraphService(llm, embeddingModel, {
+      models: [],
+      knowledgeGraph: {
+        graphWeight: 0.5,
+        vectorWeight: 0.5,
+        clusterThreshold: 0.7,
+        conceptThreshold: 0.8,
+      },
     });
+  });
+
+  it('should generate a knowledge graph for a schema and should be able to find from it', async () => {
     const schema = {
       tables: {
         // eslint-disable-next-line @typescript-eslint/naming-convention

@@ -1,10 +1,4 @@
-import {VectorStore as VectorStoreType} from '@langchain/core/vectorstores';
-import type {Mastra} from '@mastra/core';
-import type {MastraModelConfig} from '@mastra/core/llm';
-import type {MastraCompositeStore} from '@mastra/core/storage';
-import type {MastraVector, MastraEmbeddingModel} from '@mastra/core/vector';
-import type {Observability} from '@mastra/observability';
-import type {MastraToolStore} from './graphs/types';
+import type {MastraVector} from '@mastra/core/vector';
 import {BindingKey} from '@loopback/context';
 import {ITransport} from './transports/types';
 import {
@@ -39,6 +33,10 @@ export namespace AiIntegrationBindings {
   export const ChatLLM = BindingKey.create<LLMProvider>(
     'services.ai-reporting.chatLLMProvider',
   );
+  // Strict-structured-output tier (line visualizer's generateObject). A
+  // reasoning model with thinking disabled — "thinking" chunks break some
+  // providers' strict structured output. Optional; workflow sites fall
+  // back to ChatLLM when unbound.
   export const SmartNonThinkingLLM = BindingKey.create<LLMProvider>(
     'services.ai-reporting.smartNonThinkingLLMProvider',
   );
@@ -48,75 +46,21 @@ export namespace AiIntegrationBindings {
   export const Transport = BindingKey.create<ITransport>(
     'services.ai-reporting.transport',
   );
-  export const VectorStore = BindingKey.create<VectorStoreType>(
+  export const VectorStore = BindingKey.create<MastraVector>(
     'services.ai-reporting.vector-store',
   );
   export const Cache = BindingKey.create<ICache>('services.ai-reporting.cache');
   export const LimitStrategy = BindingKey.create<ILimitStrategy>(
     'services.ai-reporting.limit-strategy',
   );
-  export const ObfHandler = BindingKey.create<Function>(
-    'services.ai-reporting.obf-handler',
-  );
   export const SystemContext = BindingKey.create<string[]>(
     `services.ai-reporting.system-context`,
   );
-
-  // Mastra v3 bindings — added in P1.
-  export const Mastra = BindingKey.create<Mastra>(
-    'services.ai-reporting.mastra',
-  );
-  export const MastraChatLLM = BindingKey.create<MastraModelConfig>(
-    'services.ai-reporting.mastraChatLlm',
-  );
-  export const MastraFileLLM = BindingKey.create<MastraModelConfig>(
-    'services.ai-reporting.mastraFileLlm',
-  );
-  // Tier bindings — mirror the v2 LangGraph extension's CheapLLM/SmartLLM/
-  // SmartNonThinkingLLM tiers under Mastra-typed keys. All optional: when a
-  // tier slot is unbound the workflow steps fall back to MastraChatLLM, so
-  // consumers who don't care about tier routing see zero behaviour change.
-  // Set them to route high-volume / low-stakes calls (description gen,
-  // checklist gen, cache-judge, template-judge, get-columns) to a cheaper
-  // model, heavy reasoning (sql-gen, semantic-validator) to a stronger one,
-  // and strict-structured-output sites (line visualizer) to a reasoning
-  // model with thinking disabled.
-  export const MastraCheapLLM = BindingKey.create<MastraModelConfig>(
-    'services.ai-reporting.mastraCheapLlm',
-  );
-  export const MastraSmartLLM = BindingKey.create<MastraModelConfig>(
-    'services.ai-reporting.mastraSmartLlm',
-  );
-  export const MastraSmartNonThinkingLLM = BindingKey.create<MastraModelConfig>(
-    'services.ai-reporting.mastraSmartNonThinkingLlm',
-  );
-  export const MastraStorage = BindingKey.create<MastraCompositeStore>(
-    'services.ai-reporting.mastraStorage',
-  );
-  export const MastraVectorStore = BindingKey.create<MastraVector>(
-    'services.ai-reporting.mastraVectorStore',
-  );
-  export const MastraEmbedder = BindingKey.create<MastraEmbeddingModel<string>>(
-    'services.ai-reporting.mastraEmbedder',
-  );
-  export const RunRegistry = BindingKey.create<IRunRegistry>(
-    'services.ai-reporting.runRegistry',
-  );
-  export const MastraTools = BindingKey.create<MastraToolStore>(
-    'services.ai-reporting.mastraTools',
-  );
-  // Optional Mastra Observability instance — when bound, MastraProvider
-  // wires it onto the Mastra singleton so every agent / workflow / tool
-  // span flows through the configured exporter (Langfuse, LangSmith,
-  // OTel, etc.). Consumer-side wiring picks the exporter; default unbound.
-  export const MastraObservability = BindingKey.create<Observability>(
-    'services.ai-reporting.mastraObservability',
-  );
-  // ResourceId — tenant-scoped identity string resolved per-request via
-  // toDynamicValue. Format: `${tenantId}:${userId}`.
-  export const ResourceId = BindingKey.create<string>(
-    'services.ai-reporting.resourceId',
-  );
+  // NOTE: Mastra runtime infra bindings (Mastra, Storage, Tools,
+  // Observability, RunRegistry, ResourceId) live in MastraInternalBindings
+  // (src/mastra/internal-bindings.ts) — they are not part of the
+  // host-facing API surface. Host model bindings stay here as the canonical
+  // ChatLLM / FileLLM / CheapLLM / SmartLLM / SmartNonThinkingLLM tiers.
 }
 export const WriterDB = 'writerdb';
 export const ReaderDB = 'readerdb';

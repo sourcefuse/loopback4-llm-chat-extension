@@ -1,2 +1,2 @@
 export * from './groq.provider';
-export * from './groq.mastra.provider';
+export {Groq as MastraGroq} from './groq.provider';

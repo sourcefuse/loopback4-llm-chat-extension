@@ -409,14 +409,20 @@ describe('WorkflowRunner Unit', () => {
     expect(streamOpts.memory.resource).to.equal('tenant-a:user-1');
   });
 
-  it('forwards MastraCheapLLM / MastraSmartLLM / MastraSmartNonThinkingLLM into the RequestContext when bound', async () => {
+  it('forwards CheapLLM / SmartLLM / SmartNonThinkingLLM into the RequestContext when bound', async () => {
     // Tier slots are appended at the END of the constructor signature so
-    // existing fixtures don't have to re-number. Wiring sentinels through
-    // ensures both that (a) the optional injects don't break boot and
-    // (b) workflow steps invoked from tools see them via the typed RC.
-    const cheapSentinel = {kind: 'cheap'};
-    const smartSentinel = {kind: 'smart'};
-    const sntSentinel = {kind: 'snt'};
+    // existing fixtures don't have to re-number. The runner resolves each
+    // slot through resolveModelConfig before placing it on the RC (so
+    // workflow steps can hand it straight to generateText), hence the
+    // fixtures are minimal AI-SDK v2 model stubs, identified by modelId.
+    const fakeModel = (id: string) =>
+      ({
+        specificationVersion: 'v2',
+        provider: 'test',
+        modelId: id,
+        doGenerate: async () => ({}),
+        doStream: async () => ({}),
+      }) as never;
     createThread.resolves({id: 't1'});
     stubStreamWith([{type: 'text-delta', payload: {text: '.'}}]);
 
@@ -430,9 +436,9 @@ describe('WorkflowRunner Unit', () => {
       usage,
       undefined,
       undefined,
-      cheapSentinel as never,
-      smartSentinel as never,
-      sntSentinel as never,
+      fakeModel('cheap'),
+      fakeModel('smart'),
+      fakeModel('snt'),
     );
 
     await collect(runner.run('q', undefined, new AbortController().signal));
@@ -440,10 +446,15 @@ describe('WorkflowRunner Unit', () => {
     const streamOpts = streamStub.firstCall.args[1] as {
       requestContext: {get: (k: string) => unknown};
     };
-    expect(streamOpts.requestContext.get('cheapLlm')).to.equal(cheapSentinel);
-    expect(streamOpts.requestContext.get('smartLlm')).to.equal(smartSentinel);
-    expect(streamOpts.requestContext.get('smartNonThinkingLlm')).to.equal(
-      sntSentinel,
+    const modelId = (m: unknown) => (m as {modelId?: string})?.modelId;
+    expect(modelId(streamOpts.requestContext.get('cheapLlm'))).to.equal(
+      'cheap',
     );
+    expect(modelId(streamOpts.requestContext.get('smartLlm'))).to.equal(
+      'smart',
+    );
+    expect(
+      modelId(streamOpts.requestContext.get('smartNonThinkingLlm')),
+    ).to.equal('snt');
   });
 });

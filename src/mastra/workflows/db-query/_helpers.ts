@@ -17,6 +17,7 @@ import {
  * `generateText` call. */
 type GenerateTextReturn = Awaited<ReturnType<typeof generateText>>;
 import type {
+  DataSetHelper,
   DbSchemaHelperService,
   TemplateHelper,
 } from '../../../components/db-query/services';
@@ -78,7 +79,7 @@ export interface MastraRcShape {
   schemaStore?: SchemaStore;
   schemaHelper?: DbSchemaHelperService;
   templateHelper?: TemplateHelper;
-  dataSetHelper?: unknown;
+  dataSetHelper?: DataSetHelper;
   queryCache?: {
     invoke: (
       input: string,
@@ -152,7 +153,7 @@ export function getSchemaHelper(
 export function getTemplateHelper(rc?: MastraRc): TemplateHelper | undefined {
   return rc?.get('templateHelper');
 }
-export function getDataSetHelper(rc?: MastraRc): unknown {
+export function getDataSetHelper(rc?: MastraRc): DataSetHelper | undefined {
   return rc?.get('dataSetHelper');
 }
 export function getQueryCache(rc?: MastraRc): MastraRcShape['queryCache'] {
@@ -777,7 +778,6 @@ export async function resolveTemplateById(args: {
     const resolved = await templateHelper.resolveTemplate(
       template,
       prompt,
-      {} as never,
       schema,
       async id => {
         try {

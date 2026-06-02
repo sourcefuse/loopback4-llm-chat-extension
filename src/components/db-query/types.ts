@@ -204,12 +204,25 @@ export type CachedKnowledgeGraph = {
 };
 
 export type QueryCacheMetadata = {
+  id?: string;
   datasetId: string;
   query: string;
   type: DbQueryStoredTypes.DataSet;
   description: string;
   votes: number;
+  tenantId: string;
 };
+
+export type SemanticCacheDocument<TMetadata extends Record<string, unknown>> = {
+  pageContent: string;
+  metadata: TMetadata;
+};
+
+export interface ISemanticCacheRetriever<
+  TMetadata extends Record<string, unknown>,
+> {
+  invoke(query: string): Promise<Array<SemanticCacheDocument<TMetadata>>>;
+}
 
 export type PlaceholderType =
   | 'string'
@@ -242,9 +255,11 @@ export type QueryTemplate = {
 };
 
 export type QueryTemplateMetadata = {
+  id?: string;
   templateId: string;
   template: string;
   type: DbQueryStoredTypes.Template;
+  tenantId: string;
   description: string;
   votes: number;
   placeholders: string; // JSON-serialized TemplatePlaceholder[]

@@ -1,2 +1,2 @@
 export * from './gemini.provider';
-export * from './gemini.mastra.provider';
+export {Gemini as MastraGemini} from './gemini.provider';

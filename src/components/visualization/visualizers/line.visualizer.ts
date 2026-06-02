@@ -50,10 +50,10 @@ export class LineVisualizer implements IVisualizer {
     // Line visualizer's schema has 3 required cols + arrays; structured-output
     // strict mode misbehaves with "thinking" model chunks on some providers
     // (this was main's exact reason for `SmartNonThinkingLLM` here).
-    // Prefer the Mastra non-thinking slot when bound; fall back to chat LLM.
-    @inject(AiIntegrationBindings.MastraSmartNonThinkingLLM, {optional: true})
+    // Prefer the non-thinking slot when bound; fall back to chat LLM.
+    @inject(AiIntegrationBindings.SmartNonThinkingLLM, {optional: true})
     smartNonThinkingModel: MastraModelConfig | undefined,
-    @inject(AiIntegrationBindings.MastraChatLLM)
+    @inject(AiIntegrationBindings.ChatLLM)
     chatModel: MastraModelConfig,
   ) {
     this.model = smartNonThinkingModel ?? chatModel;

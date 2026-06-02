@@ -4,7 +4,7 @@ import {buildLangSmithExporter, makeObservability} from './util';
 
 /**
  * Mastra Observability wired with the LangSmith exporter. Consumer binds
- * this against `AiIntegrationBindings.MastraObservability` to ship every
+ * this against `MastraInternalBindings.Observability` to ship every
  * agent / workflow / tool span to LangSmith for trace inspection and
  * dataset capture.
  *
