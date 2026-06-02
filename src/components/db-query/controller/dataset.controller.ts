@@ -1,11 +1,13 @@
 import {service} from '@loopback/core';
 import {Filter, FilterExcludingWhere} from '@loopback/repository';
 import {
+  del,
   get,
   getModelSchemaRef,
   HttpErrors,
   param,
   patch,
+  post,
   requestBody,
 } from '@loopback/rest';
 import {
@@ -82,7 +84,15 @@ export class DataSetController {
   async find(@param.filter(DataSet) filter?: Filter<IDataSet>) {
     return this.datasetHelper.find({
       ...filter,
-      fields: ['id', 'tenantId', 'createdBy', 'votes', 'description'],
+      fields: [
+        'id',
+        'tenantId',
+        'createdBy',
+        'votes',
+        'description',
+        'createdOn',
+        'modifiedOn',
+      ],
     });
   }
 
@@ -111,7 +121,15 @@ export class DataSetController {
     const [dataset] = await this.datasetHelper.find({
       where: {id},
       ...filter,
-      fields: ['id', 'tenantId', 'createdBy', 'votes', 'description'],
+      fields: [
+        'id',
+        'tenantId',
+        'createdBy',
+        'votes',
+        'description',
+        'createdOn',
+        'modifiedOn',
+      ],
     } as Filter<IDataSet>);
     const action = await this.datasetHelper.getLikes(id);
     if (!dataset) {
@@ -157,5 +175,64 @@ export class DataSetController {
     body: DatasetUpdateDTO,
   ) {
     await this.datasetHelper.updateById(id, body);
+  }
+
+  @authorize({permissions: [PermissionKey.DeleteDataset]})
+  @authenticate(STRATEGY.BEARER, {
+    passReqToCallback: true,
+  })
+  @del('/datasets/{id}', {
+    security: OPERATION_SECURITY_SPEC,
+    responses: {
+      [STATUS_CODE.NO_CONTENT]: {
+        description: 'Dataset deleted',
+      },
+    },
+  })
+  async deleteById(@param.path.string('id') id: string) {
+    await this.datasetHelper.deleteById(id);
+  }
+
+  @authorize({permissions: [PermissionKey.DeleteDataset]})
+  @authenticate(STRATEGY.BEARER, {
+    passReqToCallback: true,
+  })
+  @post('/datasets/delete', {
+    security: OPERATION_SECURITY_SPEC,
+    responses: {
+      [STATUS_CODE.OK]: {
+        description: 'Number of datasets deleted',
+        content: {
+          [CONTENT_TYPE.JSON]: {
+            schema: {
+              type: 'object',
+              properties: {count: {type: 'number'}},
+            },
+          },
+        },
+      },
+    },
+  })
+  async deleteMany(
+    @requestBody({
+      required: true,
+      content: {
+        [CONTENT_TYPE.JSON]: {
+          schema: {
+            type: 'object',
+            required: ['ids'],
+            properties: {
+              ids: {type: 'array', items: {type: 'string'}},
+            },
+          },
+        },
+      },
+    })
+    body: {
+      ids: string[];
+    },
+  ): Promise<{count: number}> {
+    const count = await this.datasetHelper.deleteMany(body.ids ?? []);
+    return {count};
   }
 }

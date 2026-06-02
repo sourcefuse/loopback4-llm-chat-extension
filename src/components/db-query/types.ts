@@ -158,6 +158,11 @@ export type IDataSet = {
   prompt: string;
   createdBy?: string;
   id?: string;
+  // Audit timestamps inherited from the persisted entity (BaseEntity).
+  // Surfaced so list/detail responses can show created + last-updated time
+  // (serialised as ISO strings over the wire). Clients parse for display.
+  createdOn?: Date;
+  modifiedOn?: Date;
 };
 
 export type IDatasetWithActions = IDataSet & {
@@ -176,6 +181,8 @@ export interface IDataSetStore {
     data: DataObject<IDataSet>,
     where?: Where<IDataSet>,
   ): Promise<Count>;
+  deleteById(id: string): Promise<void>;
+  deleteAll(where?: Where<IDataSet>): Promise<Count>;
   getData<T extends AnyObject>(
     id: string,
     limit?: number,

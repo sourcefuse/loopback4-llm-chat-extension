@@ -6,4 +6,5 @@ export enum PermissionKey {
   ViewChat = '9005',
   CreateTemplate = '9006',
   ViewTemplate = '9007',
+  DeleteDataset = '9008',
 }

@@ -86,4 +86,48 @@ export class DataSetHelper {
   async getLikes(id: string) {
     return this.store.getLikes(id);
   }
+
+  /**
+   * Soft-delete a single dataset and evict its semantic-cache entry. The
+   * store.deleteById is the canonical write; cache eviction is best-effort
+   * (a vector-store hiccup must not fail the delete).
+   */
+  async deleteById(id: string) {
+    const dataset = await this.store.findById(id);
+    await this.store.deleteById(id);
+    try {
+      await this.semanticCache.deleteByFilter({
+        type: DbQueryStoredTypes.DataSet,
+        datasetId: id,
+        tenantId: dataset.tenantId,
+      });
+    } catch (err) {
+      debug(
+        'dataset %s cache eviction on delete failed (non-fatal): %O',
+        id,
+        err,
+      );
+    }
+  }
+
+  /**
+   * Bulk soft-delete datasets by id (tenant-scoped via the store's
+   * authn-aware deleteAll). Returns the number deleted. Cache eviction is
+   * best-effort per id.
+   */
+  async deleteMany(ids: string[]): Promise<number> {
+    if (!ids.length) return 0;
+    const {count} = await this.store.deleteAll({id: {inq: ids}});
+    for (const id of ids) {
+      try {
+        await this.semanticCache.deleteByFilter({
+          type: DbQueryStoredTypes.DataSet,
+          datasetId: id,
+        });
+      } catch (err) {
+        debug('dataset %s cache eviction on bulk-delete failed: %O', id, err);
+      }
+    }
+    return count;
+  }
 }
