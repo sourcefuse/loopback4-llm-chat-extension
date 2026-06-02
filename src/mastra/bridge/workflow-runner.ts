@@ -242,6 +242,7 @@ export class WorkflowRunner {
     // first, then prefer thread.resourceId on resume.
     let thread;
     let resourceId: string;
+    const requesterResourceId = await this.resolveRequesterResourceId();
     if (sessionId) {
       thread = await memory.getThreadById({threadId: sessionId});
       if (!thread) {
@@ -273,9 +274,38 @@ export class WorkflowRunner {
         yield* queue;
         return;
       }
+      // SECURITY: a thread may only be resumed by the same tenant-scoped
+      // requester that created it. Without a resolvable requester identity
+      // we cannot prove ownership, so refuse rather than leak another
+      // tenant's conversation. With one, it must match thread.resourceId.
+      if (!requesterResourceId) {
+        queue.push({
+          type: LLMStreamEventType.Error,
+          data: {
+            message:
+              'Unable to authorize thread resume: requester resource identity ' +
+              'is unavailable. Ensure an authenticated user with tenantId + id ' +
+              'is present, or bind AiIntegrationBindings.ResourceId.',
+          },
+        });
+        queue.close();
+        yield* queue;
+        return;
+      }
+      if (thread.resourceId !== requesterResourceId) {
+        queue.push({
+          type: LLMStreamEventType.Error,
+          data: {
+            message: `Thread ${sessionId} does not belong to the authenticated requester`,
+          },
+        });
+        queue.close();
+        yield* queue;
+        return;
+      }
       resourceId = thread.resourceId;
     } else {
-      resourceId = this.resourceIdValue ?? randomUUID();
+      resourceId = requesterResourceId ?? randomUUID();
       thread = await memory.createThread({resourceId});
       queue.push({
         type: LLMStreamEventType.Init,
@@ -615,5 +645,26 @@ export class WorkflowRunner {
       templateCache,
       visualizers,
     };
+  }
+
+  /**
+   * Tenant-scoped requester identity used to (a) stamp newly-created
+   * threads and (b) authorize resume of existing ones. Prefers an
+   * explicitly bound `AiIntegrationBindings.ResourceId`; otherwise derives
+   * `${tenantId}:${principalId}` from the authenticated user. Returns
+   * undefined when neither is resolvable so callers can refuse rather than
+   * resume into the wrong scope.
+   */
+  private async resolveRequesterResourceId(): Promise<string | undefined> {
+    if (this.resourceIdValue) return this.resourceIdValue;
+    const user = await this.lb4Ctx.get<IAuthUserWithPermissions>(
+      AuthenticationBindings.CURRENT_USER,
+      {optional: true},
+    );
+    if (!user) return undefined;
+    const principalId =
+      typeof user.id === 'string' ? user.id : user.userTenantId;
+    if (!principalId || !user.tenantId) return undefined;
+    return `${user.tenantId}:${principalId}`;
   }
 }

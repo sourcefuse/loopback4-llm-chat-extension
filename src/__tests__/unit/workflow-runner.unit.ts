@@ -1,5 +1,7 @@
 import {Context} from '@loopback/core';
 import {expect, sinon} from '@loopback/testlab';
+import {AuthenticationBindings} from 'loopback4-authentication';
+import type {IAuthUserWithPermissions} from '@sourceloop/core';
 import {WorkflowRunner} from '../../mastra/bridge/workflow-runner';
 import {InProcessRunRegistry} from '../../mastra/bridge/run-registry';
 import {UsageAccumulator} from '../../services/usage-accumulator.service';
@@ -80,9 +82,21 @@ describe('WorkflowRunner Unit', () => {
     sinon.restore();
   });
 
-  function makeRunner(resourceIdValue?: string): WorkflowRunner {
+  function makeRunner(
+    resourceIdValue?: string,
+    authUser: IAuthUserWithPermissions | null = {
+      id: 'user-1',
+      userTenantId: 'user-1',
+      tenantId: 'tenant-1',
+      permissions: ['*'],
+    } as unknown as IAuthUserWithPermissions,
+  ): WorkflowRunner {
+    const ctx = new Context('test');
+    if (authUser) {
+      ctx.bind(AuthenticationBindings.CURRENT_USER).to(authUser);
+    }
     return new WorkflowRunner(
-      new Context('test'),
+      ctx,
       mastraStub as never,
       undefined,
       runRegistry,
@@ -156,6 +170,69 @@ describe('WorkflowRunner Unit', () => {
     ]);
     sinon.assert.calledOnce(getThreadById);
     sinon.assert.notCalled(createThread);
+  });
+
+  it('emits Error and stops when resumed thread belongs to another resource owner', async () => {
+    getThreadById.resolves({
+      id: 'thread-existing',
+      resourceId: 'tenant-other:user-other',
+    });
+
+    const events = await collect(
+      makeRunner().run(
+        'cont',
+        undefined,
+        new AbortController().signal,
+        'thread-existing',
+      ),
+    );
+
+    expect(events).to.have.length(1);
+    expect(events[0].type).to.equal(LLMStreamEventType.Error);
+    expect((events[0] as {data: {message: string}}).data.message).to.match(
+      /does not belong/,
+    );
+  });
+
+  it('emits Error and stops when resumed thread has no resourceId', async () => {
+    getThreadById.resolves({id: 'thread-existing'});
+
+    const events = await collect(
+      makeRunner().run(
+        'cont',
+        undefined,
+        new AbortController().signal,
+        'thread-existing',
+      ),
+    );
+
+    expect(events).to.have.length(1);
+    expect(events[0].type).to.equal(LLMStreamEventType.Error);
+    expect((events[0] as {data: {message: string}}).data.message).to.match(
+      /missing resourceId/,
+    );
+  });
+
+  it('emits Error and stops when requester identity is unavailable on resume', async () => {
+    getThreadById.resolves({
+      id: 'thread-existing',
+      resourceId: 'tenant-1:user-1',
+    });
+
+    const events = await collect(
+      makeRunner(undefined, null).run(
+        'cont',
+        undefined,
+        new AbortController().signal,
+        'thread-existing',
+      ),
+    );
+
+    expect(events).to.have.length(1);
+    expect(events[0].type).to.equal(LLMStreamEventType.Error);
+    expect((events[0] as {data: {message: string}}).data.message).to.match(
+      /resource identity is unavailable/,
+    );
   });
 
   it('emits Error and stops when sessionId thread is not found', async () => {
