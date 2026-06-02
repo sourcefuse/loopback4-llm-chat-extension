@@ -17,6 +17,7 @@ import {
   getTemplateCache,
   getTemplateHelper,
   getTemplateStore,
+  idToString,
   pickRelevantTables,
   resolvePersistDeps,
   resolveTemplateById,
@@ -172,7 +173,7 @@ Return ONLY the verdict, no other text.`;
         const idx = parseInt(match[1], 10) - 1;
         const doc = docs[idx];
         if (doc?.metadata?.id) {
-          return {cacheHit: true, datasetId: doc.metadata.id};
+          return {cacheHit: true, datasetId: idToString(doc.metadata.id)};
         }
       }
     } catch {
@@ -348,7 +349,7 @@ const returnCachedStep = createStep({
     try {
       const dataset = await store.findById(data.datasetId);
       return {
-        datasetId: dataset.id ?? data.datasetId,
+        datasetId: idToString(dataset.id ?? data.datasetId),
         sql: dataset.query ?? '',
       };
     } catch {
@@ -402,7 +403,7 @@ const saveDatasetFromTemplateStep = createStep({
       schemaHash,
       votes: 0,
     });
-    return {datasetId: dataset.id ?? '', sql: resolved.sql};
+    return {datasetId: idToString(dataset.id), sql: resolved.sql};
   },
 });
 
@@ -667,7 +668,12 @@ const saveDatasetStep = createStep({
     // (the AI's job is to produce the query; the UI renders the grid from
     // the datasetId). Any AI-visible rows are opt-in via the consumer's
     // `readAccessForAI` flag and resolved in the tool layer.
-    return {datasetId: dataset.id ?? '', sql: data.sql};
+    // DB stores (e.g. SQLite autoincrement) return a NUMERIC id; the
+    // workflow output contract + downstream tool extraction expect a
+    // string, so coerce. Without this the tool's string-only id extraction
+    // drops the id and reports the run as failed even though the dataset
+    // was persisted.
+    return {datasetId: idToString(dataset.id), sql: data.sql};
   },
 });
 

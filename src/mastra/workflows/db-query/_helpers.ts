@@ -6,6 +6,17 @@ import type {TracingContext} from '@mastra/core/observability';
 import type {IAuthUserWithPermissions} from '@sourceloop/core';
 import {generateText} from 'ai';
 import type {LanguageModel} from 'ai';
+
+/**
+ * Coerce a dataset/template id to a string. DB stores (e.g. SQLite
+ * autoincrement) hand back a numeric id; the workflow output contract and
+ * the tool-layer extraction are string-typed, so a number would otherwise
+ * be silently dropped (the tool reports the run failed even though the row
+ * was persisted). Returns '' for null/undefined.
+ */
+export function idToString(v: unknown): string {
+  return v === null || v === undefined ? '' : String(v);
+}
 import {
   LLMStreamEventType,
   type LLMStreamEvent,
