@@ -44,6 +44,13 @@ import {
 import type {MastraRcShape} from '../workflows/db-query/_helpers';
 
 type RecordLike = Record<string, unknown>;
+type ThreadMemory = {
+  getThreadById(args: {
+    threadId: string;
+  }): Promise<{id: string; resourceId?: string | null} | null | undefined>;
+  createThread(args: {resourceId: string}): Promise<{id: string}>;
+};
+type ResolvedThread = {threadId: string; resourceId: string} | {error: string};
 type AgentStreamChunk = {type: string; payload?: unknown};
 type AgentStreamUsage = {inputTokens?: number; outputTokens?: number};
 type AgentStreamResult = {
@@ -287,78 +294,23 @@ export class WorkflowRunner {
     // diverge from the resourceId the original request used and break
     // Memory.semanticRecall + working memory scope. Load the thread
     // first, then prefer thread.resourceId on resume.
-    let thread;
-    let resourceId: string;
     const requesterResourceId = await this.resolveRequesterResourceId();
-    if (sessionId) {
-      thread = await memory.getThreadById({threadId: sessionId});
-      if (!thread) {
-        queue.push({
-          type: LLMStreamEventType.Error,
-          data: {message: `Thread ${sessionId} not found`},
-        });
-        queue.close();
-        yield* queue;
-        return;
-      }
-      // Resume path: thread.resourceId is set by Memory.createThread on
-      // every write, so a missing value here is an invariant violation
-      // upstream (data corruption / manual DB edit / Memory driver bug).
-      // Papering over it with a fresh randomUUID would orphan the thread
-      // — every subsequent turn would see a different Memory scope and
-      // semanticRecall would return nothing. Surface the corruption as
-      // an SSE Error instead.
-      if (!thread.resourceId) {
-        queue.push({
-          type: LLMStreamEventType.Error,
-          data: {
-            message:
-              `Thread ${sessionId} is missing resourceId — possible data ` +
-              `corruption. Refusing to resume to avoid orphaning the conversation.`,
-          },
-        });
-        queue.close();
-        yield* queue;
-        return;
-      }
-      // SECURITY: a thread may only be resumed by the same tenant-scoped
-      // requester that created it. Without a resolvable requester identity
-      // we cannot prove ownership, so refuse rather than leak another
-      // tenant's conversation. With one, it must match thread.resourceId.
-      if (!requesterResourceId) {
-        queue.push({
-          type: LLMStreamEventType.Error,
-          data: {
-            message:
-              'Unable to authorize thread resume: requester resource identity ' +
-              'is unavailable. Ensure an authenticated user with tenantId + id is present, ' +
-              'or bind MastraInternalBindings.ResourceId.',
-          },
-        });
-        queue.close();
-        yield* queue;
-        return;
-      }
-      if (thread.resourceId !== requesterResourceId) {
-        queue.push({
-          type: LLMStreamEventType.Error,
-          data: {
-            message: `Thread ${sessionId} does not belong to the authenticated requester`,
-          },
-        });
-        queue.close();
-        yield* queue;
-        return;
-      }
-      resourceId = thread.resourceId;
-    } else {
-      resourceId = requesterResourceId ?? randomUUID();
-      thread = await memory.createThread({resourceId});
+    const resolved = await this.resolveThread(
+      memory,
+      sessionId,
+      requesterResourceId,
+      id => queue.push({type: LLMStreamEventType.Init, data: {sessionId: id}}),
+    );
+    if ('error' in resolved) {
       queue.push({
-        type: LLMStreamEventType.Init,
-        data: {sessionId: thread.id},
+        type: LLMStreamEventType.Error,
+        data: {message: resolved.error},
       });
+      queue.close();
+      yield* queue;
+      return;
     }
+    const {threadId, resourceId} = resolved;
 
     // File summarisation — port of v2 SummariseFileNode. For each
     // attached file, ask the ChatLLM to produce
@@ -396,7 +348,7 @@ export class WorkflowRunner {
         maxSteps: 60,
         abortSignal: abort,
         requestContext: ctx,
-        memory: {thread: thread.id, resource: resourceId},
+        memory: {thread: threadId, resource: resourceId},
         ...(temperature !== undefined ? {temperature} : {}),
         ...(providerOptions ? {providerOptions: providerOptions as never} : {}),
       },
@@ -745,6 +697,57 @@ export class WorkflowRunner {
    * undefined when neither is resolvable so callers can refuse rather than
    * resume into the wrong scope.
    */
+  /**
+   * Resolve the Memory thread for this run. On a fresh request (no
+   * sessionId) creates a thread stamped with the requester identity and
+   * emits Init. On resume, loads the thread and enforces: it exists, it
+   * carries a resourceId, the requester identity is resolvable, and it
+   * matches the thread's owner. Returns {error} for any failure so run()
+   * stays flat (one error-emit site) and under SonarQube's complexity cap.
+   */
+  private async resolveThread(
+    memory: ThreadMemory,
+    sessionId: string | undefined,
+    requesterResourceId: string | undefined,
+    emitInit: (sessionId: string) => void,
+  ): Promise<ResolvedThread> {
+    if (!sessionId) {
+      const resourceId = requesterResourceId ?? randomUUID();
+      const thread = await memory.createThread({resourceId});
+      emitInit(thread.id);
+      return {threadId: thread.id, resourceId};
+    }
+    const thread = await memory.getThreadById({threadId: sessionId});
+    if (!thread) return {error: `Thread ${sessionId} not found`};
+    // A missing resourceId is an upstream invariant violation (corruption /
+    // manual DB edit). Papering over it with a fresh UUID would orphan the
+    // thread's Memory scope, so refuse.
+    if (!thread.resourceId) {
+      return {
+        error:
+          `Thread ${sessionId} is missing resourceId — possible data ` +
+          `corruption. Refusing to resume to avoid orphaning the conversation.`,
+      };
+    }
+    // SECURITY: a thread may only be resumed by the same tenant-scoped
+    // requester that created it. No resolvable identity → cannot prove
+    // ownership → refuse rather than leak another tenant's conversation.
+    if (!requesterResourceId) {
+      return {
+        error:
+          'Unable to authorize thread resume: requester resource identity ' +
+          'is unavailable. Ensure an authenticated user with tenantId + id is present, ' +
+          'or bind MastraInternalBindings.ResourceId.',
+      };
+    }
+    if (thread.resourceId !== requesterResourceId) {
+      return {
+        error: `Thread ${sessionId} does not belong to the authenticated requester`,
+      };
+    }
+    return {threadId: thread.id, resourceId: thread.resourceId};
+  }
+
   private async resolveRequesterResourceId(): Promise<string | undefined> {
     if (this.resourceIdValue) return this.resourceIdValue;
     const user = await this.lb4Ctx.get<IAuthUserWithPermissions>(

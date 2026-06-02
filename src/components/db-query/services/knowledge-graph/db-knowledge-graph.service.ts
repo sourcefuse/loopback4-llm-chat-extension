@@ -431,11 +431,18 @@ Focus on the core business concept or data domain. AGAIN, ensure the output is a
   }
 
   private parseConceptJson(raw: string): Concept | null {
-    const trimmed = raw.trim();
-    const withoutFenceStart = trimmed
-      .replace(/^```json\s*/i, '')
-      .replace(/^```\s*/i, '');
-    const cleaned = withoutFenceStart.replace(/\s*```$/, '').trim();
+    // Strip an optional ```json / ``` code fence. Uses anchored literals +
+    // string slicing rather than a `\s*```$` regex — the latter is prone to
+    // super-linear backtracking (DoS) on long whitespace runs.
+    let cleaned = raw
+      .trim()
+      .replace(/^```json/i, '')
+      .replace(/^```/, '')
+      .trimStart();
+    if (cleaned.endsWith('```')) {
+      cleaned = cleaned.slice(0, -3);
+    }
+    cleaned = cleaned.trim();
     try {
       return JSON.parse(cleaned) as Concept;
     } catch {
