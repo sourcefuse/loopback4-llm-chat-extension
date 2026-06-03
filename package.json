@@ -16,6 +16,10 @@
   },
   "exports": {
     ".": "./dist/index.js",
+    "./testing": {
+      "type": "./dist/components/db-query/testing/index.d.ts",
+      "default": "./dist/components/db-query/testing/index.js"
+    },
     "./aws": {
       "type": "./dist/sub-modules/providers/aws/index.d.ts",
       "default": "./dist/sub-modules/providers/aws/index.js"
