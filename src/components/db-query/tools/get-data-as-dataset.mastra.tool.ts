@@ -56,10 +56,10 @@ export class MastraGetDataAsDatasetTool implements IMastraGraphTool {
       execute: async (inputData, ctx) => {
         const writer = asEventWriter(ctx.requestContext?.get('eventWriter'));
         const toolCallId = ctx.agent?.toolCallId ?? this.key;
-        writer?.({
-          type: LLMStreamEventType.Log,
-          data: `Generating SQL for: ${inputData.prompt}`,
-        });
+        // Emit a single tool-started status. The granular per-stage progress
+        // ('Generating SQL query…', 'Validating…') is emitted by the workflow
+        // steps themselves, so a pre-workflow 'Generating SQL' Log here would
+        // be premature (fires before generation) and redundant.
         writer?.({
           type: LLMStreamEventType.ToolStatus,
           data: {id: toolCallId, status: ToolStatus.Running},
