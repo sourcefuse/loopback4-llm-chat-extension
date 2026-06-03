@@ -4,6 +4,7 @@ import type {LanguageModel} from 'ai';
 import type {IDbConnector} from '../../../components/db-query/types';
 import {
   buildGenerateSqlPrompt,
+  buildImproveSqlPrompt,
   generateSqlOnce,
   idToString,
   pickRelevantTables,
@@ -14,6 +15,27 @@ import {
   validateSqlSemantic,
   validateSqlSyntactic,
 } from '../../../mastra/workflows/db-query/_helpers';
+import {
+  checkCacheStep,
+  getTablesStep,
+} from '../../../mastra/workflows/db-query/generate.steps';
+
+/** Minimal RequestContext stand-in: workflow steps only call `.get(key)`. */
+function fakeRc(map: Record<string, unknown>): never {
+  return {get: (k: string) => map[k]} as never;
+}
+/** Invoke a Mastra step's execute directly with a fake context. */
+async function runStep(
+  step: {execute: (args: never) => Promise<unknown>},
+  inputData: unknown,
+  rc: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  return (await step.execute({
+    inputData,
+    requestContext: fakeRc(rc),
+    tracingContext: undefined,
+  } as never)) as Record<string, unknown>;
+}
 
 /**
  * Faithful unit coverage for the db-query workflow's SQL-generation +
@@ -86,6 +108,20 @@ describe('db-query generate helpers (unit)', () => {
         feedback: 'Syntactic error: near EXTRACT',
       });
       expect(p).to.match(/near EXTRACT/);
+    });
+  });
+
+  describe('buildImproveSqlPrompt (fix-query)', () => {
+    it('includes the existing SQL, the delta request and feedback', () => {
+      const p = buildImproveSqlPrompt({
+        prompt: 'also show currency',
+        tables: ['employees', 'currencies'],
+        originalSql: 'SELECT name FROM employees',
+        feedback: 'add the join',
+      });
+      expect(p).to.match(/SELECT name FROM employees/);
+      expect(p).to.match(/also show currency/);
+      expect(p).to.match(/add the join/);
     });
   });
 
@@ -251,6 +287,62 @@ describe('db-query generate helpers (unit)', () => {
       const r = resolvePersistDeps(store, {tenantId: 't'} as never);
       expect(r).to.not.be.null();
       expect(r?.user.tenantId).to.equal('t');
+    });
+  });
+
+  describe('getTablesStep (get-tables baseline)', () => {
+    it('returns the schema table names from SchemaStore', async () => {
+      const out = await runStep(
+        getTablesStep,
+        {prompt: 'x'},
+        {
+          schemaStore: {get: () => ({tables: {employees: {}, currencies: {}}})},
+        },
+      );
+      expect(out.tables).to.eql(['employees', 'currencies']);
+    });
+    it('returns [] when no SchemaStore is bound', async () => {
+      const out = await runStep(getTablesStep, {prompt: 'x'}, {});
+      expect(out.tables).to.eql([]);
+    });
+  });
+
+  describe('checkCacheStep (cache judge)', () => {
+    const cache = (docs: unknown[]) => ({invoke: async () => docs});
+    it('returns cacheHit when the judge replies AsIs <index>', async () => {
+      const out = await runStep(
+        checkCacheStep,
+        {prompt: 'top earners'},
+        {
+          queryCache: cache([
+            {pageContent: 'highest paid', metadata: {id: '42'}},
+          ]),
+          cheapLlm: model('AsIs 1'),
+        },
+      );
+      expect(out.cacheHit).to.be.true();
+      expect(out.datasetId).to.equal('42');
+    });
+    it('returns no cacheHit when the judge replies Similar', async () => {
+      const out = await runStep(
+        checkCacheStep,
+        {prompt: 'top earners'},
+        {
+          queryCache: cache([
+            {pageContent: 'highest paid', metadata: {id: '42'}},
+          ]),
+          cheapLlm: model('Similar 1'),
+        },
+      );
+      expect(out.cacheHit).to.be.false();
+    });
+    it('returns no cacheHit when the cache has no candidates', async () => {
+      const out = await runStep(
+        checkCacheStep,
+        {prompt: 'x'},
+        {queryCache: cache([]), cheapLlm: model('AsIs 1')},
+      );
+      expect(out.cacheHit).to.be.false();
     });
   });
 });
