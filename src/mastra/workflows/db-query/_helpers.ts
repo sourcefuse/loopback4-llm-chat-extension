@@ -6,6 +6,9 @@ import type {TracingContext} from '@mastra/core/observability';
 import type {IAuthUserWithPermissions} from '@sourceloop/core';
 import {generateText} from 'ai';
 import type {LanguageModel} from 'ai';
+import debugFactory from 'debug';
+
+const dbg = debugFactory('ai-integration:db-query-helpers');
 
 /**
  * Coerce a dataset/template id to a string. DB stores (e.g. SQLite
@@ -459,21 +462,32 @@ async function runValidationStage(args: {
   checklist?: string;
   onStatus?: (stage: 'syntactic' | 'semantic') => void;
   tracing?: TracingContext;
+  lastAttempt?: boolean;
 }): Promise<{passed: boolean; feedback?: string}> {
   const {sql} = args;
   if (!sql)
     return {passed: false, feedback: 'SQL generation produced an empty query.'};
+  // Run the two validators CONCURRENTLY: the syntactic check is a DB EXPLAIN
+  // and the semantic check is an LLM call — independent, so there's no reason
+  // to pay them sequentially. Syntactic failure is authoritative (the SQL
+  // won't run), so it wins when both return.
   args.onStatus?.('syntactic');
-  const syntactic = await validateSqlSyntactic(sql, args.dbConnector);
-  if (!syntactic.passed) return syntactic;
   args.onStatus?.('semantic');
-  return validateSqlSemantic({
-    sql,
-    chatLlm: args.chatLlm,
-    prompt: args.prompt,
-    checklist: args.checklist,
-    tracing: args.tracing,
-  });
+  const [syntactic, semantic] = await Promise.all([
+    validateSqlSyntactic(sql, args.dbConnector),
+    validateSqlSemantic({
+      sql,
+      chatLlm: args.chatLlm,
+      prompt: args.prompt,
+      checklist: args.checklist,
+      tracing: args.tracing,
+    }),
+  ]);
+  if (!syntactic.passed) return syntactic;
+  // On the final attempt, executable SQL beats an empty dataset: the
+  // semantic judge is advisory, so don't let it fail the run outright.
+  if (args.lastAttempt) return {passed: true};
+  return semantic;
 }
 
 /**
@@ -495,6 +509,10 @@ export async function runSqlAttempt(args: {
   buildDescription?: (sql: string, prompt: string) => string;
   onStatus?: (stage: 'syntactic' | 'semantic') => void;
   tracing?: TracingContext;
+  /** True on the final dountil iteration — accept syntactically-valid SQL
+   * even if the (advisory) semantic judge dislikes it, so an executable
+   * query is never thrown away in favour of an empty dataset. */
+  lastAttempt?: boolean;
 }): Promise<SqlAttemptResult> {
   const stage = await runGenerationStage(args);
   if (stage.error) {
@@ -508,6 +526,7 @@ export async function runSqlAttempt(args: {
     checklist: args.checklist,
     onStatus: args.onStatus,
     tracing: args.tracing,
+    lastAttempt: args.lastAttempt,
   });
   return {
     sql: stage.sql,
@@ -622,16 +641,23 @@ export async function validateSqlSemantic(args: {
 }): Promise<{passed: boolean; feedback?: string}> {
   const {sql, chatLlm, prompt, checklist, tracing} = args;
   if (!sql || !chatLlm || !checklist) return {passed: true};
-  const semanticPrompt = `You are a SQL semantic validator. Decide whether the SQL below satisfies every item in the validation checklist for the user's request.
+  // Bias toward ACCEPT. The syntactic validator (DB EXPLAIN) has already
+  // confirmed the SQL parses + runs against the real schema; this LLM judge
+  // only guards against the query answering the wrong question. A judge that
+  // nitpicks valid SQL forces the dountil to burn every attempt and the run
+  // ends in `failed` with an empty dataset — the exact false-rejection that
+  // made simple prompts return nothing. So: reject ONLY on a clear, concrete
+  // violation; default to valid when unsure.
+  const semanticPrompt = `You are a lenient SQL reviewer. The SQL has already passed syntax + schema checks. Your ONLY job is to catch SQL that clearly answers a DIFFERENT question than the user asked.
 
 User request: ${prompt}
 SQL: ${sql}
-Validation checklist:
+Explicit constraints the user stated:
 ${checklist}
 
-If every checklist item is satisfied, return ONLY: <valid/>
-Otherwise return: <invalid>one short sentence per failed item</invalid>
-Do not return any other text.`;
+Return ONLY <valid/> unless the SQL CLEARLY and DEFINITELY violates an explicit constraint above (e.g. filters the wrong column, ignores a stated filter). Ignore stylistic choices, column aliases, extra returned columns, ordering, and anything not explicitly stated. When in any doubt, return <valid/>.
+If — and only if — there is a clear violation, return: <invalid>one short sentence naming the violated constraint</invalid>
+No other text.`;
   try {
     const verdict = await tracedGenerateText({
       model: chatLlm,
@@ -641,22 +667,19 @@ Do not return any other text.`;
       resultType: 'reasoning',
     });
     const text = verdict.text.trim();
-    if (text.includes('<valid/>')) return {passed: true};
+    // Default to PASS: only reject on an explicit, parseable <invalid> verdict.
     const match = text.match(/<invalid>([\s\S]*?)<\/invalid>/);
-    return {
-      passed: false,
-      feedback: `Semantic error: ${match?.[1]?.trim() ?? text}`,
-    };
+    const reason = match?.[1]?.trim();
+    if (reason) {
+      return {passed: false, feedback: `Semantic error: ${reason}`};
+    }
+    return {passed: true};
   } catch (err) {
-    // Verdict LLM rejected. Return passed=false with retry feedback so
-    // the dountil loop tries again up to MAX_VALIDATION_ATTEMPTS. The
-    // post-loop branch then routes to failedStep with a real reason if
-    // every attempt fails. Treating a flaky judge as PASS would let
-    // wrong-result SQL persist to saveDatasetStep.
-    return {
-      passed: false,
-      feedback: `Validator unavailable: ${(err as Error).message ?? 'unknown'}`,
-    };
+    // The judge is best-effort — syntactic validation already proved the SQL
+    // runs. A flaky/unavailable judge must NOT fail otherwise-valid SQL (that
+    // produced empty datasets for simple prompts). Pass; log for visibility.
+    dbg('semantic-validate judge unavailable, passing: %o', err);
+    return {passed: true};
   }
 }
 

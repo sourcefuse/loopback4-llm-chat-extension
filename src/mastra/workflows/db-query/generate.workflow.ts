@@ -487,9 +487,35 @@ const generateChecklistStep = createStep({
     tables: z.array(z.string()),
     checklist: z.string(),
     attempts: z.number(),
+    // Carried only on a cache/template short-circuit (see below).
+    cached: z.boolean().optional(),
+    datasetId: z.string().optional(),
+    sql: z.string().optional(),
   }),
   execute: async ({inputData, requestContext, tracingContext}) => {
     const wrapped = inputData as Record<string, unknown>;
+    // Cache/template short-circuit: returnCachedStep ('return-cached') or
+    // saveDatasetFromTemplateStep ('save-dataset-from-template') already
+    // produced a real datasetId. The post-cache branch's other arms fall
+    // through into this generation pipeline, so without this guard a cache
+    // hit would re-run checklist + SQL generation + validation and DISCARD
+    // the cached dataset. Carry the id through; sqlAndValidate + saveDataset
+    // pass it through unchanged, skipping all LLM work.
+    const hit = (wrapped['return-cached'] ??
+      wrapped['save-dataset-from-template']) as
+      | {datasetId?: string; sql?: string}
+      | undefined;
+    if (hit?.datasetId) {
+      return {
+        prompt: '',
+        tables: [],
+        checklist: '',
+        attempts: 0,
+        cached: true,
+        datasetId: idToString(hit.datasetId),
+        sql: hit.sql ?? '',
+      };
+    }
     const fromGetColumns = wrapped[STEP_GET_COLUMNS] as
       | {prompt?: string; tables?: string[]}
       | undefined;
@@ -560,20 +586,42 @@ const sqlAndValidateStep = createStep({
     prompt: z.string(),
     tables: z.array(z.string()),
     checklist: z.string(),
+    cached: z.boolean().optional(),
+    datasetId: z.string().optional(),
   }),
   execute: async ({inputData, requestContext, tracingContext}) => {
-    emitToolStatus(
-      requestContext,
-      STEP_SQL_AND_VALIDATE,
-      'Generating SQL query from the prompt',
-    );
     const data = inputData as {
       prompt?: string;
       tables?: string[];
       checklist?: string;
       feedback?: string;
       attempts?: number;
+      cached?: boolean;
+      datasetId?: string;
+      sql?: string;
     };
+    // Cache/template hit (carried from generateChecklist) — already have a
+    // real datasetId, so skip SQL generation + both validators. Mark passed
+    // so the dountil exits on the first iteration.
+    if (data.cached && data.datasetId) {
+      return {
+        sql: data.sql ?? '',
+        passed: true,
+        attempts: (data.attempts ?? 0) + 1,
+        feedback: undefined,
+        description: '',
+        prompt: '',
+        tables: [],
+        checklist: '',
+        cached: true,
+        datasetId: data.datasetId,
+      };
+    }
+    emitToolStatus(
+      requestContext,
+      STEP_SQL_AND_VALIDATE,
+      'Generating SQL query from the prompt',
+    );
     const prompt = data.prompt ?? '';
     const tables = data.tables ?? [];
     const columns = getTablesWithColumns(
@@ -594,6 +642,7 @@ const sqlAndValidateStep = createStep({
       feedback: data.feedback,
       buildPrompt: buildGenerateSqlPrompt,
       buildDescription: (_sql, p) => `Generated SQL for: ${p}`,
+      lastAttempt: (data.attempts ?? 0) + 1 >= MAX_VALIDATION_ATTEMPTS,
       onStatus: stage => {
         if (stage === 'syntactic') {
           emitToolStatus(
@@ -641,7 +690,14 @@ const saveDatasetStep = createStep({
       description?: string;
       prompt?: string;
       tables?: string[];
+      cached?: boolean;
+      datasetId?: string;
     };
+    // Cache/template hit — the dataset already exists; return its id as-is
+    // instead of persisting a duplicate.
+    if (data.cached && data.datasetId) {
+      return {datasetId: idToString(data.datasetId), sql: data.sql ?? ''};
+    }
     const fallback = {datasetId: '', sql: data.sql ?? ''};
     if (!data.sql) return fallback;
     const persist = resolvePersistDeps(

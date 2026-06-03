@@ -38,7 +38,7 @@ export async function buildDatasetReadout(args: {
   if (!datasetId) {
     return `Could not ${verb === 'generated' ? 'generate' : 'update'} the dataset for that request.`;
   }
-  const base = `Dataset ${verb} and has been rendered for the user. The dataset ID is ${datasetId}. Just tell the user that it is done.`;
+  const base = `Dataset ${verb} and has been rendered for the user (dataset ID ${datasetId}). The task is COMPLETE. Do NOT call this or any other tool again for this request — reply to the user with ONE short sentence confirming it is done.`;
   if (!config?.readAccessForAI || !store) {
     return base;
   }

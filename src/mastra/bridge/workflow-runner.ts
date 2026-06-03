@@ -43,6 +43,14 @@ import {
 } from '../workflows/db-query/_helpers';
 import type {MastraRcShape} from '../workflows/db-query/_helpers';
 
+// Cap the chat agent's tool-calling loop. One data/chart/dataset request
+// needs at most: decide-tool → (tool runs) → summarise = ~2-3 LLM steps.
+// The old 60 let the model re-call tools and over-reason (double dataset
+// generations, chatty multi-step). A tight cap + the focused instructions
+// in buildInstructions() keep it a deterministic one-tool pipeline rather
+// than a free-roaming assistant. Headroom for an occasional clarify step.
+const MAX_AGENT_STEPS = 8;
+
 type RecordLike = Record<string, unknown>;
 type ThreadMemory = {
   getThreadById(args: {
@@ -345,7 +353,7 @@ export class WorkflowRunner {
     const streamPromise: Promise<AgentStreamResult> = agent.stream(
       [{role: 'user', content: augmentedQuery}],
       {
-        maxSteps: 60,
+        maxSteps: MAX_AGENT_STEPS,
         abortSignal: abort,
         requestContext: ctx,
         memory: {thread: threadId, resource: resourceId},
@@ -585,7 +593,10 @@ export class WorkflowRunner {
 
   private buildInstructions(): string {
     return [
-      'You are a helpful AI assistant. Always use one of the available tools if applicable.',
+      'You are a focused data assistant for a company database.',
+      'When the user asks for data, a chart, or a change to a dataset, call the SINGLE most appropriate tool EXACTLY ONCE, then reply with ONE short sentence describing what was done.',
+      'Never call a tool more than once for the same request. If a tool returns a result (e.g. a dataset or chart was generated), STOP and reply — the UI renders it from the result; you do not need the row data and must not re-run or second-guess a successful tool.',
+      'Only reply conversationally (no tool) when no tool fits the request.',
       ...(this.systemContext ?? []),
     ].join('\n');
   }
