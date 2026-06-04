@@ -5,26 +5,13 @@ import type {Tool, ToolExecutionContext} from '@mastra/core/tools';
 import {z} from 'zod';
 import {LLMStreamEvent, LLMStreamEventType} from '../../../graphs/event.types';
 import {IGraphTool, ToolStatus} from '../../../graphs/types';
+import {
+  asEventWriter,
+  asRecord,
+  readString,
+} from '../../../graphs/tool-event.util';
 import {MastraInternalBindings} from '../../../mastra/internal-bindings';
 import {buildDatasetReadout} from '../utils';
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return typeof value === 'object' && value !== null
-    ? (value as Record<string, unknown>)
-    : {};
-}
-
-function readString(value: unknown): string | undefined {
-  return typeof value === 'string' ? value : undefined;
-}
-
-function asEventWriter(
-  value: unknown,
-): ((e: LLMStreamEvent) => void) | undefined {
-  return typeof value === 'function'
-    ? (value as (e: LLMStreamEvent) => void)
-    : undefined;
-}
 
 /**
  * Mastra-shaped NL2SQL tool. Final form — calls

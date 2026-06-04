@@ -27,11 +27,6 @@
 
 A Loopback4 based component to integrate an LLM chat endpoint (powered by [Mastra](https://mastra.ai)) into your application, with pluggable tools, model providers, storage, and observability.
 
-> **Extension points:** for the full list of binding keys, storage backends
-> (LibSQL default / opt-in Postgres), memory/semantic-recall env flags, custom
-> tools, and observability wiring you can override, see
-> [`docs/EXTENSION_POINTS.md`](./docs/EXTENSION_POINTS.md).
-
 ### Installation
 
 Install AIIntegrationsComponent using `npm`;
@@ -467,35 +462,62 @@ this.bind(DbQueryAIExtensionBindings.DefaultConditions).to(
 );
 ```
 
-## Writing Your Own Tool
+## Writing your own tool
 
-You can register your own tools by simply using the `@graphTool()` decorator and implementing the `IGraphTool` interface. Any such class would be automatically registered with the `/generate` endpoint and the LLM would be able to use it as a tool.
+Tools are [Mastra `createTool`](https://mastra.ai) wrappers that implement `IGraphTool` (`key` + `build()`). The component ships a default registry (`DefaultToolsProvider`) bound at `MastraInternalBindings.Tools`. To add your own, implement `IGraphTool` and override that binding with a registry that lists it:
 
 ```ts
-import {tool} from '@langchain/core/tools';
-import z from 'zod';
-import {graphTool, IGraphTool} from 'lb4-llm-chat-component';
+import {BindingScope, Provider} from '@loopback/core';
+import {createTool} from '@mastra/core/tools';
+import {z} from 'zod';
+import {IGraphTool, ToolStore, MastraInternalBindings} from 'lb4-llm-chat-component';
 
-...
-@graphTool()
-export class AddTool implements IGraphTool {
-  needsReview = false;
-
+class AddTool implements IGraphTool {
+  key = 'add-tool';
   build() {
-    return tool((ob: {a: number, b: number}) => {
-        return ob.a + ob.b
-    },
-    {
-        name: 'add-tool',
-        description: 'a tool to add two numbers',
-        schema: z.object({
-            a: z.number(),
-            b: z.number()
-        })
+    return createTool({
+      id: this.key,
+      description: 'Add two numbers',
+      inputSchema: z.object({a: z.number(), b: z.number()}),
+      outputSchema: z.object({sum: z.number()}),
+      execute: async ({a, b}) => ({sum: a + b}),
     });
   }
 }
+
+class MyTools implements Provider<ToolStore> {
+  value(): ToolStore {
+    return {list: [new AddTool()]}; // add the built-ins here too if you want to keep them
+  }
+}
+
+// application.ts
+this.bind(MastraInternalBindings.Tools).toProvider(MyTools).inScope(BindingScope.SINGLETON);
 ```
+
+## Overriding storage, models, and steps
+
+Anything the component resolves through a binding can be swapped from your app:
+
+```ts
+import {
+  AiIntegrationBindings,
+  MastraInternalBindings,
+  PostgresMastraStorageProvider,
+} from 'lb4-llm-chat-component';
+
+// model tiers (each is an AI-SDK LanguageModel provider)
+this.bind(AiIntegrationBindings.SmartLLM).toProvider(MySmartModel);
+this.bind(AiIntegrationBindings.CheapLLM).toProvider(MyCheapModel);
+
+// persist threads/messages in Postgres instead of the default LibSQL file
+this.bind(MastraInternalBindings.Storage).toProvider(PostgresMastraStorageProvider);
+// env: MASTRA_PG_CONNECTION_STRING (or MASTRA_PG_HOST/PORT/DATABASE/USER/PASSWORD)
+```
+
+Memory knobs (env): `MASTRA_DEFAULT_CHAT_MODEL` (required chat model), `MASTRA_SEMANTIC_RECALL=true` to enable cross-thread recall (default off; needs a vector store + embedder), `MAX_TOKEN_COUNT` to cap history length.
+
+To change a single db-query step, the workflow steps are exported individually from `src/mastra/workflows/db-query/generate.steps.ts` (`checkCacheStep`, `getTablesStep`, `getColumnsStep`, `sqlAndValidateStep`, …) — import the ones you keep, substitute your own `createStep`, and compose a replacement workflow.
 
 # Observability
 
