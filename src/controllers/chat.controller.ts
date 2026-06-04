@@ -92,9 +92,20 @@ export class ChatController {
     };
   }
 
-  /** Map a Mastra message to the v2 `Message` shape (body + metadata.type +
-   * channelId + createdOn) while keeping the native role/content fields. */
-  private toMessage(m: Record<string, unknown>, threadId: string) {
+  /**
+   * Flatten one Mastra message into the v2 `Message` shape(s) the existing
+   * consumers (e.g. BizBook) expect. A Mastra assistant turn bundles
+   * reasoning + tool-invocation + text into ONE message's `content.parts`,
+   * but v2 emitted SEPARATE messages — crucially a `type:'tool'` message whose
+   * metadata carries `toolName`/`args`/`existingDatasetId`, which is what the
+   * UI's "Load Dataset" / re-run-from-history button reads. So expand each
+   * tool-invocation part into its own `tool` message and each text part into a
+   * `user`/`ai`/`system` message. Reasoning / step-start parts are dropped.
+   */
+  private expandMessage(
+    m: Record<string, unknown>,
+    threadId: string,
+  ): Array<Record<string, unknown>> {
     const role = typeof m.role === 'string' ? m.role : 'user';
     const typeByRole: Record<string, string> = {
       assistant: 'ai',
@@ -102,18 +113,62 @@ export class ChatController {
       system: 'system',
       user: 'user',
     };
-    const meta = (m.metadata as Record<string, unknown>) ?? {};
     const type = typeByRole[role] ?? 'user';
-    return {
-      ...m,
-      // top-level `type` AND `metadata.type` — consumers (e.g. BizBook's
-      // ChatMessageAdapter) read one or the other; never leave it undefined.
-      type,
-      body: chatMessageText(m.content),
-      channelId: threadId,
-      createdOn: m.createdAt ?? m.createdOn,
-      metadata: {...meta, type},
-    };
+    const createdOn = m.createdAt ?? m.createdOn;
+    const baseMeta = (m.metadata as Record<string, unknown>) ?? {};
+    const base = {channelId: threadId, channelType: 'chat', createdOn, role};
+    const out: Array<Record<string, unknown>> = [];
+    for (const raw of chatMessageParts(m.content)) {
+      const p = raw as {
+        type?: string;
+        text?: unknown;
+        toolInvocation?: {
+          toolCallId?: string;
+          toolName?: string;
+          args?: unknown;
+          state?: string;
+          result?: unknown;
+        };
+      };
+      if (p.type === 'text' && typeof p.text === 'string' && p.text.trim()) {
+        out.push({
+          ...base,
+          id: `${String(m.id)}:t${out.length}`,
+          type,
+          body: p.text,
+          metadata: {...baseMeta, type},
+        });
+      } else if (p.type === 'tool-invocation' && p.toolInvocation) {
+        const ti = p.toolInvocation;
+        const result = typeof ti.result === 'string' ? ti.result : '';
+        out.push({
+          ...base,
+          id: `${String(m.id)}:tool:${ti.toolCallId ?? out.length}`,
+          role: 'tool',
+          type: 'tool',
+          body: result,
+          metadata: {
+            type: 'tool',
+            id: ti.toolCallId,
+            toolName: ti.toolName,
+            args: ti.args,
+            status: ti.state === 'result' ? 'success' : ti.state,
+            existingDatasetId: extractDatasetId(result),
+          },
+        });
+      }
+    }
+    // No structured parts (plain-string content) → one message from the text.
+    if (out.length === 0) {
+      out.push({
+        ...base,
+        id: String(m.id),
+        type,
+        body: chatMessageText(m.content),
+        metadata: {...baseMeta, type},
+      });
+    }
+    return out;
   }
 
   @authenticate(STRATEGY.BEARER, {passReqToCallback: true})
@@ -166,8 +221,8 @@ export class ChatController {
     const result = await memory.recall({threadId});
     return {
       ...this.toChat(thread, resourceId),
-      messages: result.messages.map(m =>
-        this.toMessage(m as Record<string, unknown>, threadId),
+      messages: result.messages.flatMap(m =>
+        this.expandMessage(m as Record<string, unknown>, threadId),
       ),
     };
   }
@@ -185,8 +240,8 @@ export class ChatController {
     }
     const {memory} = await this.ownedThread(threadId, resourceId);
     const result = await memory.recall({threadId});
-    return result.messages.map(m =>
-      this.toMessage(m as Record<string, unknown>, threadId),
+    return result.messages.flatMap(m =>
+      this.expandMessage(m as Record<string, unknown>, threadId),
     );
   }
 }
@@ -215,4 +270,23 @@ function chatMessageText(content: unknown): string {
     if (Array.isArray(obj.parts)) return chatMessageText(obj.parts);
   }
   return '';
+}
+
+/** The typed parts of a Mastra message `content` (array, or `{parts:[…]}`). */
+function chatMessageParts(content: unknown): unknown[] {
+  if (Array.isArray(content)) return content;
+  const obj = content as {parts?: unknown} | null;
+  if (obj && typeof obj === 'object' && Array.isArray(obj.parts)) {
+    return obj.parts;
+  }
+  return [];
+}
+
+/**
+ * Pull the dataset id out of a tool-result readout, which is shaped
+ * `…(dataset ID <id>).…` (see buildDatasetReadout). Used to surface
+ * `existingDatasetId` so a consumer can re-run/load a dataset from history.
+ */
+function extractDatasetId(result: string): string | undefined {
+  return /dataset ID ([^)\s.]+)/i.exec(result)?.[1];
 }
