@@ -669,6 +669,22 @@ Memory env knobs: `MASTRA_DEFAULT_CHAT_MODEL` (required chat model),
 `MASTRA_SEMANTIC_RECALL=true` to enable cross-thread recall (default off; needs
 a vector store + embedder), `MAX_TOKEN_COUNT` to cap history length.
 
+## Activity logs (debugging)
+
+Every workflow step emits its status (e.g. `Extracting relevant tables`,
+`Generating SQL query from the prompt`, `Validating generated SQL query`,
+`Reselecting tables…`) to the [`debug`](https://www.npmjs.com/package/debug)
+channel — off by default so production stays quiet. Turn it on in the consumer
+app to watch progress on the server console:
+
+```sh
+DEBUG=ai-integration:* npm start        # all activity
+DEBUG=ai-integration:steps npm start    # just workflow step statuses
+```
+
+These mirror the step/activity logs the v2 LangGraph extension surfaced. The
+same statuses are also streamed to the client as `ToolStatus` SSE events.
+
 # Observability
 
 ## With Langsmith

@@ -9,6 +9,10 @@ import type {LanguageModel} from 'ai';
 import debugFactory from 'debug';
 
 const dbg = debugFactory('ai-integration:db-query-helpers');
+// Step/activity log channel — every workflow step status flows here so a
+// developer running the consumer app can watch progress with
+// `DEBUG=ai-integration:*` (or `DEBUG=ai-integration:steps`).
+const stepDbg = debugFactory('ai-integration:steps');
 
 /**
  * Coerce a dataset/template id to a string. DB stores (e.g. SQLite
@@ -343,6 +347,12 @@ export function emitToolStatus(
   id: string,
   status: string,
 ): void {
+  // Developer-facing activity log on the `debug` channel — restores the
+  // step/activity visibility v2 main emitted as Log events. Toggle from the
+  // consumer app with `DEBUG=ai-integration:*` (off by default; no console
+  // spam in production, and not a raw `console` call so it doesn't trip the
+  // no-console lint/Sonar rule).
+  stepDbg('[%s] %s', id, status);
   const writer = rc?.get('eventWriter');
   if (!writer) return;
   writer({
