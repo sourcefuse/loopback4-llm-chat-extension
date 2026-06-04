@@ -26,10 +26,10 @@ export class OpenRouter implements Provider<LLMProvider> {
  * Reads `OPENROUTER_API_KEY` (required) and `OPENROUTER_BASE_URL`
  * (optional) from env. The model id is the only per-tier knob.
  */
-export function createMastraOpenRouterModel(model: string): LLMProvider {
+export function createOpenRouterModel(model: string): LLMProvider {
   if (!process.env.OPENROUTER_API_KEY) {
     throw new Error(
-      'OPENROUTER_API_KEY env var required for createMastraOpenRouterModel',
+      'OPENROUTER_API_KEY env var required for createOpenRouterModel',
     );
   }
   const provider = createOpenRouter({

@@ -29,14 +29,14 @@ export class OpenAI implements Provider<LLMProvider> {
  * `OPENAI_API_KEY` slot (which may be re-pointed at an OpenAI-compatible
  * gateway like OpenRouter).
  */
-export function createMastraOpenAIModel(
+export function createOpenAIModel(
   model: string,
   opts: {apiKey?: string; baseURL?: string} = {},
 ): LLMProvider {
   const apiKey = opts.apiKey ?? process.env.OPENAI_API_KEY;
   if (!apiKey) {
     throw new Error(
-      'OPENAI_API_KEY (or opts.apiKey) required for createMastraOpenAIModel',
+      'OPENAI_API_KEY (or opts.apiKey) required for createOpenAIModel',
     );
   }
   const provider = createOpenAI({
