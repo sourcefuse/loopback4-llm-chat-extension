@@ -16,7 +16,7 @@ import {generateText, type LanguageModel} from 'ai';
 import {AiIntegrationBindings, IRunRegistry} from '../../keys';
 import {MastraInternalBindings} from '../internal-bindings';
 import {LLMStreamEvent, LLMStreamEventType} from '../../graphs/event.types';
-import {MastraToolStore, ToolStatus} from '../../graphs/types';
+import {ToolStore, ToolStatus} from '../../graphs/types';
 import type {Tool} from '@mastra/core/tools';
 import {UsageAccumulator} from '../../services/usage-accumulator.service';
 import {AsyncEventQueue} from './async-event-queue';
@@ -237,7 +237,7 @@ export class WorkflowRunner {
     private systemContext?: string[],
     @service(UsageAccumulator) private usage?: UsageAccumulator,
     @inject(MastraInternalBindings.Tools, {optional: true})
-    private mastraTools?: MastraToolStore,
+    private mastraTools?: ToolStore,
     @inject(AiIntegrationBindings.FileLLM, {optional: true})
     private fileLlm?: MastraModelConfig,
     // Tier slots — optional; when unbound, workflow steps fall back to

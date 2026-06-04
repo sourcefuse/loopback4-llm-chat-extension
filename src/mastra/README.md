@@ -115,7 +115,7 @@ POST /reply
  │ fires a tool call, Mastra invokes the tool's execute().
  │ ↓
  │ Mastra tool wrappers (4 of them) live in
- │ src/components/{db-query,visualization}/tools/*.mastra.tool.ts.
+ │ src/components/{db-query,visualization}/tools/*.tool.ts.
  │ Three of them call workflows:
  │ - get-data-as-dataset → mastra.getWorkflow('generateQueryWorkflow').createRun().start()
  │ - improve-dataset → mastra.getWorkflow('improveQueryWorkflow').createRun().start()

@@ -51,15 +51,15 @@ import {AIIntegrationConfig} from './types';
 import {PgVectorStore} from './sub-modules/db/postgresql';
 import {DefaultMastraStorageProvider} from './providers/mastra/storage.provider';
 import {MastraProvider} from './providers/mastra/mastra.provider';
-import {DefaultMastraToolsProvider} from './providers/mastra/mastra-tools.provider';
+import {DefaultToolsProvider} from './providers/mastra/tools.provider';
 import {MastraInternalBindings} from './mastra/internal-bindings';
 import {InProcessRunRegistry} from './mastra/bridge/run-registry';
 import {WorkflowRunner} from './mastra/bridge/workflow-runner';
 import {MastraLifecycleObserver} from './observers/mastra-lifecycle.observer';
-import {MastraGetDataAsDatasetTool} from './components/db-query/tools/get-data-as-dataset.mastra.tool';
-import {MastraImproveDatasetTool} from './components/db-query/tools/improve-dataset.mastra.tool';
-import {MastraAskAboutDatasetTool} from './components/db-query/tools/ask-about-dataset.mastra.tool';
-import {MastraGenerateVisualizationTool} from './components/visualization/tools/generate-visualization.mastra.tool';
+import {GetDataAsDatasetTool} from './components/db-query/tools/get-data-as-dataset.tool';
+import {ImproveDatasetTool} from './components/db-query/tools/improve-dataset.tool';
+import {AskAboutDatasetTool} from './components/db-query/tools/ask-about-dataset.tool';
+import {GenerateVisualizationTool} from './components/visualization/tools/generate-visualization.tool';
 
 const debug = require('debug')('ai-integration:log-events:component');
 
@@ -101,7 +101,7 @@ export class AiIntegrationsComponent implements Component {
       createBindingFromClass(InProcessRunRegistry, {
         key: MastraInternalBindings.RunRegistry.key,
       }).inScope(BindingScope.SINGLETON),
-      createBindingFromClass(DefaultMastraToolsProvider, {
+      createBindingFromClass(DefaultToolsProvider, {
         key: MastraInternalBindings.Tools.key,
       }).inScope(BindingScope.SINGLETON),
     ];
@@ -121,10 +121,10 @@ export class AiIntegrationsComponent implements Component {
       // mastra-flavored tool wrappers — each calls
       // mastra.getWorkflow(...).createRun().start() (ask-about-dataset
       // runs an inline one-shot Mastra Agent instead of a workflow).
-      MastraGetDataAsDatasetTool,
-      MastraImproveDatasetTool,
-      MastraAskAboutDatasetTool,
-      MastraGenerateVisualizationTool,
+      GetDataAsDatasetTool,
+      ImproveDatasetTool,
+      AskAboutDatasetTool,
+      GenerateVisualizationTool,
     ];
 
     this.lifeCycleObservers = [MastraLifecycleObserver];

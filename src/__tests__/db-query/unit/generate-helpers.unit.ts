@@ -291,7 +291,9 @@ describe('db-query generate helpers (unit)', () => {
     });
     it('defaults to query_error/[] when the schema table list is empty', async () => {
       const r = await classifySqlError({
-        chatLlm: model('<category>table_not_found</category><tables>x</tables>'),
+        chatLlm: model(
+          '<category>table_not_found</category><tables>x</tables>',
+        ),
         error: 'boom',
         sql: 'SELECT 1',
         allTables: [],
@@ -313,7 +315,9 @@ describe('db-query generate helpers (unit)', () => {
     const rejectingConn = {
       validate: sinon.stub().rejects(new Error('no such table: departments')),
     } as unknown as IDbConnector;
-    const okConn = {validate: sinon.stub().resolves()} as unknown as IDbConnector;
+    const okConn = {
+      validate: sinon.stub().resolves(),
+    } as unknown as IDbConnector;
 
     it('widens the allowed table set when a syntactic failure is table_not_found', async () => {
       let reselected: string[] | undefined;
@@ -367,7 +371,9 @@ describe('db-query generate helpers (unit)', () => {
     it('does not classify or expand when validation passes', async () => {
       const r = await runSqlAttempt({
         chatLlm: model('SELECT * FROM employees'),
-        cheapLlm: model('<category>table_not_found</category><tables>x</tables>'),
+        cheapLlm: model(
+          '<category>table_not_found</category><tables>x</tables>',
+        ),
         allTables: ['employees', 'departments'],
         dbConnector: okConn,
         prompt: 'x',

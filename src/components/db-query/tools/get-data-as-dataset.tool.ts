@@ -4,7 +4,7 @@ import {createTool} from '@mastra/core/tools';
 import type {Tool, ToolExecutionContext} from '@mastra/core/tools';
 import {z} from 'zod';
 import {LLMStreamEvent, LLMStreamEventType} from '../../../graphs/event.types';
-import {IMastraGraphTool, ToolStatus} from '../../../graphs/types';
+import {IGraphTool, ToolStatus} from '../../../graphs/types';
 import {MastraInternalBindings} from '../../../mastra/internal-bindings';
 import {buildDatasetReadout} from '../utils';
 
@@ -33,7 +33,7 @@ function asEventWriter(
  * still has stub step bodies until real DbQueryService
  * helpers are wired into each step.
  */
-export class MastraGetDataAsDatasetTool implements IMastraGraphTool {
+export class GetDataAsDatasetTool implements IGraphTool {
   key = 'get-data-as-dataset';
   constructor(
     @inject(MastraInternalBindings.Mastra) private readonly mastra: Mastra,

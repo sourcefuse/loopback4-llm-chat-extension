@@ -4,7 +4,7 @@ import {createTool} from '@mastra/core/tools';
 import type {Tool, ToolExecutionContext} from '@mastra/core/tools';
 import {z} from 'zod';
 import {LLMStreamEvent, LLMStreamEventType} from '../../../graphs/event.types';
-import {IMastraGraphTool, ToolStatus} from '../../../graphs/types';
+import {IGraphTool, ToolStatus} from '../../../graphs/types';
 import {MastraInternalBindings} from '../../../mastra/internal-bindings';
 import {buildDatasetReadout} from '../utils';
 
@@ -30,7 +30,7 @@ function asEventWriter(
  * Mastra-shaped dataset-improvement tool. Final form — calls
  * `mastra.getWorkflow('improveQueryWorkflow').createRun().start()`.
  */
-export class MastraImproveDatasetTool implements IMastraGraphTool {
+export class ImproveDatasetTool implements IGraphTool {
   key = 'improve-dataset';
   constructor(
     @inject(MastraInternalBindings.Mastra) private readonly mastra: Mastra,

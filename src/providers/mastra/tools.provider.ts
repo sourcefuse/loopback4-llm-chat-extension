@@ -1,9 +1,9 @@
 import {BindingScope, inject, injectable, Provider} from '@loopback/core';
-import {MastraAskAboutDatasetTool} from '../../components/db-query/tools/ask-about-dataset.mastra.tool';
-import {MastraGetDataAsDatasetTool} from '../../components/db-query/tools/get-data-as-dataset.mastra.tool';
-import {MastraImproveDatasetTool} from '../../components/db-query/tools/improve-dataset.mastra.tool';
-import {MastraGenerateVisualizationTool} from '../../components/visualization/tools/generate-visualization.mastra.tool';
-import type {MastraToolStore} from '../../graphs/types';
+import {AskAboutDatasetTool} from '../../components/db-query/tools/ask-about-dataset.tool';
+import {GetDataAsDatasetTool} from '../../components/db-query/tools/get-data-as-dataset.tool';
+import {ImproveDatasetTool} from '../../components/db-query/tools/improve-dataset.tool';
+import {GenerateVisualizationTool} from '../../components/visualization/tools/generate-visualization.tool';
+import type {ToolStore} from '../../graphs/types';
 
 /**
  * Default Mastra tool registry — ships the 4 internal tools (get-data,
@@ -15,7 +15,7 @@ import type {MastraToolStore} from '../../graphs/types';
  * are constructed once and re-used per request.
  */
 @injectable({scope: BindingScope.SINGLETON})
-export class DefaultMastraToolsProvider implements Provider<MastraToolStore> {
+export class DefaultToolsProvider implements Provider<ToolStore> {
   constructor(
     // Tool injections are optional — three of the four (get-data,
     // improve, ask) hard-depend on DbQuery bindings (DatasetStore,
@@ -24,17 +24,17 @@ export class DefaultMastraToolsProvider implements Provider<MastraToolStore> {
     // component without DbQueryComponent or VisualizerComponent must
     // still be able to resolve a Mastra tool store — only the tools
     // whose dependencies are bound end up in the registry.
-    @inject('services.MastraGetDataAsDatasetTool', {optional: true})
-    private readonly getData?: MastraGetDataAsDatasetTool,
-    @inject('services.MastraImproveDatasetTool', {optional: true})
-    private readonly improve?: MastraImproveDatasetTool,
-    @inject('services.MastraAskAboutDatasetTool', {optional: true})
-    private readonly ask?: MastraAskAboutDatasetTool,
-    @inject('services.MastraGenerateVisualizationTool', {optional: true})
-    private readonly viz?: MastraGenerateVisualizationTool,
+    @inject('services.GetDataAsDatasetTool', {optional: true})
+    private readonly getData?: GetDataAsDatasetTool,
+    @inject('services.ImproveDatasetTool', {optional: true})
+    private readonly improve?: ImproveDatasetTool,
+    @inject('services.AskAboutDatasetTool', {optional: true})
+    private readonly ask?: AskAboutDatasetTool,
+    @inject('services.GenerateVisualizationTool', {optional: true})
+    private readonly viz?: GenerateVisualizationTool,
   ) {}
 
-  value(): MastraToolStore {
+  value(): ToolStore {
     const list = [this.getData, this.improve, this.ask, this.viz].filter(
       (t): t is NonNullable<typeof t> => t !== undefined,
     );

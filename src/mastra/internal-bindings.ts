@@ -2,7 +2,7 @@ import {BindingKey} from '@loopback/context';
 import type {Mastra} from '@mastra/core';
 import type {MastraCompositeStore} from '@mastra/core/storage';
 import type {Observability} from '@mastra/observability';
-import type {MastraToolStore} from '../graphs/types';
+import type {ToolStore} from '../graphs/types';
 import type {IRunRegistry} from '../keys';
 
 /**
@@ -16,7 +16,7 @@ export namespace MastraInternalBindings {
   export const Storage = BindingKey.create<MastraCompositeStore>(
     'services.ai-reporting.mastraStorage',
   );
-  export const Tools = BindingKey.create<MastraToolStore>(
+  export const Tools = BindingKey.create<ToolStore>(
     'services.ai-reporting.mastraTools',
   );
   export const Observability = BindingKey.create<Observability>(

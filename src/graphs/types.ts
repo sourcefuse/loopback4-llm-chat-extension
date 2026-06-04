@@ -11,9 +11,9 @@ export enum ToolStatus {
 /**
  * Mastra-shaped tool interface used by the Mastra createTool wrappers and
  * consumed by WorkflowRunner (built into the per-request tool map) via
- * MastraToolStore.
+ * ToolStore.
  */
-export interface IMastraGraphTool {
+export interface IGraphTool {
   key: string;
   build(): Tool;
   getValue?(result: Record<string, unknown>): string;
@@ -25,8 +25,8 @@ export interface IMastraGraphTool {
 
 /**
  * Registry shape consumed by WorkflowRunner. Mirrors the legacy `ToolStore`
- * in src/types.ts but holds IMastraGraphTool instances.
+ * in src/types.ts but holds IGraphTool instances.
  */
-export type MastraToolStore = {
-  list: IMastraGraphTool[];
+export type ToolStore = {
+  list: IGraphTool[];
 };

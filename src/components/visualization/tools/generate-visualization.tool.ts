@@ -4,7 +4,7 @@ import {createTool} from '@mastra/core/tools';
 import type {Tool, ToolExecutionContext} from '@mastra/core/tools';
 import {z} from 'zod';
 import {LLMStreamEvent, LLMStreamEventType} from '../../../graphs/event.types';
-import {IMastraGraphTool, ToolStatus} from '../../../graphs/types';
+import {IGraphTool, ToolStatus} from '../../../graphs/types';
 import {MastraInternalBindings} from '../../../mastra/internal-bindings';
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -32,7 +32,7 @@ function asEventWriter(
  * legacy registry here; the renderVisualization step of the workflow
  * dispatches to @visualizer() classes via RequestContext at run time.
  */
-export class MastraGenerateVisualizationTool implements IMastraGraphTool {
+export class GenerateVisualizationTool implements IGraphTool {
   key = 'generate-visualization';
   constructor(
     @inject(MastraInternalBindings.Mastra) private readonly mastra: Mastra,

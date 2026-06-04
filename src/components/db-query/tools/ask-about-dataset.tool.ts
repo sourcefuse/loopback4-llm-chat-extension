@@ -4,7 +4,7 @@ import {createTool} from '@mastra/core/tools';
 import type {Tool} from '@mastra/core/tools';
 import type {MastraModelConfig} from '@mastra/core/llm';
 import {z} from 'zod';
-import {IMastraGraphTool} from '../../../graphs/types';
+import {IGraphTool} from '../../../graphs/types';
 import {AiIntegrationBindings} from '../../../keys';
 import {DbQueryAIExtensionBindings} from '../keys';
 import {DbSchemaHelperService} from '../services';
@@ -19,7 +19,7 @@ import type {IDataSetStore} from '../types';
  * RunnableSequence (PromptTemplate -> LLM -> stripThinkingTokens)
  * collapses to one agent.generate() call.
  */
-export class MastraAskAboutDatasetTool implements IMastraGraphTool {
+export class AskAboutDatasetTool implements IGraphTool {
   key = 'ask-about-dataset';
   constructor(
     @inject(AiIntegrationBindings.ChatLLM, {optional: true})

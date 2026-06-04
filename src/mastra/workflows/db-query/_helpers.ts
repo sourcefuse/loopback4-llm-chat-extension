@@ -468,7 +468,11 @@ async function runValidationStage(args: {
   onStatus?: (stage: 'syntactic' | 'semantic') => void;
   tracing?: TracingContext;
   lastAttempt?: boolean;
-}): Promise<{passed: boolean; feedback?: string; kind?: 'syntactic' | 'semantic'}> {
+}): Promise<{
+  passed: boolean;
+  feedback?: string;
+  kind?: 'syntactic' | 'semantic';
+}> {
   const {sql} = args;
   if (!sql)
     return {
@@ -772,7 +776,10 @@ Return your response in exactly this format with no other text:
       : [];
     return {category, errorTables};
   } catch (err) {
-    dbg('classify-sql-error judge unavailable, defaulting to query_error: %o', err);
+    dbg(
+      'classify-sql-error judge unavailable, defaulting to query_error: %o',
+      err,
+    );
     return fallback;
   }
 }
