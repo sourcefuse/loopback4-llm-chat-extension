@@ -131,7 +131,24 @@ this.bind(AiIntegrationBindings.SmartLLM).toProvider(Bedrock);
 this.bind(AiIntegrationBindings.FileLLM).toProvider(Bedrock);
 ```
 
-This binding would add an endpoint `/generate` in your service, that can answer user's query using the registered tools. By default, the module gives one set of tools through the `DbQueryComponent`
+This binding adds a `POST /reply` endpoint in your service that answers a user's query using the registered tools (streaming SSE; bind `HttpTransport` or set `DISABLE_STREAMING=true` for a buffered JSON array). By default, the module gives one set of tools through the `DbQueryComponent`.
+
+## Chat history API
+
+Chat history lives in Mastra Memory (threads + messages in the bound storage). Three read endpoints expose it, scoped to the authenticated user and shaped like the v2 `Chat`/`Message` model:
+
+| Route | Returns |
+|-------|---------|
+| `GET /chats` | the user's threads — `id`, `title`, `tenantId`, `userId`, `inputTokens`/`outputTokens`, `createdOn`/`modifiedOn` |
+| `GET /chats/{id}` | one thread **with** its `messages` |
+| `GET /chats/{id}/messages` | just that thread's messages |
+
+Each Mastra message is flattened into v2-style `user` / `ai` / `tool` messages. A `tool` message carries the metadata a UI needs to **re-run from history**:
+
+- `metadata.existingDatasetId` + `toolName` + `args` → re-run / “Load Dataset”.
+- `metadata.visualization` + `metadata.config` → re-render the chart (visualization tool).
+
+`title` defaults to the first prompt (`New Chat` if empty). All three require the `ViewChat` permission.
 
 ## Limiters
 
