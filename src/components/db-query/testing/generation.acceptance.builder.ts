@@ -166,13 +166,17 @@ async function runSingleTestCase(
     }
 
     populateStreamMetrics(result, body);
-    if (lastStatus.data.status === ToolStatus.Completed) {
-      await populateCompletedResult(result, lastStatus, query, {
+    // Mastra emits the datasetId on the final `Tool` event (v2 put it on the
+    // last ToolStatus). Read it from there.
+    const datasetId = extractDatasetId(body);
+    if (lastStatus.data.status === ToolStatus.Completed && datasetId) {
+      await populateCompletedResult(result, query, {
         client,
         token,
         params,
         datasetStore,
         connector,
+        datasetId,
       });
     } else {
       result.actualResult = JSON.stringify(lastStatus);
@@ -221,9 +225,18 @@ function populateStreamMetrics(
   );
 }
 
+function extractDatasetId(body: LLMStreamEvent[]): string | undefined {
+  const toolEvents = body.filter(
+    (v: LLMStreamEvent) => v.type === LLMStreamEventType.Tool,
+  );
+  const last = toolEvents.at(-1) as
+    | {data?: {data?: {datasetId?: string}}}
+    | undefined;
+  return last?.data?.data?.datasetId;
+}
+
 async function populateCompletedResult(
   result: GenerationAcceptanceTestResult,
-  lastStatus: LLMStreamToolStatusEvent,
   query: GenerationAcceptanceTestCase,
   ctx: {
     client: Client;
@@ -231,12 +244,11 @@ async function populateCompletedResult(
     params: Record<string, string>;
     datasetStore: {findById: (id: string) => Promise<AnyObject>};
     connector: IDbConnector;
+    datasetId: string;
   },
 ) {
-  const {client, token, params, datasetStore, connector} = ctx;
-  const dataset = await datasetStore.findById(
-    lastStatus.data.data?.['datasetId'],
-  );
+  const {client, token, params, datasetStore, connector, datasetId} = ctx;
+  const dataset = await datasetStore.findById(datasetId);
   result.query = parseData(dataset.query, params);
   const {body: actualData} = await client
     .get(`/datasets/${dataset.id}/execute`)
