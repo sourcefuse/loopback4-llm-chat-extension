@@ -280,30 +280,72 @@ function partToMessage(
 }
 
 /** A tool-invocation part → the v2 `type:'tool'` message carrying the metadata
- * (toolName/args/existingDatasetId/status) a consumer needs to re-run/load a
- * dataset from history. */
+ * a consumer needs to re-run a tool from history: `existingDatasetId` (Load
+ * Dataset) and, for the visualization tool, `visualization` + `config` so the
+ * chart can be re-rendered. The tool result is a STRING readout for the
+ * dataset tools but a structured OBJECT for the visualization tool — handle
+ * both (an object result was previously dropped, which is why charts didn't
+ * come back when reopening a chat). */
 function toolPartToMessage(
   ti: ToolInvocation,
   base: Record<string, unknown>,
   mId: string,
   idx: number,
 ): Record<string, unknown> {
-  const result = typeof ti.result === 'string' ? ti.result : '';
+  const r = readToolResult(ti.result);
   return {
     ...base,
     role: 'tool',
     id: `${mId}:tool:${ti.toolCallId ?? idx}`,
     type: 'tool',
-    body: result,
+    body: r.body,
     metadata: {
       type: 'tool',
       id: ti.toolCallId,
       toolName: ti.toolName,
       args: ti.args,
       status: ti.state === 'result' ? 'success' : ti.state,
-      existingDatasetId: extractDatasetId(result),
+      existingDatasetId: r.existingDatasetId,
+      // present only for the visualization tool — lets the UI rebuild the chart
+      ...(r.visualization !== undefined
+        ? {visualization: r.visualization}
+        : {}),
+      ...(r.config !== undefined ? {config: r.config} : {}),
     },
   };
+}
+
+/**
+ * Normalise a tool-invocation `result` into the fields a consumer re-renders
+ * from. Dataset tools return a STRING readout (`…(dataset ID <id>)…`); the
+ * visualization tool returns an OBJECT (`{visualization, chartConfig|config,
+ * datasetId, sql, description}`).
+ */
+function readToolResult(result: unknown): {
+  body: string;
+  existingDatasetId?: string;
+  visualization?: unknown;
+  config?: unknown;
+} {
+  if (typeof result === 'string') {
+    return {body: result, existingDatasetId: extractDatasetId(result)};
+  }
+  if (result && typeof result === 'object') {
+    const r = result as {
+      visualization?: unknown;
+      chartConfig?: unknown;
+      config?: unknown;
+      datasetId?: unknown;
+      description?: unknown;
+    };
+    return {
+      body: typeof r.description === 'string' ? r.description : '',
+      existingDatasetId: r.datasetId != null ? String(r.datasetId) : undefined,
+      visualization: r.visualization,
+      config: r.chartConfig ?? r.config,
+    };
+  }
+  return {body: ''};
 }
 
 /** The typed parts of a Mastra message `content` (array, or `{parts:[…]}`). */

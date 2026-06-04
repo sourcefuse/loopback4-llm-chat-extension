@@ -101,6 +101,53 @@ describe('ChatController (unit)', () => {
     expect(ai!.body).to.match(/Here is the list/);
   });
 
+  it('surfaces visualization + config from an object tool-result (chart re-render)', async () => {
+    const vizMsg = {
+      id: 'mv',
+      role: 'assistant',
+      createdAt: '2026-06-04T10:00:02.000Z',
+      content: {
+        parts: [
+          {
+            type: 'tool-invocation',
+            toolInvocation: {
+              state: 'result',
+              toolCallId: 'callv',
+              toolName: 'generate-visualization',
+              args: {type: 'line', prompt: 'salary over time'},
+              result: {
+                visualization: 'line',
+                chartConfig: {
+                  xAxisColumn: 'joining_date',
+                  yAxisColumn: 'salary',
+                },
+                datasetId: '293',
+                sql: 'SELECT ...',
+              },
+            },
+          },
+        ],
+      },
+    };
+    const mem = {...memory, recall: async () => ({messages: [vizMsg]})};
+    const c = new ChatController(
+      {getAgent: () => ({getMemory: async () => mem})} as never,
+      undefined,
+      user as never,
+    );
+    const res = (await c.findById('thread1')) as {
+      messages: Array<Record<string, unknown>>;
+    };
+    const tool = res.messages.find(m => m.type === 'tool');
+    const meta = tool!.metadata as Record<string, unknown>;
+    expect(meta.toolName).to.equal('generate-visualization');
+    expect(meta.visualization).to.equal('line');
+    expect(meta.existingDatasetId).to.equal('293');
+    expect((meta.config as Record<string, unknown>).xAxisColumn).to.equal(
+      'joining_date',
+    );
+  });
+
   it('GET /chats/{id} 404s a thread the requester does not own', async () => {
     const otherMem = {
       ...memory,
