@@ -462,62 +462,212 @@ this.bind(DbQueryAIExtensionBindings.DefaultConditions).to(
 );
 ```
 
-## Writing your own tool
+# Extending the component
 
-Tools are [Mastra `createTool`](https://mastra.ai) wrappers that implement `IGraphTool` (`key` + `build()`). The component ships a default registry (`DefaultToolsProvider`) bound at `MastraInternalBindings.Tools`. To add your own, implement `IGraphTool` and override that binding with a registry that lists it:
+The chat agent, its tools, the model tiers, storage, and the db-query
+workflows are all resolved through LoopBack bindings, so each can be customized
+or replaced from your application without forking the package. Building blocks
+for the advanced cases (steps, workflows, the `MastraProvider`) are exported
+from the `lb4-llm-chat-component/mastra` subpath; everything else from the
+package root.
+
+## Tools
+
+A tool is a [Mastra `createTool`](https://mastra.ai) wrapper that implements
+`IGraphTool` — a `key` plus a `build()` that returns the tool. Optional
+`getValue(result)` / `getMetadata(result)` shape what the agent and the SSE
+stream receive after the tool runs. The component ships a default registry
+(`DefaultToolsProvider`) bound at `MastraInternalBindings.Tools`; override that
+binding to add or replace tools.
 
 ```ts
-import {BindingScope, Provider} from '@loopback/core';
+// my-add.tool.ts
 import {createTool} from '@mastra/core/tools';
 import {z} from 'zod';
-import {IGraphTool, ToolStore, MastraInternalBindings} from 'lb4-llm-chat-component';
+import {IGraphTool} from 'lb4-llm-chat-component';
 
-class AddTool implements IGraphTool {
+export class AddTool implements IGraphTool {
   key = 'add-tool';
+
   build() {
     return createTool({
       id: this.key,
-      description: 'Add two numbers',
+      description: 'Add two numbers. Use when the user asks for a sum.',
       inputSchema: z.object({a: z.number(), b: z.number()}),
       outputSchema: z.object({sum: z.number()}),
       execute: async ({a, b}) => ({sum: a + b}),
     });
   }
-}
 
-class MyTools implements Provider<ToolStore> {
-  value(): ToolStore {
-    return {list: [new AddTool()]}; // add the built-ins here too if you want to keep them
+  // Optional: the short string the agent sees as the tool result.
+  getValue(result: Record<string, unknown>): string {
+    return `The sum is ${result.sum}.`;
   }
 }
-
-// application.ts
-this.bind(MastraInternalBindings.Tools).toProvider(MyTools).inScope(BindingScope.SINGLETON);
 ```
 
-## Overriding storage, models, and steps
-
-Anything the component resolves through a binding can be swapped from your app:
+Register it via a custom `ToolStore` provider. Inject the built-in tools (by
+their LoopBack service keys) if you want to keep them alongside yours:
 
 ```ts
-import {
-  AiIntegrationBindings,
-  MastraInternalBindings,
-  PostgresMastraStorageProvider,
-} from 'lb4-llm-chat-component';
+// my-tools.provider.ts
+import {BindingScope, inject, injectable, Provider} from '@loopback/core';
+import {IGraphTool, ToolStore} from 'lb4-llm-chat-component';
+import {AddTool} from './my-add.tool';
 
-// model tiers (each is an AI-SDK LanguageModel provider)
-this.bind(AiIntegrationBindings.SmartLLM).toProvider(MySmartModel);
-this.bind(AiIntegrationBindings.CheapLLM).toProvider(MyCheapModel);
+@injectable({scope: BindingScope.SINGLETON})
+export class MyToolsProvider implements Provider<ToolStore> {
+  constructor(
+    // built-ins are optional — present only if DbQuery/Visualizer is mounted
+    @inject('services.GetDataAsDatasetTool', {optional: true})
+    private getData?: IGraphTool,
+    @inject('services.ImproveDatasetTool', {optional: true})
+    private improve?: IGraphTool,
+    @inject('services.AskAboutDatasetTool', {optional: true})
+    private ask?: IGraphTool,
+    @inject('services.GenerateVisualizationTool', {optional: true})
+    private viz?: IGraphTool,
+  ) {}
+
+  value(): ToolStore {
+    const list = [this.getData, this.improve, this.ask, this.viz, new AddTool()];
+    return {list: list.filter((t): t is IGraphTool => !!t)};
+  }
+}
+```
+
+```ts
+// application.ts
+import {MastraInternalBindings} from 'lb4-llm-chat-component';
+this.bind(MastraInternalBindings.Tools).toProvider(MyToolsProvider);
+```
+
+## Agents
+
+There is one chat agent (`ChatAgent`). It runs the ReAct loop and decides which
+tool to call. You usually customize it through bindings rather than rebuilding
+it:
+
+```ts
+// application.ts
+import {AiIntegrationBindings} from 'lb4-llm-chat-component';
+
+// 1. Model — the agent uses the ChatLLM binding (falls back to the
+//    MASTRA_DEFAULT_CHAT_MODEL env var when unbound).
+this.bind(AiIntegrationBindings.ChatLLM).toProvider(MyChatModelProvider);
+
+// 2. Instructions — these lines are appended to the agent's system prompt.
+//    Use this for domain rules ("salary is monthly", dialect hints, tone).
+this.bind(AiIntegrationBindings.SystemContext).to([
+  'You answer questions about the HR database only.',
+  'Always convert currency using the active exchange rate (end_date IS NULL).',
+]);
+
+// 3. Tools the agent may call — see the Tools section (override
+//    MastraInternalBindings.Tools).
+```
+
+To replace the agent (or the whole Mastra instance) outright — e.g. add a
+second agent, change Memory options, or register custom workflows — provide your
+own `Provider<Mastra>` and rebind `MastraInternalBindings.Mastra`. Use the
+exported `MastraProvider` as a reference implementation:
+
+```ts
+import {Provider, BindingScope, injectable} from '@loopback/core';
+import {Mastra} from '@mastra/core';
+import {Agent} from '@mastra/core/agent';
+import {MastraInternalBindings} from 'lb4-llm-chat-component';
+
+@injectable({scope: BindingScope.SINGLETON})
+export class MyMastraProvider implements Provider<Mastra> {
+  value(): Mastra {
+    const supportAgent = new Agent({
+      id: 'support-agent',
+      name: 'SupportAgent',
+      instructions: 'You triage support tickets.',
+      model: process.env.MASTRA_DEFAULT_CHAT_MODEL!,
+    });
+    return new Mastra({agents: {supportAgent /*, chatAgent */}});
+  }
+}
+// this.bind(MastraInternalBindings.Mastra).toProvider(MyMastraProvider);
+```
+
+## Steps and workflows
+
+The db-query flow is a Mastra workflow built from individual `createStep` units.
+Each step and each workflow is exported from `lb4-llm-chat-component/mastra`, so
+you can swap one step and re-register the workflow under the key the tools look
+up (`generateQueryWorkflow`).
+
+```ts
+// my-generate.workflow.ts
+import {createStep, createWorkflow} from '@mastra/core/workflows';
+import {
+  // existing steps you keep
+  checkCacheStep,
+  getTablesStep,
+  checkTemplatesStep,
+  postCacheAndTablesStep,
+  getColumnsStep,
+  generateChecklistStep,
+  sqlAndValidateStep,
+  saveDatasetStep,
+  // workflow input/output contract
+  generateQueryInputSchema,
+  generateQueryOutputSchema,
+} from 'lb4-llm-chat-component/mastra';
+
+// your replacement for one step (must keep the same input/output shape)
+const myGetTablesStep = createStep({
+  id: 'get-tables',
+  inputSchema: getTablesStep.inputSchema,
+  outputSchema: getTablesStep.outputSchema,
+  execute: async ({inputData, requestContext}) => {
+    // ...your table-selection logic...
+    return {tables: ['employees', 'currencies']};
+  },
+});
+
+// recompose the workflow. Mirror the DAG in the package's
+// generate.workflow.ts (branches/dountil); shown linear here for brevity.
+export const myGenerateWorkflow = createWorkflow({
+  id: 'generate-query',
+  inputSchema: generateQueryInputSchema,
+  outputSchema: generateQueryOutputSchema,
+})
+  .then(myGetTablesStep)
+  .then(getColumnsStep)
+  .then(generateChecklistStep)
+  .dountil(sqlAndValidateStep, async ({inputData}) => inputData.passed)
+  .then(saveDatasetStep)
+  .commit();
+```
+
+Register it by building a custom Mastra instance that maps your workflow to the
+`generateQueryWorkflow` key, then rebind `MastraInternalBindings.Mastra` (the
+tools resolve the workflow by that key via `mastra.getWorkflow(...)`):
+
+```ts
+import {Mastra} from '@mastra/core';
+import {myGenerateWorkflow} from './my-generate.workflow';
+// new Mastra({ workflows: { generateQueryWorkflow: myGenerateWorkflow, ... }, ... })
+```
+
+## Storage and memory knobs
+
+```ts
+import {MastraInternalBindings, PostgresMastraStorageProvider} from 'lb4-llm-chat-component';
 
 // persist threads/messages in Postgres instead of the default LibSQL file
 this.bind(MastraInternalBindings.Storage).toProvider(PostgresMastraStorageProvider);
-// env: MASTRA_PG_CONNECTION_STRING (or MASTRA_PG_HOST/PORT/DATABASE/USER/PASSWORD)
+// env: MASTRA_PG_CONNECTION_STRING (or MASTRA_PG_HOST/PORT/DATABASE/USER/PASSWORD),
+//      MASTRA_PG_SCHEMA (default "mastra")
 ```
 
-Memory knobs (env): `MASTRA_DEFAULT_CHAT_MODEL` (required chat model), `MASTRA_SEMANTIC_RECALL=true` to enable cross-thread recall (default off; needs a vector store + embedder), `MAX_TOKEN_COUNT` to cap history length.
-
-To change a single db-query step, the workflow steps are exported individually from `src/mastra/workflows/db-query/generate.steps.ts` (`checkCacheStep`, `getTablesStep`, `getColumnsStep`, `sqlAndValidateStep`, …) — import the ones you keep, substitute your own `createStep`, and compose a replacement workflow.
+Memory env knobs: `MASTRA_DEFAULT_CHAT_MODEL` (required chat model),
+`MASTRA_SEMANTIC_RECALL=true` to enable cross-thread recall (default off; needs
+a vector store + embedder), `MAX_TOKEN_COUNT` to cap history length.
 
 # Observability
 

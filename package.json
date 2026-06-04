@@ -20,6 +20,10 @@
       "type": "./dist/components/db-query/testing/index.d.ts",
       "default": "./dist/components/db-query/testing/index.js"
     },
+    "./mastra": {
+      "type": "./dist/mastra/index.d.ts",
+      "default": "./dist/mastra/index.js"
+    },
     "./aws": {
       "type": "./dist/sub-modules/providers/aws/index.d.ts",
       "default": "./dist/sub-modules/providers/aws/index.js"
