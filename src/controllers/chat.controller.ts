@@ -107,62 +107,23 @@ export class ChatController {
     threadId: string,
   ): Array<Record<string, unknown>> {
     const role = typeof m.role === 'string' ? m.role : 'user';
-    const typeByRole: Record<string, string> = {
-      assistant: 'ai',
-      tool: 'tool',
-      system: 'system',
-      user: 'user',
-    };
-    const type = typeByRole[role] ?? 'user';
-    const createdOn = m.createdAt ?? m.createdOn;
+    const type = MSG_TYPE_BY_ROLE[role] ?? 'user';
     const baseMeta = (m.metadata as Record<string, unknown>) ?? {};
-    const base = {channelId: threadId, channelType: 'chat', createdOn, role};
-    const out: Array<Record<string, unknown>> = [];
-    for (const raw of chatMessageParts(m.content)) {
-      const p = raw as {
-        type?: string;
-        text?: unknown;
-        toolInvocation?: {
-          toolCallId?: string;
-          toolName?: string;
-          args?: unknown;
-          state?: string;
-          result?: unknown;
-        };
-      };
-      if (p.type === 'text' && typeof p.text === 'string' && p.text.trim()) {
-        out.push({
-          ...base,
-          id: `${String(m.id)}:t${out.length}`,
-          type,
-          body: p.text,
-          metadata: {...baseMeta, type},
-        });
-      } else if (p.type === 'tool-invocation' && p.toolInvocation) {
-        const ti = p.toolInvocation;
-        const result = typeof ti.result === 'string' ? ti.result : '';
-        out.push({
-          ...base,
-          id: `${String(m.id)}:tool:${ti.toolCallId ?? out.length}`,
-          role: 'tool',
-          type: 'tool',
-          body: result,
-          metadata: {
-            type: 'tool',
-            id: ti.toolCallId,
-            toolName: ti.toolName,
-            args: ti.args,
-            status: ti.state === 'result' ? 'success' : ti.state,
-            existingDatasetId: extractDatasetId(result),
-          },
-        });
-      }
-    }
+    const base = {
+      channelId: threadId,
+      channelType: 'chat',
+      createdOn: m.createdAt ?? m.createdOn,
+      role,
+    };
+    const mId = String(m.id);
+    const out = chatMessageParts(m.content)
+      .map((raw, i) => partToMessage(raw, base, type, baseMeta, mId, i))
+      .filter((x): x is Record<string, unknown> => x !== null);
     // No structured parts (plain-string content) → one message from the text.
     if (out.length === 0) {
       out.push({
         ...base,
-        id: String(m.id),
+        id: mId,
         type,
         body: chatMessageText(m.content),
         metadata: {...baseMeta, type},
@@ -270,6 +231,79 @@ function chatMessageText(content: unknown): string {
     if (Array.isArray(obj.parts)) return chatMessageText(obj.parts);
   }
   return '';
+}
+
+const MSG_TYPE_BY_ROLE: Record<string, string> = {
+  assistant: 'ai',
+  tool: 'tool',
+  system: 'system',
+  user: 'user',
+};
+
+type ToolInvocation = {
+  toolCallId?: string;
+  toolName?: string;
+  args?: unknown;
+  state?: string;
+  result?: unknown;
+};
+
+/** Map one Mastra content part to a v2 message, or null to drop it
+ * (reasoning / step-start / empty). Text → user/ai/system; tool-invocation →
+ * a `type:'tool'` message (see toolPartToMessage). */
+function partToMessage(
+  raw: unknown,
+  base: Record<string, unknown>,
+  type: string,
+  baseMeta: Record<string, unknown>,
+  mId: string,
+  idx: number,
+): Record<string, unknown> | null {
+  const p = raw as {
+    type?: string;
+    text?: unknown;
+    toolInvocation?: ToolInvocation;
+  };
+  if (p.type === 'text' && typeof p.text === 'string' && p.text.trim()) {
+    return {
+      ...base,
+      id: `${mId}:t${idx}`,
+      type,
+      body: p.text,
+      metadata: {...baseMeta, type},
+    };
+  }
+  if (p.type === 'tool-invocation' && p.toolInvocation) {
+    return toolPartToMessage(p.toolInvocation, base, mId, idx);
+  }
+  return null;
+}
+
+/** A tool-invocation part → the v2 `type:'tool'` message carrying the metadata
+ * (toolName/args/existingDatasetId/status) a consumer needs to re-run/load a
+ * dataset from history. */
+function toolPartToMessage(
+  ti: ToolInvocation,
+  base: Record<string, unknown>,
+  mId: string,
+  idx: number,
+): Record<string, unknown> {
+  const result = typeof ti.result === 'string' ? ti.result : '';
+  return {
+    ...base,
+    role: 'tool',
+    id: `${mId}:tool:${ti.toolCallId ?? idx}`,
+    type: 'tool',
+    body: result,
+    metadata: {
+      type: 'tool',
+      id: ti.toolCallId,
+      toolName: ti.toolName,
+      args: ti.args,
+      status: ti.state === 'result' ? 'success' : ti.state,
+      existingDatasetId: extractDatasetId(result),
+    },
+  };
 }
 
 /** The typed parts of a Mastra message `content` (array, or `{parts:[…]}`). */
