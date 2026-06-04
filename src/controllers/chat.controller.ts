@@ -77,7 +77,8 @@ export class ChatController {
       id: t.id,
       tenantId,
       userId,
-      title: t.title || 'New Chat',
+      // ternary (not ??) so an empty-string title also falls back
+      title: t.title ? t.title : 'New Chat',
       inputTokens: Number(md.inputTokens) || 0,
       outputTokens: Number(md.outputTokens) || 0,
       metadata: md,

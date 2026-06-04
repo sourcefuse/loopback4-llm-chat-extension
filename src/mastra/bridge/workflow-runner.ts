@@ -769,7 +769,9 @@ export class WorkflowRunner {
       // this, threads have no title and the chat-history list shows blanks —
       // Mastra only auto-titles when MASTRA_GENERATE_TITLE is on (an extra LLM
       // call). A prompt-derived title is free and matches main's behaviour.
-      const title = prompt?.trim().slice(0, CHAT_TITLE_MAX_LENGTH) || undefined;
+      const trimmed = prompt?.trim().slice(0, CHAT_TITLE_MAX_LENGTH);
+      // ternary (not ??) so an empty prompt yields undefined, not ''
+      const title = trimmed ? trimmed : undefined;
       const thread = await memory.createThread({resourceId, title});
       emitInit(thread.id);
       return {threadId: thread.id, resourceId, title: title ?? ''};
