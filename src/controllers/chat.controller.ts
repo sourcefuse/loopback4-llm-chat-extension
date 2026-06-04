@@ -102,12 +102,16 @@ export class ChatController {
       user: 'user',
     };
     const meta = (m.metadata as Record<string, unknown>) ?? {};
+    const type = typeByRole[role] ?? 'user';
     return {
       ...m,
+      // top-level `type` AND `metadata.type` — consumers (e.g. BizBook's
+      // ChatMessageAdapter) read one or the other; never leave it undefined.
+      type,
       body: chatMessageText(m.content),
       channelId: threadId,
       createdOn: m.createdAt ?? m.createdOn,
-      metadata: {...meta, type: typeByRole[role] ?? 'user'},
+      metadata: {...meta, type},
     };
   }
 
@@ -193,12 +197,13 @@ export class ChatController {
 function chatMessageText(content: unknown): string {
   if (typeof content === 'string') return content;
   if (Array.isArray(content)) {
+    // Natural-language text only — skip reasoning / tool-invocation parts so an
+    // assistant turn that only called a tool yields an empty body (as in v2).
     return content
       .map(p => {
         if (typeof p === 'string') return p;
-        const part = p as {text?: unknown; type?: unknown};
-        if (typeof part.text === 'string') return part.text;
-        return part.type ? `[${String(part.type)}]` : '';
+        const part = p as {text?: unknown};
+        return typeof part.text === 'string' ? part.text : '';
       })
       .filter(Boolean)
       .join(' ');
