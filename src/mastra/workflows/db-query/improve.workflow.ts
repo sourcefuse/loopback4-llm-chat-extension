@@ -3,6 +3,8 @@ import {z} from 'zod';
 import {
   buildImproveSqlPrompt,
   emitToolStatus,
+  getAllSchemaTables,
+  getCheapLlm,
   getDatasetStore,
   getDbConnector,
   getGlobalContext,
@@ -157,14 +159,15 @@ const fixQueryStep = createStep({
     if (data.loadError) return loadErrorShortCircuit(data);
     const prompt = data.prompt ?? '';
     const tables = data.tables ?? [];
-    const columns = getTablesWithColumns(
-      getSchemaStore(requestContext),
-      tables,
-    );
+    const schemaStore = getSchemaStore(requestContext);
+    const columns = getTablesWithColumns(schemaStore, tables);
     const attempt = await runSqlAttempt({
       // Fix-query (sql gen + semantic validation): smart tier (main:
       // SmartLLM in sql-generation.node + semantic-validator.node).
       chatLlm: getSmartLlm(requestContext),
+      // Error classification on syntactic failure: cheap tier (main: CheapLLM).
+      cheapLlm: getCheapLlm(requestContext),
+      allTables: getAllSchemaTables(schemaStore),
       tracing: tracingContext,
       dbConnector: getDbConnector(requestContext),
       prompt,
@@ -175,6 +178,12 @@ const fixQueryStep = createStep({
       feedback: data.feedback,
       buildPrompt: buildImproveSqlPrompt,
       initialSql: data.originalSql,
+      onReselectTables: () =>
+        emitToolStatus(
+          requestContext,
+          'fix-query',
+          'Reselecting tables to resolve a missing table or column',
+        ),
     });
     return {
       datasetId: data.datasetId ?? '',
@@ -184,7 +193,7 @@ const fixQueryStep = createStep({
       feedback: attempt.feedback,
       description: undefined,
       prompt,
-      tables,
+      tables: attempt.tables ?? tables,
       checklist: data.checklist ?? '',
     };
   },

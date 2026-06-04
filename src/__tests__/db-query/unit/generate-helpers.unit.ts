@@ -5,7 +5,9 @@ import type {IDbConnector} from '../../../components/db-query/types';
 import {
   buildGenerateSqlPrompt,
   buildImproveSqlPrompt,
+  classifySqlError,
   generateSqlOnce,
+  getAllSchemaTables,
   idToString,
   pickRelevantTables,
   resolvePersistDeps,
@@ -242,6 +244,172 @@ describe('db-query generate helpers (unit)', () => {
       });
       // syntactic passed (okConn) + lastAttempt => accept, never empty
       expect(r.passed).to.be.true();
+    });
+  });
+
+  describe('classifySqlError (v2 SyntacticValidatorNode reclassification)', () => {
+    const allTables = ['employees', 'departments', 'currencies'];
+    it('parses a table_not_found verdict and its related tables', async () => {
+      const r = await classifySqlError({
+        chatLlm: model(
+          '<category>table_not_found</category><tables>departments, employees</tables>',
+        ),
+        error: 'no such table: departments',
+        sql: 'SELECT * FROM departments',
+        allTables,
+      });
+      expect(r.category).to.equal('table_not_found');
+      expect(r.errorTables).to.eql(['departments', 'employees']);
+    });
+    it('treats any non-table verdict as query_error', async () => {
+      const r = await classifySqlError({
+        chatLlm: model('<category>query_error</category><tables></tables>'),
+        error: 'syntax error near )',
+        sql: 'SELECT (',
+        allTables,
+      });
+      expect(r.category).to.equal('query_error');
+      expect(r.errorTables).to.eql([]);
+    });
+    it('defaults to query_error/[] when the verdict is unparseable', async () => {
+      const r = await classifySqlError({
+        chatLlm: model('I have no idea'),
+        error: 'boom',
+        sql: 'SELECT 1',
+        allTables,
+      });
+      expect(r).to.eql({category: 'query_error', errorTables: []});
+    });
+    it('defaults to query_error/[] when no LLM is bound', async () => {
+      const r = await classifySqlError({
+        chatLlm: undefined,
+        error: 'boom',
+        sql: 'SELECT 1',
+        allTables,
+      });
+      expect(r).to.eql({category: 'query_error', errorTables: []});
+    });
+    it('defaults to query_error/[] when the schema table list is empty', async () => {
+      const r = await classifySqlError({
+        chatLlm: model('<category>table_not_found</category><tables>x</tables>'),
+        error: 'boom',
+        sql: 'SELECT 1',
+        allTables: [],
+      });
+      expect(r).to.eql({category: 'query_error', errorTables: []});
+    });
+    it('defaults to query_error/[] when the classifier model throws', async () => {
+      const r = await classifySqlError({
+        chatLlm: throwingModel(),
+        error: 'boom',
+        sql: 'SELECT 1',
+        allTables,
+      });
+      expect(r).to.eql({category: 'query_error', errorTables: []});
+    });
+  });
+
+  describe('runSqlAttempt table_not_found expansion (v2 ReselectTables)', () => {
+    const rejectingConn = {
+      validate: sinon.stub().rejects(new Error('no such table: departments')),
+    } as unknown as IDbConnector;
+    const okConn = {validate: sinon.stub().resolves()} as unknown as IDbConnector;
+
+    it('widens the allowed table set when a syntactic failure is table_not_found', async () => {
+      let reselected: string[] | undefined;
+      const r = await runSqlAttempt({
+        chatLlm: model('SELECT * FROM departments'),
+        // separate model for the classifier call (args.cheapLlm ?? chatLlm)
+        cheapLlm: model(
+          '<category>table_not_found</category><tables>departments</tables>',
+        ),
+        allTables: ['employees', 'departments'],
+        dbConnector: rejectingConn,
+        prompt: 'employees and their departments',
+        tables: ['employees'],
+        buildPrompt: buildGenerateSqlPrompt,
+        onReselectTables: t => (reselected = t),
+      });
+      expect(r.passed).to.be.false();
+      expect(r.tables).to.eql(['employees', 'departments']);
+      expect(reselected).to.eql(['employees', 'departments']);
+    });
+
+    it('does not expand on a query_error verdict', async () => {
+      const r = await runSqlAttempt({
+        chatLlm: model('SELECT ('),
+        cheapLlm: model('<category>query_error</category><tables></tables>'),
+        allTables: ['employees', 'departments'],
+        dbConnector: rejectingConn,
+        prompt: 'x',
+        tables: ['employees'],
+        buildPrompt: buildGenerateSqlPrompt,
+      });
+      expect(r.tables).to.be.undefined();
+    });
+
+    it('ignores classifier tables that are not in the real schema', async () => {
+      const r = await runSqlAttempt({
+        chatLlm: model('SELECT * FROM ghosts'),
+        cheapLlm: model(
+          '<category>table_not_found</category><tables>ghosts</tables>',
+        ),
+        allTables: ['employees', 'departments'],
+        dbConnector: rejectingConn,
+        prompt: 'x',
+        tables: ['employees'],
+        buildPrompt: buildGenerateSqlPrompt,
+      });
+      // 'ghosts' filtered out → nothing new to add → no expansion
+      expect(r.tables).to.be.undefined();
+    });
+
+    it('does not classify or expand when validation passes', async () => {
+      const r = await runSqlAttempt({
+        chatLlm: model('SELECT * FROM employees'),
+        cheapLlm: model('<category>table_not_found</category><tables>x</tables>'),
+        allTables: ['employees', 'departments'],
+        dbConnector: okConn,
+        prompt: 'x',
+        tables: ['employees'],
+        buildPrompt: buildGenerateSqlPrompt,
+      });
+      expect(r.passed).to.be.true();
+      expect(r.tables).to.be.undefined();
+    });
+
+    it('skips expansion entirely when allTables is not supplied', async () => {
+      const r = await runSqlAttempt({
+        chatLlm: model('SELECT * FROM departments'),
+        cheapLlm: model(
+          '<category>table_not_found</category><tables>departments</tables>',
+        ),
+        dbConnector: rejectingConn,
+        prompt: 'x',
+        tables: ['employees'],
+        buildPrompt: buildGenerateSqlPrompt,
+      });
+      expect(r.tables).to.be.undefined();
+    });
+  });
+
+  describe('getAllSchemaTables', () => {
+    it('returns the schema table names', () => {
+      const store = {
+        get: () => ({tables: {employees: {}, departments: {}}}),
+      } as never;
+      expect(getAllSchemaTables(store)).to.eql(['employees', 'departments']);
+    });
+    it('returns [] when the SchemaStore is unbound', () => {
+      expect(getAllSchemaTables(undefined)).to.eql([]);
+    });
+    it('returns [] when the schema is not yet loaded', () => {
+      const store = {
+        get: () => {
+          throw new Error('not loaded');
+        },
+      } as never;
+      expect(getAllSchemaTables(store)).to.eql([]);
     });
   });
 

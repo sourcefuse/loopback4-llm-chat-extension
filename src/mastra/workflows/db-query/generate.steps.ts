@@ -7,6 +7,7 @@ import {
   getAuthUser,
   getCheapLlm,
   getDatasetStore,
+  getAllSchemaTables,
   getDbConnector,
   getGlobalContext,
   getQueryCache,
@@ -624,14 +625,17 @@ export const sqlAndValidateStep = createStep({
     );
     const prompt = data.prompt ?? '';
     const tables = data.tables ?? [];
-    const columns = getTablesWithColumns(
-      getSchemaStore(requestContext),
-      tables,
-    );
+    const schemaStore = getSchemaStore(requestContext);
+    const columns = getTablesWithColumns(schemaStore, tables);
+    const allTables = getAllSchemaTables(schemaStore);
     const attempt = await runSqlAttempt({
       // SQL generation + semantic validation: smart tier (main: SmartLLM
       // for both sql-generation.node and semantic-validator.node).
       chatLlm: getSmartLlm(requestContext),
+      // Error classification on syntactic failure: cheap tier (main:
+      // CheapLLM via SyntacticValidatorNode).
+      cheapLlm: getCheapLlm(requestContext),
+      allTables,
       tracing: tracingContext,
       dbConnector: getDbConnector(requestContext),
       prompt,
@@ -643,6 +647,12 @@ export const sqlAndValidateStep = createStep({
       buildPrompt: buildGenerateSqlPrompt,
       buildDescription: (_sql, p) => `Generated SQL for: ${p}`,
       lastAttempt: (data.attempts ?? 0) + 1 >= MAX_VALIDATION_ATTEMPTS,
+      onReselectTables: () =>
+        emitToolStatus(
+          requestContext,
+          STEP_SQL_AND_VALIDATE,
+          'Reselecting tables to resolve a missing table or column',
+        ),
       onStatus: stage => {
         if (stage === 'syntactic') {
           emitToolStatus(
@@ -666,7 +676,9 @@ export const sqlAndValidateStep = createStep({
       feedback: attempt.feedback,
       description: attempt.description ?? '',
       prompt,
-      tables,
+      // Carry the widened set forward on a table_not_found verdict so the
+      // next dountil iteration re-generates SQL against the missing table.
+      tables: attempt.tables ?? tables,
       checklist: data.checklist ?? '',
     };
   },

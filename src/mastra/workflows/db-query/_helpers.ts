@@ -414,6 +414,11 @@ export type SqlAttemptResult = {
   passed: boolean;
   feedback?: string;
   description?: string;
+  /** Widened table set when a syntactic failure was classified as
+   * `table_not_found` (mirrors v2's ReselectTables path). Undefined when
+   * the set was not expanded; callers carry it into the next dountil
+   * iteration so SQL re-generation sees the missing table/column. */
+  tables?: string[];
 };
 
 type SqlGenStage = {sql: string; description?: string; error?: string};
@@ -463,10 +468,14 @@ async function runValidationStage(args: {
   onStatus?: (stage: 'syntactic' | 'semantic') => void;
   tracing?: TracingContext;
   lastAttempt?: boolean;
-}): Promise<{passed: boolean; feedback?: string}> {
+}): Promise<{passed: boolean; feedback?: string; kind?: 'syntactic' | 'semantic'}> {
   const {sql} = args;
   if (!sql)
-    return {passed: false, feedback: 'SQL generation produced an empty query.'};
+    return {
+      passed: false,
+      feedback: 'SQL generation produced an empty query.',
+      kind: 'syntactic',
+    };
   // Run the two validators CONCURRENTLY: the syntactic check is a DB EXPLAIN
   // and the semantic check is an LLM call — independent, so there's no reason
   // to pay them sequentially. Syntactic failure is authoritative (the SQL
@@ -483,11 +492,11 @@ async function runValidationStage(args: {
       tracing: args.tracing,
     }),
   ]);
-  if (!syntactic.passed) return syntactic;
+  if (!syntactic.passed) return {...syntactic, kind: 'syntactic'};
   // On the final attempt, executable SQL beats an empty dataset: the
   // semantic judge is advisory, so don't let it fail the run outright.
   if (args.lastAttempt) return {passed: true};
-  return semantic;
+  return {...semantic, kind: 'semantic'};
 }
 
 /**
@@ -513,6 +522,16 @@ export async function runSqlAttempt(args: {
    * even if the (advisory) semantic judge dislikes it, so an executable
    * query is never thrown away in favour of an empty dataset. */
   lastAttempt?: boolean;
+  /** Full schema table list. When supplied, a syntactic failure is
+   * classified (v2 SyntacticValidatorNode): a `table_not_found` verdict
+   * widens the allowed set with the related tables for the next iteration. */
+  allTables?: string[];
+  /** Cheap-tier model for error classification (v2 used CheapLLM). Falls
+   * back to {@link chatLlm} when unset. */
+  cheapLlm?: LanguageModel;
+  /** Fired when the table set was widened after a `table_not_found` verdict,
+   * so the step can emit a "Reselecting tables" status (v2 ReselectTables). */
+  onReselectTables?: (mergedTables: string[]) => void;
 }): Promise<SqlAttemptResult> {
   const stage = await runGenerationStage(args);
   if (stage.error) {
@@ -528,12 +547,65 @@ export async function runSqlAttempt(args: {
     tracing: args.tracing,
     lastAttempt: args.lastAttempt,
   });
+  const tables =
+    !verdict.passed && verdict.kind === 'syntactic'
+      ? await expandTablesOnTableError({
+          chatLlm: args.cheapLlm ?? args.chatLlm,
+          error: verdict.feedback ?? '',
+          sql: stage.sql,
+          currentTables: args.tables,
+          allTables: args.allTables,
+          tracing: args.tracing,
+          onReselectTables: args.onReselectTables,
+        })
+      : undefined;
   return {
     sql: stage.sql,
     passed: verdict.passed,
     feedback: verdict.feedback,
     description: stage.description,
+    tables,
   };
+}
+
+/**
+ * Classify a syntactic failure and, when it is `table_not_found`, return the
+ * widened allowed-table set (current ∪ related-tables-that-exist-in-schema).
+ * Returns `undefined` when there is nothing to expand, so the caller leaves
+ * the table set unchanged and just fixes the SQL with feedback. Mirrors v2's
+ * PostValidation `ReselectTables` branch seeded with `syntacticErrorTables`.
+ */
+async function expandTablesOnTableError(args: {
+  chatLlm: LanguageModel | undefined;
+  error: string;
+  sql: string;
+  currentTables: string[];
+  allTables?: string[];
+  tracing?: TracingContext;
+  onReselectTables?: (mergedTables: string[]) => void;
+}): Promise<string[] | undefined> {
+  const allTables = args.allTables;
+  if (!allTables?.length) return undefined;
+  const {category, errorTables} = await classifySqlError({
+    chatLlm: args.chatLlm,
+    error: args.error,
+    sql: args.sql,
+    allTables,
+    tracing: args.tracing,
+  });
+  if (category !== 'table_not_found' || errorTables.length === 0) {
+    return undefined;
+  }
+  const allowed = new Set(allTables);
+  const merged = [
+    ...new Set([
+      ...args.currentTables,
+      ...errorTables.filter(t => allowed.has(t)),
+    ]),
+  ];
+  if (merged.length <= args.currentTables.length) return undefined;
+  args.onReselectTables?.(merged);
+  return merged;
 }
 
 /**
@@ -624,6 +696,84 @@ export async function validateSqlSyntactic(
       passed: false,
       feedback: `Syntactic error: ${(err as Error).message}`,
     };
+  }
+}
+
+/**
+ * Categorise a DB validation (EXPLAIN) failure and extract the tables
+ * related to it. Faithful port of v2's `SyntacticValidatorNode` classifier
+ * (`git show origin/main:src/components/db-query/nodes/syntactic-validator.node.ts`):
+ * a cheap LLM call labels the error `table_not_found` (a missing table/column
+ * — the table-selection step picked too few tables) or `query_error` (tables
+ * are fine, the SQL just needs fixing) and lists ALL related tables.
+ *
+ * v2 then routed `table_not_found` to ReselectTables (re-run GetTables seeded
+ * with the error tables = a WIDER candidate set) and `query_error` to FixQuery.
+ * In the Mastra dountil model the caller (`runSqlAttempt`) merges the returned
+ * tables into the allowed set for the next iteration — same effect.
+ *
+ * Fail-safe: returns `{category: 'query_error', errorTables: []}` whenever the
+ * LLM is unbound or the verdict is unparseable, so the loop falls back to the
+ * existing fix-SQL-with-feedback behaviour (no expansion) rather than erroring.
+ */
+export async function classifySqlError(args: {
+  chatLlm: LanguageModel | undefined;
+  error: string;
+  sql: string;
+  allTables: string[];
+  tracing?: TracingContext;
+}): Promise<{
+  category: 'table_not_found' | 'query_error';
+  errorTables: string[];
+}> {
+  const {chatLlm, error, sql, allTables, tracing} = args;
+  const fallback = {category: 'query_error' as const, errorTables: []};
+  if (!chatLlm || !error || allTables.length === 0) return fallback;
+  const prompt = `You are an AI assistant that categorizes the SQL query error and identifies related tables.
+
+Here is the SQL query error that you need to categorize -
+${error}
+
+Here is the query that resulted in the error -
+${sql}
+
+Here are all the available tables in the database -
+${allTables.join(', ')}
+
+Categorize the error into one of these two categories:
+- table_not_found: Any error that indicates a table or column is missing
+- query_error: All other errors
+
+Also identify ALL tables that are related to the error. Be generous - include tables that are directly involved in the error, tables referenced in the failing part of the query, and tables that might need to be joined or referenced to fix the error. It is better to include extra tables than to miss any.
+
+Return your response in exactly this format with no other text:
+<category>table_not_found or query_error</category>
+<tables>comma, separated, table, names</tables>`;
+  try {
+    const verdict = await tracedGenerateText({
+      model: chatLlm,
+      prompt,
+      tracing,
+      label: 'classify-sql-error',
+      resultType: 'reasoning',
+    });
+    const text = verdict.text;
+    const categoryMatch = /<category>([\s\S]*?)<\/category>/.exec(text);
+    const tablesMatch = /<tables>([\s\S]*?)<\/tables>/.exec(text);
+    const category =
+      categoryMatch?.[1]?.trim() === 'table_not_found'
+        ? ('table_not_found' as const)
+        : ('query_error' as const);
+    const errorTables = tablesMatch
+      ? tablesMatch[1]
+          .split(',')
+          .map(t => t.trim())
+          .filter(t => t.length > 0)
+      : [];
+    return {category, errorTables};
+  } catch (err) {
+    dbg('classify-sql-error judge unavailable, defaulting to query_error: %o', err);
+    return fallback;
   }
 }
 
@@ -760,6 +910,22 @@ Return ONLY valid JSON. Include primary-key and foreign-key columns even if not 
     return filtered.length > 0 ? filtered : null;
   } catch {
     return null;
+  }
+}
+
+/**
+ * Full list of table names in the loaded schema; `[]` when the SchemaStore
+ * is unbound or the schema isn't loaded yet. Used to scope the
+ * `table_not_found` reclassification to tables that actually exist.
+ */
+export function getAllSchemaTables(
+  schemaStore: SchemaStore | undefined,
+): string[] {
+  if (!schemaStore) return [];
+  try {
+    return Object.keys(schemaStore.get().tables);
+  } catch {
+    return [];
   }
 }
 
