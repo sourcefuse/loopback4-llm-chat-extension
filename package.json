@@ -56,10 +56,6 @@
       "type": "./dist/sub-modules/providers/openrouter/index.d.ts",
       "default": "./dist/sub-modules/providers/openrouter/index.js"
     },
-    "./pg": {
-      "type": "./dist/sub-modules/providers/pg/index.d.ts",
-      "default": "./dist/sub-modules/providers/pg/index.js"
-    },
     "./langfuse": {
       "type": "./dist/sub-modules/obf/langfuse/index.d.ts",
       "default": "./dist/sub-modules/obf/langfuse/index.js"
