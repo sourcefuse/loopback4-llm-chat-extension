@@ -25,7 +25,12 @@
 
 ### Overview
 
-A Loopack4 based component to integrate a basic Langgraph.js based endpoint in your application which can use any tool that you register using the provided decorator.
+A Loopback4 based component to integrate an LLM chat endpoint (powered by [Mastra](https://mastra.ai)) into your application, with pluggable tools, model providers, storage, and observability.
+
+> **Extension points:** for the full list of binding keys, storage backends
+> (LibSQL default / opt-in Postgres), memory/semantic-recall env flags, custom
+> tools, and observability wiring you can override, see
+> [`docs/EXTENSION_POINTS.md`](./docs/EXTENSION_POINTS.md).
 
 ### Installation
 
