@@ -162,6 +162,9 @@ export class MastraProvider implements Provider<Mastra> {
  *   - `MASTRA_SEMANTIC_RECALL_RANGE` (messageRange, default 3)
  * Scope is fixed to `'resource'` for multi-tenant isolation (Section 13.7).
  */
+const DEFAULT_SEMANTIC_RECALL_TOPK = 5;
+const DEFAULT_SEMANTIC_RECALL_RANGE = 3;
+
 function buildSemanticRecallOption(
   hasVectorAndEmbedder: boolean,
 ): false | {topK: number; messageRange: number; scope: 'resource'} {
@@ -172,8 +175,14 @@ function buildSemanticRecallOption(
     return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
   };
   return {
-    topK: toInt(process.env.MASTRA_SEMANTIC_RECALL_TOPK, 5),
-    messageRange: toInt(process.env.MASTRA_SEMANTIC_RECALL_RANGE, 3),
+    topK: toInt(
+      process.env.MASTRA_SEMANTIC_RECALL_TOPK,
+      DEFAULT_SEMANTIC_RECALL_TOPK,
+    ),
+    messageRange: toInt(
+      process.env.MASTRA_SEMANTIC_RECALL_RANGE,
+      DEFAULT_SEMANTIC_RECALL_RANGE,
+    ),
     scope: 'resource',
   };
 }

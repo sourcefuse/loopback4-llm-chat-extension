@@ -282,17 +282,20 @@ export function buildProviderOptions(
  * carries the resolved model id + provider so the exporter can render
  * tier-specific GENERATION rows.
  */
+/** Span/result classification for a traced generateText call. */
+export type GenResultType =
+  | 'tool_selection'
+  | 'response_generation'
+  | 'reasoning'
+  | 'planning';
+
 export async function tracedGenerateText(args: {
   model: LanguageModel;
   prompt: string;
   tracing?: TracingContext;
   /** Short label used as the span name, e.g. `'cache-judge'`. */
   label: string;
-  resultType?:
-    | 'tool_selection'
-    | 'response_generation'
-    | 'reasoning'
-    | 'planning';
+  resultType?: GenResultType;
   /** When true, forces Anthropic/Bedrock thinking off regardless of
    * `CLAUDE_THINKING` env (e.g. line-visualizer strict structured output
    * that misbehaves with thinking chunks). */

@@ -24,6 +24,8 @@ import {IDataSet} from '../types';
 import {DatasetUpdateDTO} from '../models/dataset-update-dto.model';
 import {DatasetActionType} from '../constant';
 
+const DATASET_BY_ID_PATH = '/datasets/{id}';
+
 export class DataSetController {
   constructor(
     @service(DataSetHelper)
@@ -100,7 +102,7 @@ export class DataSetController {
   @authenticate(STRATEGY.BEARER, {
     passReqToCallback: true,
   })
-  @get('/datasets/{id}', {
+  @get(DATASET_BY_ID_PATH, {
     security: OPERATION_SECURITY_SPEC,
     responses: {
       [STATUS_CODE.OK]: {
@@ -151,7 +153,7 @@ export class DataSetController {
   @authenticate(STRATEGY.BEARER, {
     passReqToCallback: true,
   })
-  @patch('/datasets/{id}', {
+  @patch(DATASET_BY_ID_PATH, {
     security: OPERATION_SECURITY_SPEC,
     responses: {
       [STATUS_CODE.NO_CONTENT]: {
@@ -181,7 +183,7 @@ export class DataSetController {
   @authenticate(STRATEGY.BEARER, {
     passReqToCallback: true,
   })
-  @del('/datasets/{id}', {
+  @del(DATASET_BY_ID_PATH, {
     security: OPERATION_SECURITY_SPEC,
     responses: {
       [STATUS_CODE.NO_CONTENT]: {

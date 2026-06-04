@@ -1,5 +1,7 @@
 import {createStep} from '@mastra/core/workflows';
 import {z} from 'zod';
+import type {LanguageModel} from 'ai';
+import type {TracingContext} from '@mastra/core/observability';
 import {
   buildGenerateSqlPrompt,
   computeSchemaHash,
@@ -57,6 +59,115 @@ function normaliseChecklist(raw: string): string {
   const trimmed = raw.trim();
   if (/^(none|n\/?a|\(none\)|no constraints?\.?)$/i.test(trimmed)) return '';
   return trimmed;
+}
+
+/**
+ * Cache/template short-circuit for generate-checklist: returnCachedStep
+ * ('return-cached') or saveDatasetFromTemplateStep ('save-dataset-from-template')
+ * already produced a real datasetId. The post-cache branch's other arms fall
+ * through into this pipeline, so without this a cache hit would re-run
+ * checklist + SQL gen + validation and DISCARD the cached dataset. Returns the
+ * passthrough output (carrying the id through) or null when there is no hit.
+ */
+function extractCachePassthrough(wrapped: Record<string, unknown>) {
+  const hit = (wrapped['return-cached'] ??
+    wrapped['save-dataset-from-template']) as
+    | {datasetId?: string; sql?: string}
+    | undefined;
+  if (!hit?.datasetId) return null;
+  return {
+    prompt: '',
+    tables: [] as string[],
+    checklist: '',
+    attempts: 0,
+    cached: true,
+    datasetId: idToString(hit.datasetId),
+    sql: hit.sql ?? '',
+  };
+}
+
+/**
+ * Ask the cheap model for ONLY the constraints the user explicitly stated
+ * (filters/sort/limits/named columns) — never invent rules, or the semantic
+ * validator rejects otherwise-correct SQL. Returns '' when no model/prompt or
+ * the call fails, so the dountil loop can still attempt SQL generation.
+ */
+async function generateChecklistText(
+  chatLlm: LanguageModel | undefined,
+  prompt: string,
+  tables: string[],
+  tracing?: TracingContext,
+): Promise<string> {
+  if (!chatLlm || !prompt) return '';
+  const llmPrompt = `You are a SQL planning assistant. List ONLY the constraints the user EXPLICITLY stated in their request — specific filters, sort orders, row limits, or named columns they asked for. Do NOT invent filters, exclusions, sort orders, joins, or columns the user did not mention. If the request states no explicit constraints beyond the data wanted, return nothing.
+
+User request: ${prompt}
+Available tables: ${tables.join(', ') || '(none)'}
+
+Return ONLY the explicit constraints as plain-text bullets, or an empty response if there are none.`;
+  try {
+    const result = await tracedGenerateText({
+      model: chatLlm,
+      prompt: llmPrompt,
+      tracing,
+      label: 'generate-checklist',
+      resultType: 'planning',
+    });
+    return normaliseChecklist(result.text);
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Cache/template-hit passthrough for sql-and-validate — a real datasetId was
+ * carried from generate-checklist, so skip SQL generation + both validators
+ * and mark passed so the dountil exits on the first iteration. Null when not a
+ * cache hit.
+ */
+function cachedSqlPassthrough(data: {
+  attempts?: number;
+  cached?: boolean;
+  datasetId?: string;
+  sql?: string;
+}) {
+  if (!(data.cached && data.datasetId)) return null;
+  return {
+    sql: data.sql ?? '',
+    passed: true,
+    attempts: (data.attempts ?? 0) + 1,
+    feedback: undefined,
+    description: '',
+    prompt: '',
+    tables: [] as string[],
+    checklist: '',
+    cached: true,
+    datasetId: data.datasetId,
+  };
+}
+
+/** The `onStatus` / `onReselectTables` callbacks runSqlAttempt fires, wired to
+ * emit the right ToolStatus for this step. Extracted to keep the step body
+ * under the cyclomatic-complexity threshold. */
+function sqlStatusEmitters(
+  requestContext: Parameters<typeof emitToolStatus>[0],
+) {
+  return {
+    onReselectTables: () =>
+      emitToolStatus(
+        requestContext,
+        STEP_SQL_AND_VALIDATE,
+        'Reselecting tables to resolve a missing table or column',
+      ),
+    onStatus: (stage: 'syntactic' | 'semantic') =>
+      emitToolStatus(
+        requestContext,
+        STEP_SQL_AND_VALIDATE,
+        stage === 'syntactic'
+          ? 'Validating generated SQL query'
+          : "Verifying if the query fully satisfies the user's requirement",
+      ),
+  };
 }
 
 /**
@@ -495,28 +606,9 @@ export const generateChecklistStep = createStep({
   }),
   execute: async ({inputData, requestContext, tracingContext}) => {
     const wrapped = inputData as Record<string, unknown>;
-    // Cache/template short-circuit: returnCachedStep ('return-cached') or
-    // saveDatasetFromTemplateStep ('save-dataset-from-template') already
-    // produced a real datasetId. The post-cache branch's other arms fall
-    // through into this generation pipeline, so without this guard a cache
-    // hit would re-run checklist + SQL generation + validation and DISCARD
-    // the cached dataset. Carry the id through; sqlAndValidate + saveDataset
-    // pass it through unchanged, skipping all LLM work.
-    const hit = (wrapped['return-cached'] ??
-      wrapped['save-dataset-from-template']) as
-      | {datasetId?: string; sql?: string}
-      | undefined;
-    if (hit?.datasetId) {
-      return {
-        prompt: '',
-        tables: [],
-        checklist: '',
-        attempts: 0,
-        cached: true,
-        datasetId: idToString(hit.datasetId),
-        sql: hit.sql ?? '',
-      };
-    }
+    // Cache/template short-circuit — see extractCachePassthrough.
+    const cached = extractCachePassthrough(wrapped);
+    if (cached) return cached;
     const fromGetColumns = wrapped[STEP_GET_COLUMNS] as
       | {prompt?: string; tables?: string[]}
       | undefined;
@@ -525,39 +617,12 @@ export const generateChecklistStep = createStep({
     const tables =
       fromGetColumns?.tables ?? (wrapped.tables as string[] | undefined) ?? [];
     // Checklist generation: cheap tier (main: CheapLLM via generate-checklist.node).
-    const chatLlm = getCheapLlm(requestContext);
-    let checklist = '';
-    if (chatLlm && prompt) {
-      // Only restate constraints the user EXPLICITLY stated. The earlier
-      // open-ended prompt ("produce constraints the SQL must satisfy")
-      // made the model invent requirements the user never asked for
-      // (e.g. "exclude the currencies table", "only active employees",
-      // "sort by id"). The semantic validator then enforced those
-      // hallucinated rules and rejected otherwise-correct SQL, so simple
-      // requests like "list all employees" failed validation. Grounding
-      // the checklist in explicit constraints only — and returning empty
-      // when there are none — lets validateSqlSemantic short-circuit to
-      // passed=true (see _helpers.ts) instead of false-rejecting.
-      const llmPrompt = `You are a SQL planning assistant. List ONLY the constraints the user EXPLICITLY stated in their request — specific filters, sort orders, row limits, or named columns they asked for. Do NOT invent filters, exclusions, sort orders, joins, or columns the user did not mention. If the request states no explicit constraints beyond the data wanted, return nothing.
-
-User request: ${prompt}
-Available tables: ${tables.join(', ') || '(none)'}
-
-Return ONLY the explicit constraints as plain-text bullets, or an empty response if there are none.`;
-      try {
-        const result = await tracedGenerateText({
-          model: chatLlm,
-          prompt: llmPrompt,
-          tracing: tracingContext,
-          label: 'generate-checklist',
-          resultType: 'planning',
-        });
-        checklist = normaliseChecklist(result.text);
-      } catch {
-        // LLM unavailable / failed — proceed with empty checklist so
-        // the dountil loop can still attempt SQL generation.
-      }
-    }
+    const checklist = await generateChecklistText(
+      getCheapLlm(requestContext),
+      prompt,
+      tables,
+      tracingContext,
+    );
     return {prompt, tables, checklist, attempts: 0};
   },
 });
@@ -601,23 +666,10 @@ export const sqlAndValidateStep = createStep({
       datasetId?: string;
       sql?: string;
     };
-    // Cache/template hit (carried from generateChecklist) — already have a
-    // real datasetId, so skip SQL generation + both validators. Mark passed
-    // so the dountil exits on the first iteration.
-    if (data.cached && data.datasetId) {
-      return {
-        sql: data.sql ?? '',
-        passed: true,
-        attempts: (data.attempts ?? 0) + 1,
-        feedback: undefined,
-        description: '',
-        prompt: '',
-        tables: [],
-        checklist: '',
-        cached: true,
-        datasetId: data.datasetId,
-      };
-    }
+    // Cache/template hit (carried from generateChecklist) — skip SQL gen +
+    // validators; mark passed so the dountil exits on the first iteration.
+    const cached = cachedSqlPassthrough(data);
+    if (cached) return cached;
     emitToolStatus(
       requestContext,
       STEP_SQL_AND_VALIDATE,
@@ -626,8 +678,6 @@ export const sqlAndValidateStep = createStep({
     const prompt = data.prompt ?? '';
     const tables = data.tables ?? [];
     const schemaStore = getSchemaStore(requestContext);
-    const columns = getTablesWithColumns(schemaStore, tables);
-    const allTables = getAllSchemaTables(schemaStore);
     const attempt = await runSqlAttempt({
       // SQL generation + semantic validation: smart tier (main: SmartLLM
       // for both sql-generation.node and semantic-validator.node).
@@ -635,39 +685,19 @@ export const sqlAndValidateStep = createStep({
       // Error classification on syntactic failure: cheap tier (main:
       // CheapLLM via SyntacticValidatorNode).
       cheapLlm: getCheapLlm(requestContext),
-      allTables,
+      allTables: getAllSchemaTables(schemaStore),
       tracing: tracingContext,
       dbConnector: getDbConnector(requestContext),
       prompt,
       tables,
-      columns,
+      columns: getTablesWithColumns(schemaStore, tables),
       checks: getGlobalContext(requestContext),
       checklist: data.checklist,
       feedback: data.feedback,
       buildPrompt: buildGenerateSqlPrompt,
       buildDescription: (_sql, p) => `Generated SQL for: ${p}`,
       lastAttempt: (data.attempts ?? 0) + 1 >= MAX_VALIDATION_ATTEMPTS,
-      onReselectTables: () =>
-        emitToolStatus(
-          requestContext,
-          STEP_SQL_AND_VALIDATE,
-          'Reselecting tables to resolve a missing table or column',
-        ),
-      onStatus: stage => {
-        if (stage === 'syntactic') {
-          emitToolStatus(
-            requestContext,
-            STEP_SQL_AND_VALIDATE,
-            'Validating generated SQL query',
-          );
-          return;
-        }
-        emitToolStatus(
-          requestContext,
-          STEP_SQL_AND_VALIDATE,
-          "Verifying if the query fully satisfies the user's requirement",
-        );
-      },
+      ...sqlStatusEmitters(requestContext),
     });
     return {
       sql: attempt.sql,

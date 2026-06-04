@@ -8,6 +8,7 @@ import {IGraphTool, ToolStatus} from '../../../graphs/types';
 import {
   asEventWriter,
   asRecord,
+  pickBranchOutput,
   readString,
 } from '../../../graphs/tool-event.util';
 import {MastraInternalBindings} from '../../../mastra/internal-bindings';
@@ -82,12 +83,7 @@ export class GetDataAsDatasetTool implements IGraphTool {
     const rawResult = asRecord(root.result);
     const saveResult = asRecord(rawResult['save-dataset']);
     const failedResult = asRecord(rawResult.failed);
-    const branchOutput =
-      Object.keys(saveResult).length > 0
-        ? saveResult
-        : Object.keys(failedResult).length > 0
-          ? failedResult
-          : rawResult;
+    const branchOutput = pickBranchOutput(saveResult, failedResult, rawResult);
     return {
       datasetId: readString(branchOutput.datasetId),
       sql: readString(branchOutput.sql),

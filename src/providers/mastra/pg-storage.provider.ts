@@ -2,6 +2,8 @@ import {BindingScope, injectable, Provider} from '@loopback/core';
 import {PostgresStore} from '@mastra/pg';
 import type {MastraCompositeStore} from '@mastra/core/storage';
 
+const DEFAULT_PG_PORT = 5432;
+
 /**
  * Postgres-backed Mastra storage provider (issue #17). Ships `@mastra/pg`'s
  * `PostgresStore` — which extends `MastraCompositeStore` — so it is a drop-in
@@ -55,7 +57,7 @@ export class PostgresMastraStorageProvider implements Provider<MastraCompositeSt
         id,
         schemaName,
         host,
-        port: Number(process.env.MASTRA_PG_PORT ?? 5432),
+        port: Number(process.env.MASTRA_PG_PORT ?? DEFAULT_PG_PORT),
         database,
         user,
         password,

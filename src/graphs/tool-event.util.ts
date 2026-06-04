@@ -24,3 +24,19 @@ export function asEventWriter(
     ? (value as (e: LLMStreamEvent) => void)
     : undefined;
 }
+
+/**
+ * Unwrap a Mastra workflow result that may be keyed under a matched branch arm.
+ * After `.branch()`, the output lives under the branch step's id (e.g.
+ * `save-dataset` or `failed`); pick the first non-empty arm, else the raw
+ * result. Replaces a nested ternary repeated across the tool wrappers.
+ */
+export function pickBranchOutput(
+  save: Record<string, unknown>,
+  failed: Record<string, unknown>,
+  raw: Record<string, unknown>,
+): Record<string, unknown> {
+  if (Object.keys(save).length > 0) return save;
+  if (Object.keys(failed).length > 0) return failed;
+  return raw;
+}
