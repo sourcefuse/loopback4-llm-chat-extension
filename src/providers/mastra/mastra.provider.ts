@@ -59,10 +59,9 @@ export class MastraProvider implements Provider<Mastra> {
       embedder: this.embedder,
       options: {
         lastMessages: 20,
-        semanticRecall:
-          this.vector && this.embedder
-            ? {topK: 5, messageRange: 3, scope: 'resource'}
-            : false,
+        semanticRecall: buildSemanticRecallOption(
+          Boolean(this.vector && this.embedder),
+        ),
         workingMemory: {enabled: false},
         generateTitle,
       },
@@ -143,6 +142,42 @@ export class MastraProvider implements Provider<Mastra> {
  * - `MASTRA_GENERATE_TITLE=true` + `MASTRA_TITLE_MODEL=openai/gpt-4o-mini`
  *   → enable AND route the title call to the cheaper model.
  */
+/**
+ * Resolve Memory `semanticRecall` from env. Default: `false`.
+ *
+ * Semantic recall is a Mastra capability with NO v2 LangGraph equivalent —
+ * v2's `ContextCompressionNode` only trimmed to the last N messages; it never
+ * recalled older messages by similarity. Leaving it ON whenever a vector store
+ * happens to be bound is a silent trap: consumers bind a vector store for the
+ * db-query CACHE, and Memory would piggy-back on the SAME binding to enable
+ * cross-thread chat recall. At `scope: 'resource'` that recall scans the
+ * resource's ENTIRE message history, which grows every request — so latency
+ * climbs over a session (observed in Langfuse/LangSmith) and the cost is paid
+ * silently. Mirrors the default-OFF treatment of `generateTitle` /
+ * `workingMemory`.
+ *
+ * Opt in with `MASTRA_SEMANTIC_RECALL=true` (requires a bound vector store +
+ * embedder; otherwise stays `false`). Tunables:
+ *   - `MASTRA_SEMANTIC_RECALL_TOPK` (default 5)
+ *   - `MASTRA_SEMANTIC_RECALL_RANGE` (messageRange, default 3)
+ * Scope is fixed to `'resource'` for multi-tenant isolation (Section 13.7).
+ */
+function buildSemanticRecallOption(
+  hasVectorAndEmbedder: boolean,
+): false | {topK: number; messageRange: number; scope: 'resource'} {
+  if (process.env.MASTRA_SEMANTIC_RECALL !== 'true') return false;
+  if (!hasVectorAndEmbedder) return false;
+  const toInt = (v: string | undefined, fallback: number) => {
+    const n = Number(v);
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
+  };
+  return {
+    topK: toInt(process.env.MASTRA_SEMANTIC_RECALL_TOPK, 5),
+    messageRange: toInt(process.env.MASTRA_SEMANTIC_RECALL_RANGE, 3),
+    scope: 'resource',
+  };
+}
+
 function buildGenerateTitleOption():
   | boolean
   | {model: MastraModelConfig; instructions?: string} {

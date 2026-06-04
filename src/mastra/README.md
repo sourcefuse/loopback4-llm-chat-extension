@@ -48,7 +48,7 @@ shared state — that's what `.parallel().branch().dountil()` is for.
 | `SummariseFileNode` | `WorkflowRunner.run()` file loop: emits `Status` events; per-file summarisation pre-pass (current commit emits Status only; LLM summarisation rejoins as a future commit) |
 | `CallLLMNode` | `agent.stream(messages, {maxSteps: 60})` — native ReAct loop |
 | `RunToolNode` | `Agent.tools` registry + Mastra's internal tool-execution + `fullStream` `tool-call` / `tool-result` chunks pumped to SSE by `WorkflowRunner` |
-| `ContextCompressionNode` (a.k.a. TrimMessages) | `Memory({options: {lastMessages: 20}})` — automatic message-history trim |
+| `ContextCompressionNode` (a.k.a. TrimMessages) | `Memory({options: {lastMessages: 20}})` — automatic message-history trim. Semantic recall (no v2 equivalent) is **opt-in** via `MASTRA_SEMANTIC_RECALL=true`; default OFF so latency matches v2 even when a vector store is bound for the db-query cache |
 | `EndSessionNode` | `WorkflowRunner.run()` post-stream block: `await stream.usage` → `TokenCount` SSE event + `UsageAccumulator.add()` |
 
 Locked SSE wire contract (8 event types) is preserved byte-identical —
