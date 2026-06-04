@@ -33,7 +33,7 @@ import {
   DbQueryAIExtensionBindings,
 } from './components';
 import {DEFAULT_FILE_SIZE, MAX_TOTAL_SIZE} from './constant';
-import {GenerationController} from './controllers';
+import {ChatController, GenerationController} from './controllers';
 import {WriterDB, AiIntegrationBindings, ReaderDB} from './keys';
 import {Chat, Message} from './models';
 import {CacheModel} from './providers';
@@ -129,7 +129,7 @@ export class AiIntegrationsComponent implements Component {
 
     this.lifeCycleObservers = [MastraLifecycleObserver];
 
-    this.controllers = [GenerationController];
+    this.controllers = [GenerationController, ChatController];
     this.models = [Chat, Message, CacheModel];
     this.repositories = [
       ChatRepository,

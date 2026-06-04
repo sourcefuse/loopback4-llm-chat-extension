@@ -15,6 +15,7 @@ import {resolveModelConfig, type MastraModelConfig} from '@mastra/core/llm';
 import {generateText, type LanguageModel} from 'ai';
 import {AiIntegrationBindings, IRunRegistry} from '../../keys';
 import {MastraInternalBindings} from '../internal-bindings';
+import {deriveResourceId} from '../resource-id.util';
 import {LLMStreamEvent, LLMStreamEventType} from '../../graphs/event.types';
 import {ToolStore, ToolStatus} from '../../graphs/types';
 import type {Tool} from '@mastra/core/tools';
@@ -143,14 +144,6 @@ function normaliseFileList(
 ): Express.Multer.File[] {
   if (Array.isArray(files)) return files;
   return files ? [files] : [];
-}
-
-function resolvePrincipalId(
-  user: IAuthUserWithPermissions | undefined,
-): string | undefined {
-  if (!user) return undefined;
-  if (typeof user.id === 'string') return user.id;
-  return user.userTenantId;
 }
 
 function toModelRouterFallbackConfig(
@@ -760,14 +753,11 @@ export class WorkflowRunner {
   }
 
   private async resolveRequesterResourceId(): Promise<string | undefined> {
-    if (this.resourceIdValue) return this.resourceIdValue;
     const user = await this.lb4Ctx.get<IAuthUserWithPermissions>(
       AuthenticationBindings.CURRENT_USER,
       {optional: true},
     );
-    const principalId = resolvePrincipalId(user);
-    if (!principalId || !user?.tenantId) return undefined;
-    return `${user.tenantId}:${principalId}`;
+    return deriveResourceId(user, this.resourceIdValue);
   }
 
   private populateRequestContext(
