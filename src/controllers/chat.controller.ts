@@ -72,7 +72,7 @@ export class ChatController {
     resourceId: string,
   ) {
     const {tenantId, userId} = this.identity(resourceId);
-    const md = (t.metadata as Record<string, unknown>) ?? {};
+    const md = t.metadata ?? {};
     return {
       id: t.id,
       tenantId,
@@ -95,7 +95,7 @@ export class ChatController {
   /** Map a Mastra message to the v2 `Message` shape (body + metadata.type +
    * channelId + createdOn) while keeping the native role/content fields. */
   private toMessage(m: Record<string, unknown>, threadId: string) {
-    const role = String(m.role ?? 'user');
+    const role = typeof m.role === 'string' ? m.role : 'user';
     const typeByRole: Record<string, string> = {
       assistant: 'ai',
       tool: 'tool',
@@ -144,7 +144,7 @@ export class ChatController {
    */
   private async ownedThread(threadId: string, resourceId: string) {
     const memory = await this.memory();
-    const thread = memory ? await memory.getThreadById({threadId}) : null;
+    const thread = await memory?.getThreadById({threadId});
     if (!thread || thread.resourceId !== resourceId) {
       throw new HttpErrors.NotFound(`Chat thread ${threadId} not found`);
     }

@@ -439,8 +439,9 @@ Focus on the core business concept or data domain. AGAIN, ensure the output is a
       .replace(/^```json/i, '')
       .replace(/^```/, '')
       .trimStart();
-    if (cleaned.endsWith('```')) {
-      cleaned = cleaned.slice(0, -3);
+    const fence = '```';
+    if (cleaned.endsWith(fence)) {
+      cleaned = cleaned.slice(0, -fence.length);
     }
     cleaned = cleaned.trim();
     try {
