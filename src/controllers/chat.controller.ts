@@ -42,6 +42,75 @@ export class ChatController {
     return this.mastra.getAgent('chatAgent')?.getMemory();
   }
 
+  /** tenantId / userId for the response — from the authed user, else split out
+   * of the `${tenantId}:${userId}` resourceId. */
+  private identity(resourceId: string): {tenantId: string; userId: string} {
+    const u = this.currentUser;
+    if (u?.tenantId) {
+      return {tenantId: u.tenantId, userId: u.userTenantId ?? u.id ?? ''};
+    }
+    const [tenantId, userId] = resourceId.split(':');
+    return {tenantId: tenantId ?? '', userId: userId ?? ''};
+  }
+
+  /**
+   * Map a Mastra thread to the v2 `Chat` shape the existing consumers (e.g. the
+   * BizBook UI) were built against: `tenantId`/`userId`, top-level
+   * `inputTokens`/`outputTokens`, `createdOn`/`modifiedOn`, `createdBy`. The
+   * Mastra-native `createdAt`/`updatedAt`/`metadata` are kept too for forward
+   * compatibility. Title falls back to `New Chat` (v2 main's default) so it is
+   * never blank.
+   */
+  private toChat(
+    t: {
+      id: string;
+      title?: string | null;
+      metadata?: Record<string, unknown> | null;
+      createdAt?: unknown;
+      updatedAt?: unknown;
+    },
+    resourceId: string,
+  ) {
+    const {tenantId, userId} = this.identity(resourceId);
+    const md = (t.metadata as Record<string, unknown>) ?? {};
+    return {
+      id: t.id,
+      tenantId,
+      userId,
+      title: t.title || 'New Chat',
+      inputTokens: Number(md.inputTokens) || 0,
+      outputTokens: Number(md.outputTokens) || 0,
+      metadata: md,
+      createdOn: t.createdAt,
+      modifiedOn: t.updatedAt,
+      createdBy: userId,
+      modifiedBy: userId,
+      // Mastra-native (forward compat)
+      createdAt: t.createdAt,
+      updatedAt: t.updatedAt,
+    };
+  }
+
+  /** Map a Mastra message to the v2 `Message` shape (body + metadata.type +
+   * channelId + createdOn) while keeping the native role/content fields. */
+  private toMessage(m: Record<string, unknown>, threadId: string) {
+    const role = String(m.role ?? 'user');
+    const typeByRole: Record<string, string> = {
+      assistant: 'ai',
+      tool: 'tool',
+      system: 'system',
+      user: 'user',
+    };
+    const meta = (m.metadata as Record<string, unknown>) ?? {};
+    return {
+      ...m,
+      body: chatMessageText(m.content),
+      channelId: threadId,
+      createdOn: m.createdAt ?? m.createdOn,
+      metadata: {...meta, type: typeByRole[role] ?? 'user'},
+    };
+  }
+
   @authenticate(STRATEGY.BEARER, {passReqToCallback: true})
   @authorize({permissions: [PermissionKey.ViewChat]})
   @get('/chats', {
@@ -61,13 +130,7 @@ export class ChatController {
       page: page ?? 0,
       orderBy: {field: 'createdAt', direction: 'DESC'},
     });
-    return result.threads.map(t => ({
-      id: t.id,
-      title: t.title,
-      createdAt: t.createdAt,
-      updatedAt: t.updatedAt,
-      metadata: t.metadata,
-    }));
+    return result.threads.map(t => this.toChat(t, resourceId));
   }
 
   /**
@@ -97,12 +160,10 @@ export class ChatController {
     const {memory, thread} = await this.ownedThread(threadId, resourceId);
     const result = await memory.recall({threadId});
     return {
-      id: thread.id,
-      title: thread.title,
-      createdAt: thread.createdAt,
-      updatedAt: thread.updatedAt,
-      metadata: thread.metadata,
-      messages: result.messages,
+      ...this.toChat(thread, resourceId),
+      messages: result.messages.map(m =>
+        this.toMessage(m as Record<string, unknown>, threadId),
+      ),
     };
   }
 
@@ -119,6 +180,33 @@ export class ChatController {
     }
     const {memory} = await this.ownedThread(threadId, resourceId);
     const result = await memory.recall({threadId});
-    return result.messages;
+    return result.messages.map(m =>
+      this.toMessage(m as Record<string, unknown>, threadId),
+    );
   }
+}
+
+/**
+ * Extract readable text from a Mastra message `content`, which may be a string,
+ * an array of typed parts ({type:'text', text}, …), or a {parts:[…]} object.
+ */
+function chatMessageText(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return content
+      .map(p => {
+        if (typeof p === 'string') return p;
+        const part = p as {text?: unknown; type?: unknown};
+        if (typeof part.text === 'string') return part.text;
+        return part.type ? `[${String(part.type)}]` : '';
+      })
+      .filter(Boolean)
+      .join(' ');
+  }
+  if (content && typeof content === 'object') {
+    const obj = content as {text?: unknown; parts?: unknown};
+    if (typeof obj.text === 'string') return obj.text;
+    if (Array.isArray(obj.parts)) return chatMessageText(obj.parts);
+  }
+  return '';
 }
