@@ -70,6 +70,42 @@ export class ChatController {
     }));
   }
 
+  /**
+   * Load a thread the requester owns, or throw 404. The thread carries its
+   * `resourceId`; reject when it isn't the requester's (Memory is per-resource).
+   */
+  private async ownedThread(threadId: string, resourceId: string) {
+    const memory = await this.memory();
+    const thread = memory ? await memory.getThreadById({threadId}) : null;
+    if (!thread || thread.resourceId !== resourceId) {
+      throw new HttpErrors.NotFound(`Chat thread ${threadId} not found`);
+    }
+    return {memory: memory!, thread};
+  }
+
+  @authenticate(STRATEGY.BEARER, {passReqToCallback: true})
+  @authorize({permissions: [PermissionKey.ViewChat]})
+  @get('/chats/{id}', {
+    security: OPERATION_SECURITY_SPEC,
+    responses: {'200': {description: 'A chat thread with its message history'}},
+  })
+  async findById(@param.path.string('id') threadId: string) {
+    const resourceId = this.resourceId();
+    if (!resourceId) {
+      throw new HttpErrors.NotFound(`Chat thread ${threadId} not found`);
+    }
+    const {memory, thread} = await this.ownedThread(threadId, resourceId);
+    const result = await memory.recall({threadId});
+    return {
+      id: thread.id,
+      title: thread.title,
+      createdAt: thread.createdAt,
+      updatedAt: thread.updatedAt,
+      metadata: thread.metadata,
+      messages: result.messages,
+    };
+  }
+
   @authenticate(STRATEGY.BEARER, {passReqToCallback: true})
   @authorize({permissions: [PermissionKey.ViewChat]})
   @get('/chats/{id}/messages', {
@@ -78,14 +114,10 @@ export class ChatController {
   })
   async messages(@param.path.string('id') threadId: string) {
     const resourceId = this.resourceId();
-    const memory = await this.memory();
-    if (!resourceId || !memory) return [];
-    // Ownership guard — only return messages for a thread the requester owns.
-    // The thread carries its resourceId; reject when it isn't the requester's.
-    const thread = await memory.getThreadById({threadId});
-    if (!thread || thread.resourceId !== resourceId) {
+    if (!resourceId) {
       throw new HttpErrors.NotFound(`Chat thread ${threadId} not found`);
     }
+    const {memory} = await this.ownedThread(threadId, resourceId);
     const result = await memory.recall({threadId});
     return result.messages;
   }
