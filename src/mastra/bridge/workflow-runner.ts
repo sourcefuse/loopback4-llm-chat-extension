@@ -14,6 +14,7 @@ import {RequestContext} from '@mastra/core/request-context';
 import {resolveModelConfig, type MastraModelConfig} from '@mastra/core/llm';
 import {generateText, type LanguageModel} from 'ai';
 import {AiIntegrationBindings, IRunRegistry} from '../../keys';
+import {CHAT_TITLE_MAX_LENGTH} from '../../constant';
 import {MastraInternalBindings} from '../internal-bindings';
 import {deriveResourceId} from '../resource-id.util';
 import {LLMStreamEvent, LLMStreamEventType} from '../../graphs/event.types';
@@ -54,12 +55,29 @@ const MAX_AGENT_STEPS = 8;
 
 type RecordLike = Record<string, unknown>;
 type ThreadMemory = {
-  getThreadById(args: {
-    threadId: string;
-  }): Promise<{id: string; resourceId?: string | null} | null | undefined>;
-  createThread(args: {resourceId: string}): Promise<{id: string}>;
+  getThreadById(args: {threadId: string}): Promise<
+    | {
+        id: string;
+        resourceId?: string | null;
+        title?: string | null;
+        metadata?: Record<string, unknown> | null;
+      }
+    | null
+    | undefined
+  >;
+  createThread(args: {
+    resourceId: string;
+    title?: string;
+  }): Promise<{id: string}>;
+  updateThread?(args: {
+    id: string;
+    title: string;
+    metadata: Record<string, unknown>;
+  }): Promise<unknown>;
 };
-type ResolvedThread = {threadId: string; resourceId: string} | {error: string};
+type ResolvedThread =
+  | {threadId: string; resourceId: string; title: string}
+  | {error: string};
 type AgentStreamChunk = {type: string; payload?: unknown};
 type AgentStreamUsage = {inputTokens?: number; outputTokens?: number};
 type AgentStreamResult = {
@@ -301,6 +319,7 @@ export class WorkflowRunner {
       sessionId,
       requesterResourceId,
       id => queue.push({type: LLMStreamEventType.Init, data: {sessionId: id}}),
+      query,
     );
     if ('error' in resolved) {
       queue.push({
@@ -311,7 +330,35 @@ export class WorkflowRunner {
       yield* queue;
       return;
     }
-    const {threadId, resourceId} = resolved;
+    const {threadId, resourceId, title: threadTitle} = resolved;
+    // Persist cumulative token usage onto the thread's metadata after the run
+    // (best-effort) — mirrors v2 main's ChatStore.updateCounts which tracked
+    // input/output tokens on the chat row. Makes /chats metadata meaningful.
+    const persistUsage = async (
+      inputTokens: number,
+      outputTokens: number,
+    ): Promise<void> => {
+      // The runtime Memory instance has updateThread; the narrowed base type
+      // doesn't declare it, so view it through ThreadMemory (updateThread
+      // optional + guarded below).
+      const tm = memory as unknown as ThreadMemory;
+      if (!tm.updateThread) return;
+      try {
+        const current = await tm.getThreadById({threadId});
+        const md = (current?.metadata as Record<string, unknown>) ?? {};
+        await tm.updateThread({
+          id: threadId,
+          title: current?.title ?? threadTitle,
+          metadata: {
+            ...md,
+            inputTokens: (Number(md.inputTokens) || 0) + inputTokens,
+            outputTokens: (Number(md.outputTokens) || 0) + outputTokens,
+          },
+        });
+      } catch (err) {
+        debug('persistUsage skipped: %o', err);
+      }
+    };
 
     // File summarisation — port of v2 SummariseFileNode. For each
     // attached file, ask the ChatLLM to produce
@@ -358,7 +405,7 @@ export class WorkflowRunner {
     // Pump task is fire-and-forget; completion is signalled by queue.close()
     // inside the inner finally. The inner try/catch maps any thrown error to
     // an SSE Error event before closing, so this promise never rejects.
-    this.pumpStream(streamPromise, queue).catch(err => {
+    this.pumpStream(streamPromise, queue, persistUsage).catch(err => {
       // pumpStream's inner try/catch maps errors to SSE Error + closes
       // the queue. This guard catches unexpected escapes (e.g. queue
       // push during error-emission). Log instead of swallow.
@@ -378,6 +425,7 @@ export class WorkflowRunner {
   private async pumpStream(
     streamPromise: Promise<AgentStreamResult>,
     queue: AsyncEventQueue<LLMStreamEvent>,
+    persistUsage?: (inputTokens: number, outputTokens: number) => Promise<void>,
   ): Promise<void> {
     try {
       const stream = await streamPromise;
@@ -385,7 +433,7 @@ export class WorkflowRunner {
         this.handleChunk(chunk, queue);
       }
       this.flushBufferedAssistantText(queue);
-      await this.emitUsage(stream, queue);
+      await this.emitUsage(stream, queue, persistUsage);
     } catch (err) {
       this.flushBufferedAssistantText(queue);
       queue.push({
@@ -440,20 +488,18 @@ export class WorkflowRunner {
       usage: Promise<{inputTokens?: number; outputTokens?: number}>;
     },
     queue: AsyncEventQueue<LLMStreamEvent>,
+    persistUsage?: (inputTokens: number, outputTokens: number) => Promise<void>,
   ): Promise<void> {
     try {
       const u = await stream.usage;
-      this.usage?.add('chat-llm', {
-        inputTokens: u.inputTokens ?? 0,
-        outputTokens: u.outputTokens ?? 0,
-      });
+      const inputTokens = u.inputTokens ?? 0;
+      const outputTokens = u.outputTokens ?? 0;
+      this.usage?.add('chat-llm', {inputTokens, outputTokens});
       queue.push({
         type: LLMStreamEventType.TokenCount,
-        data: {
-          inputTokens: u.inputTokens ?? 0,
-          outputTokens: u.outputTokens ?? 0,
-        },
+        data: {inputTokens, outputTokens},
       });
+      await persistUsage?.(inputTokens, outputTokens);
     } catch {
       // usage may reject on error / abort paths; skip TokenCount
     }
@@ -714,12 +760,19 @@ export class WorkflowRunner {
     sessionId: string | undefined,
     requesterResourceId: string | undefined,
     emitInit: (sessionId: string) => void,
+    prompt?: string,
   ): Promise<ResolvedThread> {
     if (!sessionId) {
       const resourceId = requesterResourceId ?? randomUUID();
-      const thread = await memory.createThread({resourceId});
+      // Stamp the thread with a title from the first prompt (truncated),
+      // mirroring v2 main's ChatStore.init (`prompt.slice(0, 200)`). Without
+      // this, threads have no title and the chat-history list shows blanks —
+      // Mastra only auto-titles when MASTRA_GENERATE_TITLE is on (an extra LLM
+      // call). A prompt-derived title is free and matches main's behaviour.
+      const title = prompt?.trim().slice(0, CHAT_TITLE_MAX_LENGTH) || undefined;
+      const thread = await memory.createThread({resourceId, title});
       emitInit(thread.id);
-      return {threadId: thread.id, resourceId};
+      return {threadId: thread.id, resourceId, title: title ?? ''};
     }
     const thread = await memory.getThreadById({threadId: sessionId});
     if (!thread) return {error: `Thread ${sessionId} not found`};
@@ -749,7 +802,11 @@ export class WorkflowRunner {
         error: `Thread ${sessionId} does not belong to the authenticated requester`,
       };
     }
-    return {threadId: thread.id, resourceId: thread.resourceId};
+    return {
+      threadId: thread.id,
+      resourceId: thread.resourceId,
+      title: thread.title ?? '',
+    };
   }
 
   private async resolveRequesterResourceId(): Promise<string | undefined> {
