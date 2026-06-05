@@ -1,36 +1,21 @@
 import {createWorkflow} from '@mastra/core/workflows';
 import {
   MAX_VALIDATION_ATTEMPTS,
+  checkCacheStep,
+  checkTemplatesStep,
+  failedStep,
+  generateChecklistStep,
+  getColumnsStep,
+  getTablesStep,
   inputSchema,
   outputSchema,
-  checkCacheStep,
-  getTablesStep,
-  checkTemplatesStep,
   postCacheAndTablesStep,
-  saveDatasetFromTemplateStep,
   returnCachedStep,
-  failedStep,
-  getColumnsStep,
-  generateChecklistStep,
-  sqlAndValidateStep,
+  saveDatasetFromTemplateStep,
   saveDatasetStep,
-} from './generate.steps';
+  sqlAndValidateStep,
+} from '../steps';
 
-/**
- * generateQueryWorkflow — NL → SQL → dataset. Topology only; every step
- * body lives in `generate.steps.ts` so this file reads as the DAG.
- *
- * Flow: parallel(cache / tables / templates) → classify → branch
- *   - FromTemplate → save-from-template (terminal)
- *   - AsIs (cache hit) → return-cached (terminal)
- *   - Failed → failed (terminal)
- *   - Continue → get-columns → checklist → dountil(sql+validate) →
- *       branch(save-dataset / failed)
- *
- * Cache/template hits short-circuit: the Continue arm carries the only
- * generation pipeline; the other arms are terminal (see generate.steps.ts
- * for the cache passthrough that keeps regeneration from clobbering a hit).
- */
 export const generateQueryWorkflow = createWorkflow({
   id: 'generate-query',
   inputSchema,

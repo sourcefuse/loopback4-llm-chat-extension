@@ -1,7 +1,7 @@
 import {expect} from '@loopback/testlab';
 import {createMockModel} from '@mastra/core/test-utils/llm-mock';
 import {RequestContext} from '@mastra/core/request-context';
-import {generateQueryWorkflow} from '../../mastra/workflows/db-query/generate.workflow';
+import {generateQueryWorkflow} from '../../mastra/workflows/db-query/workflows/generate.workflow';
 
 /**
  * In-CI equivalent of v2 main's db-query.graph.acceptance: drives the whole

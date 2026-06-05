@@ -20,7 +20,7 @@ import {
 import {
   checkCacheStep,
   getTablesStep,
-} from '../../../mastra/workflows/db-query/generate.steps';
+} from '../../../mastra/workflows/db-query/steps';
 
 /** Minimal RequestContext stand-in: workflow steps only call `.get(key)`. */
 function fakeRc(map: Record<string, unknown>): never {

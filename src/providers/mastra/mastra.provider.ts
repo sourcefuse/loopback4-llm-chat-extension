@@ -11,9 +11,9 @@ import type {Observability} from '@mastra/observability';
 import {AiIntegrationBindings} from '../../keys';
 import {createMaxTokenCountProcessor} from '../../mastra/processors/max-token-count.processor';
 import {MastraInternalBindings} from '../../mastra/internal-bindings';
-import {generateQueryWorkflow} from '../../mastra/workflows/db-query/generate.workflow';
-import {improveQueryWorkflow} from '../../mastra/workflows/db-query/improve.workflow';
-import {visualizationWorkflow} from '../../mastra/workflows/visualization.workflow';
+import {generateQueryWorkflow} from '../../mastra/workflows/db-query/workflows/generate.workflow';
+import {improveQueryWorkflow} from '../../mastra/workflows/db-query/workflows/improve.workflow';
+import {visualizationWorkflow} from '../../mastra/workflows/visualization/workflows/visualization.workflow';
 
 /**
  * Singleton Mastra instance. Holds storage pools, vector clients, registered

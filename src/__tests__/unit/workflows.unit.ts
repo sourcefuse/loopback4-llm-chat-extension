@@ -1,7 +1,7 @@
 import {expect} from '@loopback/testlab';
-import {generateQueryWorkflow} from '../../mastra/workflows/db-query/generate.workflow';
-import {improveQueryWorkflow} from '../../mastra/workflows/db-query/improve.workflow';
-import {visualizationWorkflow} from '../../mastra/workflows/visualization.workflow';
+import {generateQueryWorkflow} from '../../mastra/workflows/db-query/workflows/generate.workflow';
+import {improveQueryWorkflow} from '../../mastra/workflows/db-query/workflows/improve.workflow';
+import {visualizationWorkflow} from '../../mastra/workflows/visualization/workflows/visualization.workflow';
 
 /**
  * Smoke tests for the P3 workflow skeletons. Each workflow's step bodies

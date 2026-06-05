@@ -14,9 +14,14 @@ src/mastra/
 │ └── run-registry.ts # HITL approval flow (sessionId → runId)
 └── workflows/
  ├── db-query/
- │ ├── generate.workflow.ts # Replaces v2 DbQueryGraph (17 nodes)
- │ └── improve.workflow.ts # Improvement variant (subset of DbQuery)
- └── visualization.workflow.ts # Replaces v2 VisualizationGraph (4 nodes)
+ │ ├── workflows/
+ │ │ ├── generate.workflow.ts # Replaces v2 DbQueryGraph (17 nodes)
+ │ │ └── improve.workflow.ts # Improvement variant (subset of DbQuery)
+ │ └── steps/
+ └── visualization/
+	├── workflows/
+	│ └── visualization.workflow.ts # Replaces v2 VisualizationGraph (4 nodes)
+	└── steps/
 ```
 
 There is **no `chat.workflow.ts`** — that is a deliberate decision from
@@ -26,11 +31,11 @@ collapsed into the `WorkflowRunner` + `Agent` + `Memory` triple.
 
 ## The three v2 → v3 routes
 
-| v2 graph | Nodes | v3 primitive | File(s) |
-| --------------------- | :---: | --------------------- | -------------------------------------------------------- |
-| ChatGraph | 6 | Mastra **Agent** | `bridge/workflow-runner.ts` (per-request `Agent` build) |
-| DbQueryGraph | 17 | Mastra **Workflow** | `workflows/db-query/generate.workflow.ts` + `improve.workflow.ts` |
-| VisualizationGraph | 4 | Mastra **Workflow** | `workflows/visualization.workflow.ts` |
+| v2 graph           | Nodes | v3 primitive        | File(s)                                                                     |
+| ------------------ | :---: | ------------------- | --------------------------------------------------------------------------- |
+| ChatGraph          |   6   | Mastra **Agent**    | `bridge/workflow-runner.ts` (per-request `Agent` build)                     |
+| DbQueryGraph       |  17   | Mastra **Workflow** | `workflows/db-query/workflows/generate.workflow.ts` + `improve.workflow.ts` |
+| VisualizationGraph |   4   | Mastra **Workflow** | `workflows/visualization/workflows/visualization.workflow.ts`               |
 
 Chat picked **Agent** because the loop is `CallLLM → RunTool → CallLLM`
 which is exactly what `agent.stream({maxSteps, tools, memory})` already
@@ -42,39 +47,39 @@ shared state — that's what `.parallel().branch().dountil()` is for.
 
 ## ChatGraph (6 nodes) → Agent + WorkflowRunner
 
-| v2 node | Where it lives now |
-| --- | --- |
-| `InitSessionNode` | `WorkflowRunner.run()` pre-block: `memory.createThread({resourceId})` + `Init` SSE event |
-| `SummariseFileNode` | `WorkflowRunner.run()` file loop: emits `Status` events; per-file summarisation pre-pass (current commit emits Status only; LLM summarisation rejoins as a future commit) |
-| `CallLLMNode` | `agent.stream(messages, {maxSteps: 60})` — native ReAct loop |
-| `RunToolNode` | `Agent.tools` registry + Mastra's internal tool-execution + `fullStream` `tool-call` / `tool-result` chunks pumped to SSE by `WorkflowRunner` |
+| v2 node                                        | Where it lives now                                                                                                                                                                                                                                       |
+| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `InitSessionNode`                              | `WorkflowRunner.run()` pre-block: `memory.createThread({resourceId})` + `Init` SSE event                                                                                                                                                                 |
+| `SummariseFileNode`                            | `WorkflowRunner.run()` file loop: emits `Status` events; per-file summarisation pre-pass (current commit emits Status only; LLM summarisation rejoins as a future commit)                                                                                |
+| `CallLLMNode`                                  | `agent.stream(messages, {maxSteps: 60})` — native ReAct loop                                                                                                                                                                                             |
+| `RunToolNode`                                  | `Agent.tools` registry + Mastra's internal tool-execution + `fullStream` `tool-call` / `tool-result` chunks pumped to SSE by `WorkflowRunner`                                                                                                            |
 | `ContextCompressionNode` (a.k.a. TrimMessages) | `Memory({options: {lastMessages: 20}})` — automatic message-history trim. Semantic recall (no v2 equivalent) is **opt-in** via `MASTRA_SEMANTIC_RECALL=true`; default OFF so latency matches v2 even when a vector store is bound for the db-query cache |
-| `EndSessionNode` | `WorkflowRunner.run()` post-stream block: `await stream.usage` → `TokenCount` SSE event + `UsageAccumulator.add()` |
+| `EndSessionNode`                               | `WorkflowRunner.run()` post-stream block: `await stream.usage` → `TokenCount` SSE event + `UsageAccumulator.add()`                                                                                                                                       |
 
 Locked SSE wire contract (8 event types) is preserved byte-identical —
 the controller surface `POST /reply` is unchanged..
 
 ## DbQueryGraph (17 nodes) → generateQueryWorkflow + improveQueryWorkflow
 
-| v2 node | v3 step | Notes |
-| --- | --- | --- |
-| `IsImprovementNode` | `improveQueryWorkflow.loadExistingStep` | Real impl — fetches existing dataset, merges delta prompt. `generateQueryWorkflow.isImprovementStep` is an intentional no-op (entry workflow is never in improvement mode). |
-| `CheckCacheNode` | `generateQueryWorkflow.checkCacheStep` | QueryCache retriever → LLM AsIs/Similar/NotRelevant judge. |
-| `GetTablesNode` | `generateQueryWorkflow.getTablesStep` | `SchemaStore.get()` deterministic baseline; LLM relevance filter is follow-up. |
-| `CheckTemplatesNode` | `generateQueryWorkflow.checkTemplatesStep` | TemplateCache retriever → LLM exact-match judge. |
-| `ClassifyChangeNode` | `generateQueryWorkflow.classifyChangeStep` | Active only in improvement mode (minor/major/rewrite classify). |
-| `PostCacheAndTablesNode` | `generateQueryWorkflow.postCacheAndTablesStep` | Pure fan-in merger of the 4 parallel branches. Status routing: `AsIs` / `FromTemplate` / `Failed` / `Continue`. |
-| `CheckPermissionsNode` | (none — preserved at lower layer) | `PermissionHelper.findMissingPermissions()` runs inside `DataSetHelper.getDataFromDataset()` + `DatasetController` ACL. A.4. |
-| `GenerateChecklistNode` | `generateQueryWorkflow.generateChecklistStep` | LLM builds 3-6 item checklist before dountil loop. |
-| `SqlGenerationNode` | `generateQueryWorkflow.sqlAndValidateStep` (composite) | One iteration of dountil loop. |
-| `SyntacticValidatorNode` | `generateQueryWorkflow.sqlAndValidateStep` (embedded) | `IDbConnector.validate(sql)` DB EXPLAIN call. |
-| `SemanticValidatorNode` | `generateQueryWorkflow.sqlAndValidateStep` (embedded) | LLM `<valid/>` vs `<invalid>…</invalid>` verdict against checklist. |
-| `GenerateDescriptionNode` | `generateQueryWorkflow.sqlAndValidateStep` (embedded) | Description string baked into the SQL generation prompt; will split out if it needs its own retry budget. |
-| `PostValidationNode` | (collapsed) | Mastra workflows pass `{passed, feedback, attempts}` through dountil natively — no explicit merge step needed. |
-| `FixQueryNode` | `improveQueryWorkflow.fixQueryStep` | Dountil loop body for improve workflow. Same syntactic + semantic validators embedded. |
-| `VerifyChecklistNode` | (embedded in semantic validator) | LLM verdict against checklist is exactly the v2 verify-checklist behaviour. |
-| `SaveDataSetNode` | `generateQueryWorkflow.saveDatasetStep` + `improveQueryWorkflow.saveImprovedStep` | Real `IDataSetStore.create / updateById` calls + tenantId from `AuthenticationBindings.CURRENT_USER`. |
-| `FailedNode` | `generateQueryWorkflow.failedStep` + `improveQueryWorkflow.failedStep` | Terminal step at the end of the loop's "no" branch. |
+| v2 node                   | v3 step                                                                           | Notes                                                                                                                                                                       |
+| ------------------------- | --------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `IsImprovementNode`       | `improveQueryWorkflow.loadExistingStep`                                           | Real impl — fetches existing dataset, merges delta prompt. `generateQueryWorkflow.isImprovementStep` is an intentional no-op (entry workflow is never in improvement mode). |
+| `CheckCacheNode`          | `generateQueryWorkflow.checkCacheStep`                                            | QueryCache retriever → LLM AsIs/Similar/NotRelevant judge.                                                                                                                  |
+| `GetTablesNode`           | `generateQueryWorkflow.getTablesStep`                                             | `SchemaStore.get()` deterministic baseline; LLM relevance filter is follow-up.                                                                                              |
+| `CheckTemplatesNode`      | `generateQueryWorkflow.checkTemplatesStep`                                        | TemplateCache retriever → LLM exact-match judge.                                                                                                                            |
+| `ClassifyChangeNode`      | `generateQueryWorkflow.classifyChangeStep`                                        | Active only in improvement mode (minor/major/rewrite classify).                                                                                                             |
+| `PostCacheAndTablesNode`  | `generateQueryWorkflow.postCacheAndTablesStep`                                    | Pure fan-in merger of the 4 parallel branches. Status routing: `AsIs` / `FromTemplate` / `Failed` / `Continue`.                                                             |
+| `CheckPermissionsNode`    | (none — preserved at lower layer)                                                 | `PermissionHelper.findMissingPermissions()` runs inside `DataSetHelper.getDataFromDataset()` + `DatasetController` ACL. A.4.                                                |
+| `GenerateChecklistNode`   | `generateQueryWorkflow.generateChecklistStep`                                     | LLM builds 3-6 item checklist before dountil loop.                                                                                                                          |
+| `SqlGenerationNode`       | `generateQueryWorkflow.sqlAndValidateStep` (composite)                            | One iteration of dountil loop.                                                                                                                                              |
+| `SyntacticValidatorNode`  | `generateQueryWorkflow.sqlAndValidateStep` (embedded)                             | `IDbConnector.validate(sql)` DB EXPLAIN call.                                                                                                                               |
+| `SemanticValidatorNode`   | `generateQueryWorkflow.sqlAndValidateStep` (embedded)                             | LLM `<valid/>` vs `<invalid>…</invalid>` verdict against checklist.                                                                                                         |
+| `GenerateDescriptionNode` | `generateQueryWorkflow.sqlAndValidateStep` (embedded)                             | Description string baked into the SQL generation prompt; will split out if it needs its own retry budget.                                                                   |
+| `PostValidationNode`      | (collapsed)                                                                       | Mastra workflows pass `{passed, feedback, attempts}` through dountil natively — no explicit merge step needed.                                                              |
+| `FixQueryNode`            | `improveQueryWorkflow.fixQueryStep`                                               | Dountil loop body for improve workflow. Same syntactic + semantic validators embedded.                                                                                      |
+| `VerifyChecklistNode`     | (embedded in semantic validator)                                                  | LLM verdict against checklist is exactly the v2 verify-checklist behaviour.                                                                                                 |
+| `SaveDataSetNode`         | `generateQueryWorkflow.saveDatasetStep` + `improveQueryWorkflow.saveImprovedStep` | Real `IDataSetStore.create / updateById` calls + tenantId from `AuthenticationBindings.CURRENT_USER`.                                                                       |
+| `FailedNode`              | `generateQueryWorkflow.failedStep` + `improveQueryWorkflow.failedStep`            | Terminal step at the end of the loop's "no" branch.                                                                                                                         |
 
 Extra v3 steps that have no 1:1 v2 node (they were inline logic inside
 v2 nodes that needed their own Mastra step):
@@ -87,11 +92,11 @@ v2 nodes that needed their own Mastra step):
 
 Direct 1:1 mapping.
 
-| v2 node | v3 step |
-| --- | --- |
+| v2 node                   | v3 step                                         |
+| ------------------------- | ----------------------------------------------- |
 | `SelectVisualizationNode` | `visualizationWorkflow.selectVisualisationStep` |
 | `CallQueryGenerationNode` | `visualizationWorkflow.callQueryGenerationStep` |
-| `GetDatasetDataNode` | `visualizationWorkflow.getDatasetDataStep` |
+| `GetDatasetDataNode`      | `visualizationWorkflow.getDatasetDataStep`      |
 | `RenderVisualizationNode` | `visualizationWorkflow.renderVisualizationStep` |
 
 Visualizers (`PieVisualizer`, `BarVisualizer`, `LineVisualizer`) and the
@@ -134,13 +139,13 @@ POST /reply
 workflow step body can read them via the native `requestContext`
 parameter:
 
-| Key | Purpose |
-| --- | --- |
-| `resourceId` | Tenant-scoped identity for Memory.scope='resource'.. |
-| `eventWriter` | `(LLMStreamEvent) → void` push onto SSE queue. Tools + steps use this to emit `Log` / `ToolStatus`. |
-| `dbConnector` | Optional `IDbConnector` from `DbQueryAIExtensionBindings.Connector`. |
-| `chatLlm` | Optional consumer-bound `ChatLLM` (`MastraModelConfig`). LLM-driven steps use it with `generateText({model, prompt})` from `ai` v6. |
-| `lb4Ctx` | Full LB4 `Context`. Any step that needs a preserved helper resolves it lazily via `lb4Ctx.get<X>(key, {optional: true})` — `DbSchemaHelperService`, `SchemaStore`, `TableSearchService`, `PermissionHelper`, `DataSetHelper`, `TemplateHelper`. |
+| Key           | Purpose                                                                                                                                                                                                                                         |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `resourceId`  | Tenant-scoped identity for Memory.scope='resource'..                                                                                                                                                                                            |
+| `eventWriter` | `(LLMStreamEvent) → void` push onto SSE queue. Tools + steps use this to emit `Log` / `ToolStatus`.                                                                                                                                             |
+| `dbConnector` | Optional `IDbConnector` from `DbQueryAIExtensionBindings.Connector`.                                                                                                                                                                            |
+| `chatLlm`     | Optional consumer-bound `ChatLLM` (`MastraModelConfig`). LLM-driven steps use it with `generateText({model, prompt})` from `ai` v6.                                                                                                             |
+| `lb4Ctx`      | Full LB4 `Context`. Any step that needs a preserved helper resolves it lazily via `lb4Ctx.get<X>(key, {optional: true})` — `DbSchemaHelperService`, `SchemaStore`, `TableSearchService`, `PermissionHelper`, `DataSetHelper`, `TemplateHelper`. |
 
 ## Branch lineage
 
