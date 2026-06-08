@@ -28,7 +28,7 @@ type ChatMessage = {role?: string; content?: unknown};
  * still budget for their tokens so the prompt fits).
  *
  * Wire by passing into the `inputProcessors` of the registered chatAgent
- * in MastraProvider. The agent's built-in `MessageHistory` processor
+ * in Provider. The agent's built-in `MessageHistory` processor
  * already handles persistence; this one trims BEFORE the LLM sees the
  * messages, so memory still stores the un-trimmed history.
  */

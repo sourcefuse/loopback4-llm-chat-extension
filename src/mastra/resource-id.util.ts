@@ -14,7 +14,7 @@ export function resolvePrincipalId(
 
 /**
  * Derive the Mastra Memory `resourceId` for the current request. A consumer
- * may bind `MastraInternalBindings.ResourceId` to override; otherwise it is
+ * may bind `InternalBindings.ResourceId` to override; otherwise it is
  * the tenant-scoped `${tenantId}:${principalId}` (multi-tenant isolation).
  * Returns `undefined` when the user has no resolvable identity.
  *

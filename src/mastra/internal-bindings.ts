@@ -9,7 +9,7 @@ import type {IRunRegistry} from '../keys';
  * Internal Mastra-only bindings. These are intentionally not part of
  * AiIntegrationBindings so host apps can keep using legacy keys.
  */
-export namespace MastraInternalBindings {
+export namespace InternalBindings {
   export const Mastra = BindingKey.create<Mastra>(
     'services.ai-reporting.mastra',
   );

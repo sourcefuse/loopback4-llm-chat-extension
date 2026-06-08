@@ -10,7 +10,7 @@ import {
   asRecord,
   readString,
 } from '../../../graphs/tool-event.util';
-import {MastraInternalBindings} from '../../../mastra/internal-bindings';
+import {InternalBindings} from '../../../mastra/internal-bindings';
 
 /**
  * Mastra-shaped visualization tool. Final form — calls
@@ -22,7 +22,7 @@ import {MastraInternalBindings} from '../../../mastra/internal-bindings';
 export class GenerateVisualizationTool implements IGraphTool {
   key = 'generate-visualization';
   constructor(
-    @inject(MastraInternalBindings.Mastra) private readonly mastra: Mastra,
+    @inject(InternalBindings.Mastra) private readonly mastra: Mastra,
   ) {}
 
   build(): Tool {
@@ -90,7 +90,7 @@ It does not return anything, instead it fires an event internally that renders t
     const workflow = this.mastra.getWorkflow('visualizationWorkflow');
     if (!workflow) {
       throw new Error(
-        "visualizationWorkflow not registered in Mastra — check MastraProvider's workflows config",
+        'visualizationWorkflow not registered in Mastra — check Provider workflows config',
       );
     }
     const run = await workflow.createRun();

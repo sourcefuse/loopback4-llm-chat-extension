@@ -1,4 +1,9 @@
-import {BindingScope, inject, injectable, Provider} from '@loopback/core';
+import {
+  BindingScope,
+  inject,
+  injectable,
+  Provider as LoopbackProvider,
+} from '@loopback/core';
 import {Mastra} from '@mastra/core';
 import {Agent} from '@mastra/core/agent';
 import {Memory} from '@mastra/memory';
@@ -10,7 +15,7 @@ import type {RequestContext} from '@mastra/core/request-context';
 import type {Observability} from '@mastra/observability';
 import {AiIntegrationBindings} from '../../keys';
 import {createMaxTokenCountProcessor} from '../../mastra/processors/max-token-count.processor';
-import {MastraInternalBindings} from '../../mastra/internal-bindings';
+import {InternalBindings} from '../../mastra/internal-bindings';
 import {generateQueryWorkflow} from '../../mastra/workflows/db-query/workflows/generate.workflow';
 import {improveQueryWorkflow} from '../../mastra/workflows/db-query/workflows/improve.workflow';
 import {visualizationWorkflow} from '../../mastra/workflows/visualization/workflows/visualization.workflow';
@@ -29,9 +34,9 @@ import {visualizationWorkflow} from '../../mastra/workflows/visualization/workfl
  * + 7.4.
  */
 @injectable({scope: BindingScope.SINGLETON})
-export class MastraProvider implements Provider<Mastra> {
+export class Provider implements LoopbackProvider<Mastra> {
   constructor(
-    @inject(MastraInternalBindings.Storage)
+    @inject(InternalBindings.Storage)
     private storage: MastraCompositeStore,
     @inject(AiIntegrationBindings.VectorStore, {optional: true})
     private vector?: MastraVector,
@@ -39,7 +44,7 @@ export class MastraProvider implements Provider<Mastra> {
     private embedder?: MastraEmbeddingModel<string>,
     @inject(AiIntegrationBindings.SystemContext, {optional: true})
     private systemContext?: string[],
-    @inject(MastraInternalBindings.Observability, {optional: true})
+    @inject(InternalBindings.Observability, {optional: true})
     private observability?: Observability,
   ) {}
 
@@ -73,9 +78,9 @@ export class MastraProvider implements Provider<Mastra> {
     const defaultModel = process.env.MASTRA_DEFAULT_CHAT_MODEL;
     if (!defaultModel) {
       throw new Error(
-        'MastraProvider: set MASTRA_DEFAULT_CHAT_MODEL env var ' +
+        'Provider: set MASTRA_DEFAULT_CHAT_MODEL env var ' +
           '(e.g. "google/gemini-1.5-flash", "anthropic/claude-3-5-sonnet-20241022") ' +
-          'or override MastraProvider entirely. The ChatAgent has no ' +
+          'or override Provider entirely. The ChatAgent has no ' +
           'silent default model — refusing to ship a billable OpenAI fallback.',
       );
     }

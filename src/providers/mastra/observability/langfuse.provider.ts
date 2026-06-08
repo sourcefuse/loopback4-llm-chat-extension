@@ -4,7 +4,7 @@ import {buildLangfuseExporter, makeObservability} from './util';
 
 /**
  * Mastra Observability wired with the Langfuse exporter. Consumer binds
- * this against `MastraInternalBindings.Observability` to ship every
+ * this against `InternalBindings.Observability` to ship every
  * agent / workflow / tool span to Langfuse Cloud (or a self-hosted
  * deployment) for trace inspection, prompt evals and scoring.
  *
@@ -14,12 +14,12 @@ import {buildLangfuseExporter, makeObservability} from './util';
  * Refs: the migration plan.
  */
 @injectable({scope: BindingScope.SINGLETON})
-export class MastraLangfuseObservability implements Provider<Observability> {
+export class LangfuseObservability implements Provider<Observability> {
   value(): Observability {
     const exporter = buildLangfuseExporter();
     if (!exporter) {
       throw new Error(
-        'LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY env vars required for MastraLangfuseObservability',
+        'LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY env vars required for LangfuseObservability',
       );
     }
     return makeObservability([exporter]);

@@ -10,17 +10,17 @@ import {
  * Mastra Observability wired with EVERY exporter whose env keys are
  * present — Langfuse (LANGFUSE_PUBLIC_KEY + LANGFUSE_SECRET_KEY) and/or
  * LangSmith (LANGSMITH_API_KEY / LANGCHAIN_API_KEY). Consumer binds this
- * against `MastraInternalBindings.Observability` to ship the same
+ * against `InternalBindings.Observability` to ship the same
  * agent / workflow / tool spans to multiple backends at once.
  *
  * Mastra fans a single config's span stream out to all exporters in the
  * array, so this avoids the "one observability key = one backend" limit
  * of the single-exporter providers. Bind THIS instead of
- * MastraLangfuseObservability / MastraLangSmithObservability when you
+ * LangfuseObservability / LangSmithObservability when you
  * want traces in more than one tool.
  */
 @injectable({scope: BindingScope.SINGLETON})
-export class MastraMultiObservability implements Provider<Observability> {
+export class MultiObservability implements Provider<Observability> {
   value(): Observability {
     const exporters = [
       buildLangfuseExporter(),
@@ -28,7 +28,7 @@ export class MastraMultiObservability implements Provider<Observability> {
     ].filter((e): e is NonNullable<typeof e> => e !== undefined);
     if (exporters.length === 0) {
       throw new Error(
-        'MastraMultiObservability requires at least one exporter — set ' +
+        'MultiObservability requires at least one exporter — set ' +
           'LANGFUSE_PUBLIC_KEY + LANGFUSE_SECRET_KEY and/or LANGSMITH_API_KEY ' +
           '(or LANGCHAIN_API_KEY).',
       );

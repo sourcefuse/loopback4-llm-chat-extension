@@ -1,5 +1,5 @@
 import {Component, ProviderMap} from '@loopback/core';
-import {MastraInternalBindings} from '../../../mastra/internal-bindings';
+import {InternalBindings} from '../../../mastra/internal-bindings';
 import {LangfuseObfProvider} from './langfuse.provider';
 
 export class LangfuseComponent implements Component {
@@ -7,7 +7,7 @@ export class LangfuseComponent implements Component {
 
   constructor() {
     this.providers = {
-      [MastraInternalBindings.Observability.key]: LangfuseObfProvider,
+      [InternalBindings.Observability.key]: LangfuseObfProvider,
     };
   }
 }

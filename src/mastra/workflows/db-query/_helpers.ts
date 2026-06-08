@@ -73,7 +73,7 @@ export interface MastraRcShape {
   smartNonThinkingLlm?: LanguageModel;
   // Per-request chat-agent configuration. The chatAgent registered on the
   // Mastra singleton resolves its model / tools / instructions from these
-  // keys (function-typed Agent params, see MastraProvider). Threading them
+  // keys (function-typed Agent params, see Provider). Threading them
   // through RequestContext — instead of building a detached `new Agent()`
   // per request — keeps the agent registered with the Mastra instance so
   // its spans reach the configured observability exporter (Langfuse).

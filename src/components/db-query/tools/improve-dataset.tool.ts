@@ -11,7 +11,7 @@ import {
   pickBranchOutput,
   readString,
 } from '../../../graphs/tool-event.util';
-import {MastraInternalBindings} from '../../../mastra/internal-bindings';
+import {InternalBindings} from '../../../mastra/internal-bindings';
 import {buildDatasetReadout} from '../utils';
 
 /**
@@ -21,7 +21,7 @@ import {buildDatasetReadout} from '../utils';
 export class ImproveDatasetTool implements IGraphTool {
   key = 'improve-dataset';
   constructor(
-    @inject(MastraInternalBindings.Mastra) private readonly mastra: Mastra,
+    @inject(InternalBindings.Mastra) private readonly mastra: Mastra,
   ) {}
 
   build(): Tool {
@@ -91,7 +91,7 @@ export class ImproveDatasetTool implements IGraphTool {
     const workflow = this.mastra.getWorkflow('improveQueryWorkflow');
     if (!workflow) {
       throw new Error(
-        "improveQueryWorkflow not registered in Mastra — check MastraProvider's workflows config",
+        'improveQueryWorkflow not registered in Mastra — check Provider workflows config',
       );
     }
     const run = await workflow.createRun();

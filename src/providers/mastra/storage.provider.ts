@@ -5,11 +5,11 @@ import type {MastraCompositeStore} from '@mastra/core/storage';
 /**
  * Default Mastra storage provider — ships @mastra/libsql writing to a local
  * SQLite file. Zero-config so the component works out-of-the-box. Consumers
- * override via `app.bind(MastraInternalBindings.Storage).to(...)` with
+ * override via `app.bind(InternalBindings.Storage).to(...)` with
  * PostgresStore, MongoDBStore, etc. See the migration plan.
  */
 @injectable({scope: BindingScope.SINGLETON})
-export class DefaultMastraStorageProvider implements Provider<MastraCompositeStore> {
+export class DefaultStorageProvider implements Provider<MastraCompositeStore> {
   async value(): Promise<MastraCompositeStore> {
     return new LibSQLStore({
       id: 'mastra-default',

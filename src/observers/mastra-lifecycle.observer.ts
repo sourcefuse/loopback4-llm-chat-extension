@@ -7,7 +7,7 @@ import {
   lifeCycleObserver,
 } from '@loopback/core';
 import type {Mastra} from '@mastra/core';
-import {MastraInternalBindings} from '../mastra/internal-bindings';
+import {InternalBindings} from '../mastra/internal-bindings';
 
 const debug = debugFactory('ai-integration:mastra-lifecycle');
 
@@ -22,8 +22,8 @@ const debug = debugFactory('ai-integration:mastra-lifecycle');
  */
 @lifeCycleObserver('mastra')
 @injectable({scope: BindingScope.SINGLETON})
-export class MastraLifecycleObserver implements LifeCycleObserver {
-  constructor(@inject(MastraInternalBindings.Mastra) private mastra: Mastra) {}
+export class RuntimeLifecycleObserver implements LifeCycleObserver {
+  constructor(@inject(InternalBindings.Mastra) private mastra: Mastra) {}
 
   async start(): Promise<void> {
     // Reserved for vector-index preflight, RLS check, etc.

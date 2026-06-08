@@ -11,7 +11,7 @@ import {
   pickBranchOutput,
   readString,
 } from '../../../graphs/tool-event.util';
-import {MastraInternalBindings} from '../../../mastra/internal-bindings';
+import {InternalBindings} from '../../../mastra/internal-bindings';
 import {buildDatasetReadout} from '../utils';
 
 /**
@@ -24,7 +24,7 @@ import {buildDatasetReadout} from '../utils';
 export class GetDataAsDatasetTool implements IGraphTool {
   key = 'get-data-as-dataset';
   constructor(
-    @inject(MastraInternalBindings.Mastra) private readonly mastra: Mastra,
+    @inject(InternalBindings.Mastra) private readonly mastra: Mastra,
   ) {}
 
   build(): Tool {
@@ -99,7 +99,7 @@ export class GetDataAsDatasetTool implements IGraphTool {
     const workflow = this.mastra.getWorkflow('generateQueryWorkflow');
     if (!workflow) {
       throw new Error(
-        "generateQueryWorkflow not registered in Mastra — check MastraProvider's workflows config",
+        'generateQueryWorkflow not registered in Mastra — check Provider workflows config',
       );
     }
     const run = await workflow.createRun();

@@ -49,13 +49,13 @@ import {UsageAccumulator} from './services/usage-accumulator.service';
 import {SSETransport} from './transports';
 import {AIIntegrationConfig} from './types';
 import {PgVectorStore} from './sub-modules/db/postgresql';
-import {DefaultMastraStorageProvider} from './providers/mastra/storage.provider';
-import {MastraProvider} from './providers/mastra/mastra.provider';
+import {DefaultStorageProvider} from './providers/mastra/storage.provider';
+import {Provider} from './providers/mastra/mastra.provider';
 import {DefaultToolsProvider} from './providers/mastra/tools.provider';
-import {MastraInternalBindings} from './mastra/internal-bindings';
+import {InternalBindings} from './mastra/internal-bindings';
 import {InProcessRunRegistry} from './mastra/bridge/run-registry';
 import {WorkflowRunner} from './mastra/bridge/workflow-runner';
-import {MastraLifecycleObserver} from './observers/mastra-lifecycle.observer';
+import {RuntimeLifecycleObserver} from './observers/mastra-lifecycle.observer';
 import {GetDataAsDatasetTool} from './components/db-query/tools/get-data-as-dataset.tool';
 import {ImproveDatasetTool} from './components/db-query/tools/improve-dataset.tool';
 import {AskAboutDatasetTool} from './components/db-query/tools/ask-about-dataset.tool';
@@ -92,17 +92,17 @@ export class AiIntegrationsComponent implements Component {
       }),
       // Mastra v3 singletons — consumers can override MastraStorage with
       // PostgresStore/MongoDBStore/etc. The defaults work zero-config.
-      createBindingFromClass(DefaultMastraStorageProvider, {
-        key: MastraInternalBindings.Storage.key,
+      createBindingFromClass(DefaultStorageProvider, {
+        key: InternalBindings.Storage.key,
       }).inScope(BindingScope.SINGLETON),
-      createBindingFromClass(MastraProvider, {
-        key: MastraInternalBindings.Mastra.key,
+      createBindingFromClass(Provider, {
+        key: InternalBindings.Mastra.key,
       }).inScope(BindingScope.SINGLETON),
       createBindingFromClass(InProcessRunRegistry, {
-        key: MastraInternalBindings.RunRegistry.key,
+        key: InternalBindings.RunRegistry.key,
       }).inScope(BindingScope.SINGLETON),
       createBindingFromClass(DefaultToolsProvider, {
-        key: MastraInternalBindings.Tools.key,
+        key: InternalBindings.Tools.key,
       }).inScope(BindingScope.SINGLETON),
     ];
 
@@ -127,7 +127,7 @@ export class AiIntegrationsComponent implements Component {
       GenerateVisualizationTool,
     ];
 
-    this.lifeCycleObservers = [MastraLifecycleObserver];
+    this.lifeCycleObservers = [RuntimeLifecycleObserver];
 
     this.controllers = [GenerationController, ChatController];
     this.models = [Chat, Message, CacheModel];

@@ -4,7 +4,7 @@ import {buildLangSmithExporter, makeObservability} from './util';
 
 /**
  * Mastra Observability wired with the LangSmith exporter. Consumer binds
- * this against `MastraInternalBindings.Observability` to ship every
+ * this against `InternalBindings.Observability` to ship every
  * agent / workflow / tool span to LangSmith for trace inspection and
  * dataset capture.
  *
@@ -16,12 +16,12 @@ import {buildLangSmithExporter, makeObservability} from './util';
  * variables for compatibility; both env styles work.
  */
 @injectable({scope: BindingScope.SINGLETON})
-export class MastraLangSmithObservability implements Provider<Observability> {
+export class LangSmithObservability implements Provider<Observability> {
   value(): Observability {
     const exporter = buildLangSmithExporter();
     if (!exporter) {
       throw new Error(
-        'LANGSMITH_API_KEY (or LANGCHAIN_API_KEY) env var required for MastraLangSmithObservability',
+        'LANGSMITH_API_KEY (or LANGCHAIN_API_KEY) env var required for LangSmithObservability',
       );
     }
     return makeObservability([exporter]);

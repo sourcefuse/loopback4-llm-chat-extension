@@ -56,8 +56,8 @@ export namespace AiIntegrationBindings {
   export const SystemContext = BindingKey.create<string[]>(
     `services.ai-reporting.system-context`,
   );
-  // NOTE: Mastra runtime infra bindings (Mastra, Storage, Tools,
-  // Observability, RunRegistry, ResourceId) live in MastraInternalBindings
+  // NOTE: Runtime infra bindings (Mastra, Storage, Tools,
+  // Observability, RunRegistry, ResourceId) live in InternalBindings
   // (src/mastra/internal-bindings.ts) — they are not part of the
   // host-facing API surface. Host model bindings stay here as the canonical
   // ChatLLM / FileLLM / CheapLLM / SmartLLM / SmartNonThinkingLLM tiers.

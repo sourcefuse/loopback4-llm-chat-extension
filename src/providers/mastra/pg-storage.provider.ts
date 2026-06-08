@@ -7,17 +7,17 @@ const DEFAULT_PG_PORT = 5432;
 /**
  * Postgres-backed Mastra storage provider (issue #17). Ships `@mastra/pg`'s
  * `PostgresStore` — which extends `MastraCompositeStore` — so it is a drop-in
- * for the `MastraInternalBindings.Storage` binding, persisting threads,
+ * for the `InternalBindings.Storage` binding, persisting threads,
  * messages and (when enabled) working memory in Postgres instead of the
  * default LibSQL/SQLite file.
  *
- * NOT bound by default — {@link DefaultMastraStorageProvider} (LibSQL) stays
+ * NOT bound by default — {@link DefaultStorageProvider} (LibSQL) stays
  * the zero-config default. Opt in from the consumer app:
  *
  * ```ts
- * import {PostgresMastraStorageProvider, MastraInternalBindings} from
+ * import {PostgresStorageProvider, InternalBindings} from
  *   'lb4-llm-chat-component';
- * app.bind(MastraInternalBindings.Storage).toProvider(PostgresMastraStorageProvider);
+ * app.bind(InternalBindings.Storage).toProvider(PostgresStorageProvider);
  * ```
  *
  * Configuration is read from env, supporting either form `@mastra/pg` accepts:
@@ -37,7 +37,7 @@ const DEFAULT_PG_PORT = 5432;
  * different backend.
  */
 @injectable({scope: BindingScope.SINGLETON})
-export class PostgresMastraStorageProvider implements Provider<MastraCompositeStore> {
+export class PostgresStorageProvider implements Provider<MastraCompositeStore> {
   async value(): Promise<MastraCompositeStore> {
     const id = process.env.MASTRA_STORAGE_ID ?? 'mastra-pg';
     const schemaName = process.env.MASTRA_PG_SCHEMA ?? 'mastra';
@@ -66,7 +66,7 @@ export class PostgresMastraStorageProvider implements Provider<MastraCompositeSt
     }
 
     throw new Error(
-      'PostgresMastraStorageProvider: set MASTRA_PG_CONNECTION_STRING, or all ' +
+      'PostgresStorageProvider: set MASTRA_PG_CONNECTION_STRING, or all ' +
         'of MASTRA_PG_HOST / MASTRA_PG_DATABASE / MASTRA_PG_USER / ' +
         'MASTRA_PG_PASSWORD. Refusing to start without an explicit Postgres ' +
         'configuration (no silent fallback to another storage backend).',

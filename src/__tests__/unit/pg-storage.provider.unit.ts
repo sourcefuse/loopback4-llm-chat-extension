@@ -1,5 +1,5 @@
 import {expect} from '@loopback/testlab';
-import {PostgresMastraStorageProvider} from '../../providers/mastra/pg-storage.provider';
+import {PostgresStorageProvider} from '../../providers/mastra/pg-storage.provider';
 
 /**
  * Unit coverage for the opt-in Postgres storage provider (issue #17). Only the
@@ -7,7 +7,7 @@ import {PostgresMastraStorageProvider} from '../../providers/mastra/pg-storage.p
  * `PostgresStore` (and its `pg` pool), which belongs in an integration test
  * against a live database, not a unit test.
  */
-describe('PostgresMastraStorageProvider (unit)', () => {
+describe('PostgresStorageProvider (unit)', () => {
   const PG_ENV = [
     'MASTRA_PG_CONNECTION_STRING',
     'MASTRA_PG_HOST',
@@ -36,7 +36,7 @@ describe('PostgresMastraStorageProvider (unit)', () => {
   });
 
   it('fails closed when no Postgres configuration is present', async () => {
-    const provider = new PostgresMastraStorageProvider();
+    const provider = new PostgresStorageProvider();
     await expect(provider.value()).to.be.rejectedWith(
       /MASTRA_PG_CONNECTION_STRING/,
     );
@@ -47,7 +47,7 @@ describe('PostgresMastraStorageProvider (unit)', () => {
     process.env.MASTRA_PG_DATABASE = 'db';
     process.env.MASTRA_PG_USER = 'user';
     // MASTRA_PG_PASSWORD intentionally unset
-    const provider = new PostgresMastraStorageProvider();
+    const provider = new PostgresStorageProvider();
     await expect(provider.value()).to.be.rejectedWith(/Postgres configuration/);
   });
 });

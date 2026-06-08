@@ -15,7 +15,7 @@ import {resolveModelConfig, type MastraModelConfig} from '@mastra/core/llm';
 import {generateText, type LanguageModel} from 'ai';
 import {AiIntegrationBindings, IRunRegistry} from '../../keys';
 import {CHAT_TITLE_MAX_LENGTH} from '../../constant';
-import {MastraInternalBindings} from '../internal-bindings';
+import {InternalBindings} from '../internal-bindings';
 import {deriveResourceId} from '../resource-id.util';
 import {LLMStreamEvent, LLMStreamEventType} from '../../graphs/event.types';
 import {ToolStore, ToolStatus} from '../../graphs/types';
@@ -237,17 +237,17 @@ export class WorkflowRunner {
 
   constructor(
     @inject.context() private lb4Ctx: Context,
-    @inject(MastraInternalBindings.Mastra) private mastra: Mastra,
+    @inject(InternalBindings.Mastra) private mastra: Mastra,
     @inject(AiIntegrationBindings.ChatLLM, {optional: true})
     private chatLlm?: MastraModelConfig,
-    @inject(MastraInternalBindings.RunRegistry)
+    @inject(InternalBindings.RunRegistry)
     private runRegistry?: IRunRegistry,
-    @inject(MastraInternalBindings.ResourceId, {optional: true})
+    @inject(InternalBindings.ResourceId, {optional: true})
     private resourceIdValue?: string,
     @inject(AiIntegrationBindings.SystemContext, {optional: true})
     private systemContext?: string[],
     @service(UsageAccumulator) private usage?: UsageAccumulator,
-    @inject(MastraInternalBindings.Tools, {optional: true})
+    @inject(InternalBindings.Tools, {optional: true})
     private mastraTools?: ToolStore,
     @inject(AiIntegrationBindings.FileLLM, {optional: true})
     private fileLlm?: MastraModelConfig,
@@ -284,7 +284,7 @@ export class WorkflowRunner {
         type: LLMStreamEventType.Error,
         data: {
           message:
-            'ChatAgent not registered in Mastra — check MastraProvider boot order',
+            'ChatAgent not registered in Mastra — check Provider boot order',
         },
       });
       queue.close();
@@ -719,7 +719,7 @@ export class WorkflowRunner {
       // Per-request chat-agent config consumed by the registered chatAgent's
       // dynamic params (model/tools/instructions resolve from these). model
       // falls back to MASTRA_DEFAULT_CHAT_MODEL inside the agent when chatLlm
-      // is unbound — fail-closed is enforced at MastraProvider boot.
+      // is unbound — fail-closed is enforced at Provider boot.
       agentModel: this.chatLlm,
       agentTools: this.buildToolMap(),
       agentInstructions: this.buildInstructions(),
@@ -742,7 +742,7 @@ export class WorkflowRunner {
   /**
    * Tenant-scoped requester identity used to (a) stamp newly-created
    * threads and (b) authorize resume of existing ones. Prefers an
-   * explicitly bound `MastraInternalBindings.ResourceId`; otherwise derives
+   * explicitly bound `InternalBindings.ResourceId`; otherwise derives
    * `${tenantId}:${principalId}` from the authenticated user. Returns
    * undefined when neither is resolvable so callers can refuse rather than
    * resume into the wrong scope.
@@ -796,7 +796,7 @@ export class WorkflowRunner {
         error:
           'Unable to authorize thread resume: requester resource identity ' +
           'is unavailable. Ensure an authenticated user with tenantId + id is present, ' +
-          'or bind MastraInternalBindings.ResourceId.',
+          'or bind InternalBindings.ResourceId.',
       };
     }
     if (thread.resourceId !== requesterResourceId) {
