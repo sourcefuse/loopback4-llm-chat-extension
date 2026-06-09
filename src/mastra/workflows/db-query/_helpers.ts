@@ -601,10 +601,46 @@ Describe the query — do not return SQL.`;
 
 /** Remove `<think>…</think>` / `<thinking>…</thinking>` blocks. */
 function stripThinkTags(text: string): string {
-  return text
-    .replace(/<think(ing)?>[\s\S]*?<\/think(ing)?>/g, '')
-    .replace(/[\s\S]*?<\/think(ing)?>/g, '')
-    .trim();
+  // Paired blocks: anchored by both literal tags → linear, no backtracking.
+  const paired = text.replace(/<think(?:ing)?>[\s\S]*?<\/think(?:ing)?>/g, '');
+  // Orphan closing tag (a reasoning model emitted a close with no open):
+  // drop everything up to and including the LAST one. lastIndexOf — not a
+  // lazy-prefix regex — so there's no super-linear backtracking (S5852).
+  let cut = -1;
+  let tagLen = 0;
+  for (const tag of ['</think>', '</thinking>']) {
+    const i = paired.lastIndexOf(tag);
+    if (i > cut) {
+      cut = i;
+      tagLen = tag.length;
+    }
+  }
+  return (cut === -1 ? paired : paired.slice(cut + tagLen)).trim();
+}
+
+/** Text of a stream delta chunk, or '' when the chunk is not a text/reasoning
+ * delta. Keeps {@link streamDescription}'s loop flat (S134). */
+function deltaText(part: unknown): string {
+  const p = part as {type?: string; text?: string; textDelta?: string};
+  if (p.type !== 'text-delta' && p.type !== 'reasoning-delta') return '';
+  return p.text ?? p.textDelta ?? '';
+}
+
+/** Drain a streamText fullStream, emit each delta as a thinkingToken, and
+ * return the accumulated text. Extracted from {@link streamDescription} to
+ * keep both functions under the complexity limit. */
+async function pumpThinking(
+  stream: AsyncIterable<unknown>,
+  rc: MastraRc | undefined,
+): Promise<string> {
+  let out = '';
+  for await (const part of stream) {
+    const token = deltaText(part);
+    if (!token) continue;
+    out += token;
+    emitThinkingToken(rc, token);
+  }
+  return out;
 }
 
 /**
@@ -639,17 +675,7 @@ async function streamDescription(args: {
       model,
       prompt: buildDescriptionPrompt(prompt, sql, checks),
     });
-    let out = '';
-    for await (const part of result.fullStream) {
-      const p = part as {type: string; text?: string; textDelta?: string};
-      if (p.type === 'text-delta' || p.type === 'reasoning-delta') {
-        const token = p.text ?? p.textDelta ?? '';
-        if (token) {
-          out += token;
-          emitThinkingToken(rc, token);
-        }
-      }
-    }
+    const out = await pumpThinking(result.fullStream, rc);
     span?.end({
       attributes: {model: modelId, provider},
       usage: await result.usage,
