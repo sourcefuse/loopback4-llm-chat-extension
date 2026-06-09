@@ -6,11 +6,13 @@ import {
   getAllSchemaTables,
   getCheapLlm,
   getDbConnector,
+  getDbQueryConfig,
   getGlobalContext,
   getSchemaStore,
   getSmartLlm,
   getTablesWithColumns,
   runSqlAttempt,
+  shouldUseCheapForSqlGen,
 } from '../_helpers';
 import {MAX_VALIDATION_ATTEMPTS, STEP_SQL_AND_VALIDATE} from './constants';
 
@@ -32,6 +34,30 @@ function cachedSqlPassthrough(data: {
     checklist: '',
     cached: true,
     datasetId: data.datasetId,
+  };
+}
+
+// The get-columns gate judged the question unanswerable. Exit the dountil
+// immediately (attempts forced to the cap, passed=false) so NO smart-tier
+// SQL generation runs and the final branch routes to failedStep, which
+// surfaces `replyToUser`.
+function unanswerableShortCircuit(data: {
+  unanswerable?: boolean;
+  replyToUser?: string;
+  prompt?: string;
+}) {
+  if (!data.unanswerable) return null;
+  return {
+    sql: '',
+    passed: false,
+    attempts: MAX_VALIDATION_ATTEMPTS,
+    feedback: undefined,
+    description: '',
+    prompt: data.prompt ?? '',
+    tables: [] as string[],
+    checklist: '',
+    unanswerable: true,
+    replyToUser: data.replyToUser ?? '',
   };
 }
 
@@ -70,6 +96,8 @@ export const sqlAndValidateStep = createStep({
     checklist: z.string(),
     cached: z.boolean().optional(),
     datasetId: z.string().optional(),
+    unanswerable: z.boolean().optional(),
+    replyToUser: z.string().optional(),
   }),
   execute: async ({inputData, requestContext, tracingContext}) => {
     const data = inputData as {
@@ -81,10 +109,15 @@ export const sqlAndValidateStep = createStep({
       cached?: boolean;
       datasetId?: string;
       sql?: string;
+      unanswerable?: boolean;
+      replyToUser?: string;
     };
 
     const cached = cachedSqlPassthrough(data);
     if (cached) return cached;
+
+    const blocked = unanswerableShortCircuit(data);
+    if (blocked) return blocked;
 
     emitToolStatus(
       requestContext,
@@ -96,8 +129,21 @@ export const sqlAndValidateStep = createStep({
     const tables = data.tables ?? [];
     const schemaStore = getSchemaStore(requestContext);
 
+    // Tier selection (restores v2 cost optimisation): retries and
+    // single-table queries run on the cheap tier; multi-table first attempts
+    // on smart.
+    const isRetry = (data.attempts ?? 0) > 0;
+    const useCheap = shouldUseCheapForSqlGen(
+      getDbQueryConfig(requestContext),
+      tables.length,
+      isRetry,
+    );
+    const genLlm = useCheap
+      ? getCheapLlm(requestContext)
+      : getSmartLlm(requestContext);
+
     const attempt = await runSqlAttempt({
-      chatLlm: getSmartLlm(requestContext),
+      chatLlm: genLlm,
       cheapLlm: getCheapLlm(requestContext),
       allTables: getAllSchemaTables(schemaStore),
       tracing: tracingContext,

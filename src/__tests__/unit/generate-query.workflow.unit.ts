@@ -4,6 +4,7 @@ import * as helpers from '../../mastra/workflows/db-query/_helpers';
 import {generateQueryWorkflow} from '../../mastra/workflows/db-query/workflows/generate.workflow';
 import {MAX_VALIDATION_ATTEMPTS} from '../../mastra/workflows/db-query/steps/constants';
 import type {MastraRcShape} from '../../mastra/workflows/db-query/_helpers';
+import {DatasetActionType} from '../../components/db-query/constant';
 
 /**
  * DAG-level coverage for `generateQueryWorkflow`. The integration test
@@ -106,6 +107,70 @@ describe('generateQueryWorkflow (DAG branching, unit)', () => {
     expect(out.sql).to.equal('SELECT * FROM employees');
     // Confirm we never went through the SQL-gen → persist pipeline.
     sinon.assert.notCalled(datasetCreate);
+  });
+
+  // ──────────────────────────────────────────────────────────
+  // AsIs cache hit, but the cached dataset was DISLIKED → must
+  // regenerate, not re-serve (restored v2 CheckCacheNode filter).
+  // ──────────────────────────────────────────────────────────
+
+  it('AsIs cache hit but the dataset was disliked → regenerates instead of re-serving', async () => {
+    stubLlm({
+      'cache-judge': 'AsIs 1',
+      'template-judge': 'no_match',
+      'generate-checklist': '',
+    });
+    sinon.stub(helpers, 'pickRelevantTables').resolves({kind: 'unknown'});
+    const runSqlAttempt = sinon.stub(helpers, 'runSqlAttempt').resolves({
+      sql: 'SELECT regenerated',
+      passed: true,
+      description: 'd',
+    });
+    const schema = {tables: {employees: {columns: {id: {}}}}};
+    const queryCache = {
+      invoke: sinon
+        .stub()
+        .resolves([
+          {pageContent: 'list employees', metadata: {id: 'ds-cached'}},
+        ]),
+    };
+    const templateCache = {invoke: sinon.stub().resolves([])};
+    // The cached dataset carries a Disliked action.
+    const findById = sinon.stub().resolves({
+      id: 'ds-cached',
+      query: 'SELECT old',
+      actions: [{action: DatasetActionType.Disliked}],
+    });
+    const create = sinon.stub().resolves({id: 'ds-new'});
+
+    const rc = makeRc({
+      queryCache,
+      templateCache,
+      schemaStore: {get: () => schema, filteredSchema: () => schema} as never,
+      datasetStore: {findById, create} as never,
+      authUser: {id: 'u1', tenantId: 't1'} as never,
+      dbConnector: {
+        validate: async () => undefined,
+        execute: async () => [],
+      } as never,
+    });
+
+    const run = await generateQueryWorkflow.createRun();
+    const result = await run.start({
+      inputData: {prompt: 'list employees'},
+      requestContext: rc as RequestContext,
+    });
+
+    expect(result.status).to.equal('success');
+    if (result.status !== 'success') return;
+    // Regenerated: SQL-gen ran and a NEW dataset was created — the disliked
+    // cached row was NOT re-served.
+    sinon.assert.called(runSqlAttempt);
+    sinon.assert.calledOnce(create);
+    const wrapped = result.result as Record<string, unknown>;
+    const out =
+      (wrapped['save-dataset'] as GenOut) ?? (wrapped as unknown as GenOut);
+    expect(out.datasetId).to.equal('ds-new');
   });
 
   // ──────────────────────────────────────────────────────────
@@ -218,5 +283,127 @@ describe('generateQueryWorkflow (DAG branching, unit)', () => {
     // visible "stop wasting model calls" guarantee.
     expect(runSqlAttempt.callCount).to.equal(MAX_VALIDATION_ATTEMPTS);
     sinon.assert.notCalled(datasetCreate);
+  });
+
+  // ──────────────────────────────────────────────────────────
+  // Unanswerable: get-columns gate finds NO relevant tables →
+  // fast-fail with a user message and ZERO SQL-gen attempts.
+  // This is the restored v2 `get-tables`→`Failed` early gate: v3
+  // had dropped it, so an unanswerable prompt fell through to the
+  // dountil and burned MAX_VALIDATION_ATTEMPTS smart-tier SQL
+  // generations before returning an empty dataset (and could even
+  // accept executable-but-wrong SQL on the advisory last attempt).
+  // ──────────────────────────────────────────────────────────
+
+  it('Unanswerable branch — get-columns finds no relevant tables → fast-fail with replyToUser and ZERO SQL-gen attempts', async () => {
+    stubLlm({'cache-judge': 'NotRelevant', 'template-judge': 'no_match'});
+    // get-columns' LLM judges the question unanswerable. (pickRelevantTables
+    // calls tracedGenerateText *internally*, so the label-stub can't reach it
+    // — stub the exported helper the step actually imports instead. Its own
+    // __unanswerable__ JSON parsing is covered in generate-helpers.unit.ts.)
+    sinon.stub(helpers, 'pickRelevantTables').resolves({
+      kind: 'unanswerable',
+      reason: 'No revenue data is stored in these tables.',
+    });
+    // If this is ever called the gate failed — it must stay untouched.
+    const runSqlAttempt = sinon
+      .stub(helpers, 'runSqlAttempt')
+      .resolves({sql: 'SELECT 1', passed: true});
+
+    const queryCache = {invoke: sinon.stub().resolves([])};
+    const templateCache = {invoke: sinon.stub().resolves([])};
+    const datasetCreate = sinon.stub();
+    const schema = {tables: {employees: {columns: {id: {}, name: {}}}}};
+
+    const rc = makeRc({
+      queryCache,
+      templateCache,
+      schemaStore: {
+        get: () => schema,
+        filteredSchema: () => schema,
+      } as never,
+      datasetStore: {create: datasetCreate, findById: sinon.stub()} as never,
+      authUser: {id: 'u1', tenantId: 't1'} as never,
+      dbConnector: {
+        validate: async () => undefined,
+        execute: async () => [],
+      } as never,
+    });
+
+    const run = await generateQueryWorkflow.createRun();
+    const result = await run.start({
+      inputData: {prompt: 'total revenue by region'},
+      requestContext: rc as RequestContext,
+    });
+
+    expect(result.status).to.equal('success');
+    if (result.status !== 'success') return;
+    const wrapped = result.result as Record<string, unknown>;
+    const out =
+      (wrapped.failed as GenOut & {replyToUser?: string}) ??
+      (wrapped as unknown as GenOut & {replyToUser?: string});
+
+    expect(out.datasetId).to.equal('');
+    // THE regression guard: an unanswerable question must not cost a
+    // single smart-tier SQL generation.
+    sinon.assert.notCalled(runSqlAttempt);
+    sinon.assert.notCalled(datasetCreate);
+    // …and the user gets the clarification, not a silent empty dataset.
+    expect(out.replyToUser).to.equal(
+      'No revenue data is stored in these tables.',
+    );
+  });
+
+  // ──────────────────────────────────────────────────────────
+  // Guard the fallback: a get-columns LLM hiccup (junk / non-JSON)
+  // must NOT be treated as unanswerable. It falls back to all tables
+  // and the normal SQL-gen path runs — same as before the gate.
+  // ──────────────────────────────────────────────────────────
+
+  it('Unknown get-columns result (junk / LLM hiccup) falls back to all tables and proceeds to SQL gen', async () => {
+    stubLlm({
+      'cache-judge': 'NotRelevant',
+      'template-judge': 'no_match',
+      'generate-checklist': '',
+    });
+    // LLM hiccup / no clear verdict → unknown → fall back to all tables.
+    sinon.stub(helpers, 'pickRelevantTables').resolves({kind: 'unknown'});
+    const runSqlAttempt = sinon.stub(helpers, 'runSqlAttempt').resolves({
+      sql: 'SELECT 1',
+      passed: true,
+      description: 'd',
+    });
+
+    const queryCache = {invoke: sinon.stub().resolves([])};
+    const templateCache = {invoke: sinon.stub().resolves([])};
+    const create = sinon.stub().resolves({id: 5});
+    const findById = sinon.stub().resolves({id: 5, query: 'SELECT 1'});
+    const schema = {tables: {employees: {columns: {id: {}, name: {}}}}};
+
+    const rc = makeRc({
+      queryCache,
+      templateCache,
+      schemaStore: {
+        get: () => schema,
+        filteredSchema: () => schema,
+      } as never,
+      datasetStore: {create, findById} as never,
+      authUser: {id: 'u1', tenantId: 't1'} as never,
+      dbConnector: {
+        validate: async () => undefined,
+        execute: async () => [],
+      } as never,
+    });
+
+    const run = await generateQueryWorkflow.createRun();
+    const result = await run.start({
+      inputData: {prompt: 'list employees'},
+      requestContext: rc as RequestContext,
+    });
+
+    expect(result.status).to.equal('success');
+    if (result.status !== 'success') return;
+    sinon.assert.called(runSqlAttempt);
+    sinon.assert.calledOnce(create);
   });
 });

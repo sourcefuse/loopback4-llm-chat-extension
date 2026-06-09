@@ -75,6 +75,7 @@ export class GetDataAsDatasetTool implements IGraphTool {
   private extractQueryBranchResult(result: unknown): {
     datasetId?: string;
     sql?: string;
+    replyToUser?: string;
   } {
     // Mastra wraps the matched branch's output under the branch step id
     // (mirroring `.parallel()` fan-in shape), so unwrap the
@@ -87,6 +88,7 @@ export class GetDataAsDatasetTool implements IGraphTool {
     return {
       datasetId: readString(branchOutput.datasetId),
       sql: readString(branchOutput.sql),
+      replyToUser: readString(branchOutput.replyToUser),
     };
   }
 
@@ -153,6 +155,13 @@ export class GetDataAsDatasetTool implements IGraphTool {
       },
     });
     const rc = ctx.requestContext;
+    // Unanswerable fast-fail: the workflow stopped at the get-columns gate
+    // because no table holds the requested data. Hand the agent the
+    // clarification so it asks the user to rephrase — instead of the
+    // generic "generated dataset" readout over an empty id.
+    if (!datasetId && workflowResult.replyToUser) {
+      return workflowResult.replyToUser;
+    }
     // Hand the AI a "done + datasetId" acknowledgement, never the actual
     // data (unless the consumer opted in via readAccessForAI). Returning a
     // string — not {datasetId, sql, rowCount} — keeps the row count and

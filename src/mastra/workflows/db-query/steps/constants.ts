@@ -26,4 +26,8 @@ export const inputSchema = z.object({
 export const outputSchema = z.object({
   datasetId: z.string(),
   sql: z.string(),
+  // Present only on the unanswerable fast-fail path — a short message the
+  // tool hands to the agent so the user is asked to rephrase instead of
+  // receiving a silent empty dataset.
+  replyToUser: z.string().optional(),
 });

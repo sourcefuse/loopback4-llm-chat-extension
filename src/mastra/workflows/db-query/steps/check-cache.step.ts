@@ -3,8 +3,10 @@ import {z} from 'zod';
 import {
   emitToolStatus,
   getCheapLlm,
+  getDatasetStore,
   getQueryCache,
   idToString,
+  isCachedDatasetUsable,
   tracedGenerateText,
 } from '../_helpers';
 import {inputSchema, STEP_CHECK_CACHE} from './constants';
@@ -74,7 +76,19 @@ Return ONLY the verdict, no other text.`;
         const idx = parseInt(match[1], 10) - 1;
         const doc = docs[idx];
         if (doc?.metadata?.id) {
-          return {cacheHit: true, datasetId: idToString(doc.metadata.id)};
+          const datasetId = idToString(doc.metadata.id);
+          // Don't re-serve a disliked or vanished dataset — regenerate
+          // instead (restores v2 CheckCacheNode dislike filtering).
+          const store = getDatasetStore(requestContext);
+          if (store && !(await isCachedDatasetUsable(store, datasetId))) {
+            emitToolStatus(
+              requestContext,
+              STEP_CHECK_CACHE,
+              'Cached result was disliked — generating a fresh query',
+            );
+            return {cacheHit: false};
+          }
+          return {cacheHit: true, datasetId};
         }
       }
     } catch {

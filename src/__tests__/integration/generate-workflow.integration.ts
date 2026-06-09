@@ -44,6 +44,12 @@ describe('generateQueryWorkflow (integration, mocked model)', () => {
       'smartLlm',
       createMockModel({mockText: SQL, version: 'v2'}) as never,
     );
+    // Single-table queries route SQL generation to the CHEAP tier (v2 cost
+    // optimisation), so bind it too — otherwise generation self-skips.
+    ctx.set(
+      'cheapLlm',
+      createMockModel({mockText: SQL, version: 'v2'}) as never,
+    );
     ctx.set('resourceId', 't1:u1');
     ctx.set('eventWriter', () => {});
     return {ctx, saved};

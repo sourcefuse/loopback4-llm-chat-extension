@@ -9,16 +9,20 @@ import {
   generateSqlOnce,
   getAllSchemaTables,
   idToString,
+  isCachedDatasetUsable,
   pickRelevantTables,
   resolvePersistDeps,
   runSqlAttempt,
+  shouldUseCheapForSqlGen,
   stripJsonFences,
   stripSqlFences,
   validateSqlSemantic,
   validateSqlSyntactic,
 } from '../../../mastra/workflows/db-query/_helpers';
+import {DatasetActionType} from '../../../components/db-query/constant';
 import {
   checkCacheStep,
+  generateChecklistStep,
   getTablesStep,
 } from '../../../mastra/workflows/db-query/steps';
 
@@ -430,20 +434,125 @@ describe('db-query generate helpers (unit)', () => {
         ...args,
         chatLlm: model('```json\n{"employees":["id","name"]}\n```'),
       });
-      expect(r).to.eql(['employees']);
+      expect(r).to.eql({kind: 'tables', tables: ['employees']});
     });
-    it('returns null on unparseable JSON', async () => {
+    it('returns unanswerable + reason when the LLM signals no table fits', async () => {
+      const r = await pickRelevantTables({
+        ...args,
+        chatLlm: model(
+          '{"__unanswerable__":"No salary information is stored for employees."}',
+        ),
+      });
+      expect(r).to.eql({
+        kind: 'unanswerable',
+        reason: 'No salary information is stored for employees.',
+      });
+    });
+    it('returns unknown on unparseable JSON (LLM hiccup, not a verdict)', async () => {
       const r = await pickRelevantTables({...args, chatLlm: model('not json')});
-      expect(r).to.be.null();
+      expect(r).to.eql({kind: 'unknown'});
     });
-    it('returns null when no schema columns are available', async () => {
+    it('returns unknown when the picked tables do not overlap the upstream set', async () => {
+      const r = await pickRelevantTables({
+        ...args,
+        chatLlm: model('{"some_other_table":["x"]}'),
+      });
+      expect(r).to.eql({kind: 'unknown'});
+    });
+    it('returns unknown when no schema columns are available', async () => {
       const r = await pickRelevantTables({
         prompt: 'x',
         tablesWithColumns: {},
         upstreamTables: [],
         chatLlm: model('{}'),
       });
-      expect(r).to.be.null();
+      expect(r).to.eql({kind: 'unknown'});
+    });
+  });
+
+  describe('generateChecklistStep (checklist gate)', () => {
+    const threeTables = ['employees', 'currency', 'exchange_rate'];
+
+    it('runs the checklist LLM for multi-table queries when enabled', async () => {
+      const out = await runStep(
+        generateChecklistStep,
+        {prompt: 'salaries by currency', tables: threeTables},
+        {chatLlm: model('- only active rows')},
+      );
+      expect(out.checklist).to.equal('- only active rows');
+    });
+
+    it('skips the checklist LLM when the consumer disabled the node', async () => {
+      const out = await runStep(
+        generateChecklistStep,
+        {prompt: 'salaries by currency', tables: threeTables},
+        {
+          chatLlm: model('- this must be ignored'),
+          config: {nodes: {generateChecklistNode: {enabled: false}}},
+        },
+      );
+      // Gated → empty checklist, model output never consulted.
+      expect(out.checklist).to.equal('');
+    });
+
+    it('skips the checklist LLM on <=2 tables (no join to mis-plan)', async () => {
+      const out = await runStep(
+        generateChecklistStep,
+        {prompt: 'list employees', tables: ['employees', 'currency']},
+        {chatLlm: model('- this must be ignored')},
+      );
+      expect(out.checklist).to.equal('');
+    });
+  });
+
+  describe('isCachedDatasetUsable (dislike filtering)', () => {
+    const ds = (actions?: {action: DatasetActionType}[]) =>
+      ({
+        findById: async () => ({id: 'd1', query: 'SELECT 1', actions}),
+      }) as never;
+
+    it('usable when the dataset has no actions', async () => {
+      expect(await isCachedDatasetUsable(ds(), 'd1')).to.be.true();
+    });
+    it('usable when only liked', async () => {
+      const r = await isCachedDatasetUsable(
+        ds([{action: DatasetActionType.Liked}]),
+        'd1',
+      );
+      expect(r).to.be.true();
+    });
+    it('NOT usable when disliked (must regenerate)', async () => {
+      const r = await isCachedDatasetUsable(
+        ds([{action: DatasetActionType.Disliked}]),
+        'd1',
+      );
+      expect(r).to.be.false();
+    });
+    it('NOT usable when the dataset lookup throws (missing)', async () => {
+      const store = {
+        findById: async () => {
+          throw new Error('not found');
+        },
+      } as never;
+      expect(await isCachedDatasetUsable(store, 'd1')).to.be.false();
+    });
+  });
+
+  describe('shouldUseCheapForSqlGen (tier selection)', () => {
+    it('cheap on a validation-fix retry regardless of table count', () => {
+      expect(shouldUseCheapForSqlGen(undefined, 5, true)).to.be.true();
+    });
+    it('cheap on a single-table first attempt', () => {
+      expect(shouldUseCheapForSqlGen(undefined, 1, false)).to.be.true();
+    });
+    it('smart on a multi-table first attempt', () => {
+      expect(shouldUseCheapForSqlGen(undefined, 3, false)).to.be.false();
+    });
+    it('smart for single-table when the consumer forces it', () => {
+      const config = {
+        nodes: {sqlGenerationNode: {useSmartLLMForSingleTableQueries: true}},
+      } as never;
+      expect(shouldUseCheapForSqlGen(config, 1, false)).to.be.false();
     });
   });
 

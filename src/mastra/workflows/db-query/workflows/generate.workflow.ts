@@ -35,11 +35,6 @@ export const generateQueryWorkflow = createWorkflow({
     ],
     [
       async ({inputData}) =>
-        (inputData as {status?: string}).status === 'Failed',
-      failedStep,
-    ],
-    [
-      async ({inputData}) =>
         (inputData as {status?: string}).status === 'Continue',
       getColumnsStep,
     ],

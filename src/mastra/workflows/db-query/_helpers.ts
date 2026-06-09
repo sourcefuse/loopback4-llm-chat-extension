@@ -40,6 +40,7 @@ import type {
   TemplateHelper,
 } from '../../../components/db-query/services';
 import type {SchemaStore} from '../../../components/db-query/services/schema.store';
+import {DatasetActionType} from '../../../components/db-query/constant';
 import type {
   DbQueryConfig,
   IDataSetStore,
@@ -152,6 +153,49 @@ export function getAuthUser(
 export function getDatasetStore(rc?: MastraRc): IDataSetStore | undefined {
   return rc?.get('datasetStore');
 }
+
+/**
+ * A cached dataset may be reused only if it still exists AND no user has
+ * disliked it (restores v2 CheckCacheNode behaviour). A disliked dataset is
+ * a signal the cached query was wrong, so we must regenerate rather than
+ * re-serve it. Missing/erroring lookups also fail closed (treat as unusable)
+ * so the cache step degrades to a miss instead of returning a dead id.
+ */
+export async function isCachedDatasetUsable(
+  store: IDataSetStore,
+  datasetId: string,
+): Promise<boolean> {
+  try {
+    const dataset = await store.findById(datasetId, {
+      include: [{relation: 'actions'}],
+    });
+    if (!dataset) return false;
+    return !dataset.actions?.some(a => a.action === DatasetActionType.Disliked);
+  } catch {
+    return false;
+  }
+}
+/**
+ * Pick the SQL-generation tier (restores v2 SqlGenerationNode cost
+ * optimisation, which v3 dropped — every gen ran on the smart tier). Cheap
+ * tier is good enough and ~halves cost/latency when:
+ *   - this is a validation-fix RETRY (the query is close, only small edits),
+ *   - or it's a single-table query (no joins to reason about) — unless the
+ *     consumer forces smart via
+ *     `nodes.sqlGenerationNode.useSmartLLMForSingleTableQueries`.
+ * Multi-table first attempts use the smart tier.
+ */
+export function shouldUseCheapForSqlGen(
+  config: DbQueryConfig | undefined,
+  tableCount: number,
+  isRetry: boolean,
+): boolean {
+  if (isRetry) return true;
+  const forceSmartSingle =
+    config?.nodes?.sqlGenerationNode?.useSmartLLMForSingleTableQueries === true;
+  return tableCount <= 1 && !forceSmartSingle;
+}
+
 export function getDbQueryConfig(rc?: MastraRc): DbQueryConfig | undefined {
   return rc?.get('config');
 }
@@ -896,24 +940,49 @@ export function resolvePersistDeps(
  * narrowed table list or `null` when the LLM rejects / returns
  * unparseable JSON / the schema is missing.
  */
+/**
+ * Outcome of the relevant-table LLM pass:
+ * - `tables`       → the narrowed list of tables that can answer the query.
+ * - `unanswerable` → the LLM judged that NONE of the tables hold the data the
+ *                    query needs; `reason` is a short user-facing message
+ *                    (mirrors v2 `get-tables`'s `replyToUser`). Callers
+ *                    short-circuit to the failed terminal WITHOUT generating
+ *                    SQL — the early gate that stops an unanswerable prompt
+ *                    from burning MAX_VALIDATION_ATTEMPTS smart-tier attempts.
+ * - `unknown`      → no LLM bound, empty schema, or an LLM/parse error. NOT a
+ *                    judgement of unanswerability — callers fall back to the
+ *                    full upstream table set and proceed as before.
+ */
+export type RelevantTablesResult =
+  | {kind: 'tables'; tables: string[]}
+  | {kind: 'unanswerable'; reason: string}
+  | {kind: 'unknown'};
+
+const UNANSWERABLE_KEY = '__unanswerable__';
+
 export async function pickRelevantTables(args: {
   chatLlm: LanguageModel;
   prompt: string;
   tablesWithColumns: Record<string, string[]>;
   upstreamTables: string[];
   tracing?: TracingContext;
-}): Promise<string[] | null> {
+}): Promise<RelevantTablesResult> {
   const {chatLlm, prompt, tablesWithColumns, upstreamTables, tracing} = args;
-  if (Object.keys(tablesWithColumns).length === 0) return null;
+  if (Object.keys(tablesWithColumns).length === 0) return {kind: 'unknown'};
   const llmPrompt = `You are an AI assistant that identifies relevant columns from database tables based on a user's query.
-Return a JSON object where each table name is a key and the value is an array of relevant column names.
 
 Tables with columns:
 ${JSON.stringify(tablesWithColumns, null, 2)}
 
 User query: ${prompt}
 
-Return ONLY valid JSON. Include primary-key and foreign-key columns even if not directly mentioned.`;
+If the query CANNOT be answered from these tables because the required data is
+simply not present, do NOT guess — return exactly:
+{"${UNANSWERABLE_KEY}": "<one short sentence telling the user what data is missing or asking them to rephrase>"}
+
+Otherwise return a JSON object where each relevant table name is a key and the
+value is an array of relevant column names. Include primary-key and foreign-key
+columns even if not directly mentioned. Return ONLY valid JSON.`;
   try {
     const result = await tracedGenerateText({
       model: chatLlm,
@@ -923,13 +992,19 @@ Return ONLY valid JSON. Include primary-key and foreign-key columns even if not 
       resultType: 'planning',
     });
     const cleaned = stripJsonFences(result.text);
-    const parsed = JSON.parse(cleaned) as Record<string, string[]>;
+    const parsed = JSON.parse(cleaned) as Record<string, unknown>;
+    const reason = parsed[UNANSWERABLE_KEY];
+    if (typeof reason === 'string' && reason.trim().length > 0) {
+      return {kind: 'unanswerable', reason: reason.trim()};
+    }
     const filtered = Object.keys(parsed).filter(t =>
       upstreamTables.includes(t),
     );
-    return filtered.length > 0 ? filtered : null;
+    return filtered.length > 0
+      ? {kind: 'tables', tables: filtered}
+      : {kind: 'unknown'};
   } catch {
-    return null;
+    return {kind: 'unknown'};
   }
 }
 

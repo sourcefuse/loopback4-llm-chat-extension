@@ -16,6 +16,11 @@ export const getColumnsStep = createStep({
     prompt: z.string(),
     tables: z.array(z.string()),
     templateId: z.string().optional(),
+    // Set when the LLM judges the question cannot be answered from any
+    // available table. Downstream steps short-circuit to the failed
+    // terminal WITHOUT generating SQL; `replyToUser` is surfaced to the user.
+    unanswerable: z.boolean().optional(),
+    replyToUser: z.string().optional(),
   }),
   execute: async ({inputData, requestContext, tracingContext}) => {
     emitToolStatus(
@@ -42,7 +47,7 @@ export const getColumnsStep = createStep({
       getSchemaStore(requestContext),
       tables,
     );
-    const narrowed = await pickRelevantTables({
+    const picked = await pickRelevantTables({
       chatLlm,
       tracing: tracingContext,
       prompt,
@@ -50,6 +55,22 @@ export const getColumnsStep = createStep({
       upstreamTables: tables,
     });
 
-    return {prompt, tables: narrowed ?? tables, templateId};
+    // Early gate (restores v2 get-tables' fast-fail): an unanswerable
+    // question stops here instead of falling through to the expensive
+    // SQL-generation/validation loop.
+    if (picked.kind === 'unanswerable') {
+      return {
+        prompt,
+        tables: [],
+        templateId,
+        unanswerable: true,
+        replyToUser: picked.reason,
+      };
+    }
+
+    // `unknown` (no LLM, empty schema, or LLM/parse error) is NOT a verdict
+    // of unanswerability — keep the full upstream set and proceed.
+    const tablesOut = picked.kind === 'tables' ? picked.tables : tables;
+    return {prompt, tables: tablesOut, templateId};
   },
 });

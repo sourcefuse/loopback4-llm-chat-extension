@@ -474,7 +474,7 @@ describe('db-query workflow steps (unit)', () => {
   // ──────────────────────────────────────────────────────────
 
   describe('failedStep', () => {
-    it('always returns the canonical empty payload so the tool wrapper can emit ToolStatus.Failed', async () => {
+    it('returns empty datasetId/sql so the tool wrapper emits ToolStatus.Failed', async () => {
       // The empty datasetId is the contract: the tool wrapper checks
       // `datasetId ? Completed : Failed` to decide which status to emit.
       const ctx = {
@@ -483,8 +483,31 @@ describe('db-query workflow steps (unit)', () => {
       const out = (await failedStep.execute(ctx)) as {
         datasetId: string;
         sql: string;
+        replyToUser?: string;
       };
-      expect(out).to.eql({datasetId: '', sql: ''});
+      expect(out.datasetId).to.equal('');
+      expect(out.sql).to.equal('');
+      // …and a non-empty failure message (never a silent empty dataset).
+      expect(out.replyToUser).to.be.a.String();
+      expect(out.replyToUser?.length).to.be.greaterThan(0);
+    });
+
+    it('surfaces the last validation feedback in the failure message', async () => {
+      const ctx = {
+        inputData: {feedback: 'Query Validation Failed: unknown column foo'},
+      } as ExecuteArg<typeof failedStep>;
+      const out = (await failedStep.execute(ctx)) as {replyToUser?: string};
+      expect(out.replyToUser).to.match(/unknown column foo/);
+    });
+
+    it('prefers an upstream replyToUser (unanswerable gate) over the generic message', async () => {
+      const ctx = {
+        inputData: {replyToUser: 'No revenue data is stored in these tables.'},
+      } as ExecuteArg<typeof failedStep>;
+      const out = (await failedStep.execute(ctx)) as {replyToUser?: string};
+      expect(out.replyToUser).to.equal(
+        'No revenue data is stored in these tables.',
+      );
     });
   });
 
