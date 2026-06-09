@@ -146,6 +146,15 @@ export const sqlAndValidateStep = createStep({
     const schemaStore = getSchemaStore(requestContext);
     const priorAttempts = data.attempts ?? 0;
 
+    // Streaming description (v2 generate-description) — restores the live
+    // `thinkingToken` reasoning heartbeat, running concurrently with the
+    // validators (no added latency). Default ON; opt out per consumer with
+    // `nodes.sqlGenerationNode.generateDescription = false`. Cheap tier: it's
+    // user-facing narration, not SQL.
+    const generateDescription =
+      getDbQueryConfig(requestContext)?.nodes?.sqlGenerationNode
+        ?.generateDescription !== false;
+
     const attempt = await runSqlAttempt({
       chatLlm: pickGenLlm(requestContext, tables.length, priorAttempts > 0),
       cheapLlm: getCheapLlm(requestContext),
@@ -163,6 +172,10 @@ export const sqlAndValidateStep = createStep({
       buildPrompt: buildGenerateSqlPrompt,
       buildDescription: (_sql, p) => `Generated SQL for: ${p}`,
       lastAttempt: priorAttempts + 1 >= MAX_VALIDATION_ATTEMPTS,
+      descriptionLlm: generateDescription
+        ? getCheapLlm(requestContext)
+        : undefined,
+      rc: requestContext,
       ...sqlStatusEmitters(requestContext),
     });
 

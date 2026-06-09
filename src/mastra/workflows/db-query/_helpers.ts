@@ -4,7 +4,7 @@ import type {Tool} from '@mastra/core/tools';
 import {SpanType} from '@mastra/core/observability';
 import type {TracingContext} from '@mastra/core/observability';
 import type {IAuthUserWithPermissions} from '@sourceloop/core';
-import {generateText} from 'ai';
+import {generateText, streamText} from 'ai';
 import type {LanguageModel} from 'ai';
 import debugFactory from 'debug';
 
@@ -432,6 +432,26 @@ export function emitToolStatus(
   });
 }
 
+/**
+ * Stream a single reasoning/description token to the client as a
+ * `tool-status` event carrying `thinkingToken` — the exact wire shape the v2
+ * LangGraph extension emitted from its (streaming) generate-description node.
+ * Gives the UI a live "thinking" heartbeat during generation. No per-token
+ * `debug` log (would be far too noisy); the accumulated description is logged
+ * once by the caller.
+ */
+export function emitThinkingToken(
+  rc: MastraRc | undefined,
+  token: string,
+): void {
+  const writer = rc?.get('eventWriter');
+  if (!writer || !token) return;
+  writer({
+    type: LLMStreamEventType.ToolStatus,
+    data: {thinkingToken: token},
+  });
+}
+
 const SQL_FENCE = '```';
 const SQL_FENCE_LANG = '```sql';
 const JSON_FENCE_LANG = '```json';
@@ -566,19 +586,101 @@ async function runGenerationStage(args: {
   };
 }
 
+function buildDescriptionPrompt(
+  prompt: string,
+  sql: string,
+  checks?: string[],
+): string {
+  return `In a few short sentences, explain step by step what the following SQL query does to answer the user's request. Be concise and user-facing.
+
+User request: ${prompt}
+SQL: ${sql}${formatChecks(checks)}
+
+Describe the query — do not return SQL.`;
+}
+
+/** Remove `<think>…</think>` / `<thinking>…</thinking>` blocks. */
+function stripThinkTags(text: string): string {
+  return text
+    .replace(/<think(ing)?>[\s\S]*?<\/think(ing)?>/g, '')
+    .replace(/[\s\S]*?<\/think(ing)?>/g, '')
+    .trim();
+}
+
+/**
+ * Stream a natural-language description of the generated SQL, emitting each
+ * delta to the client as a `thinkingToken` tool-status event (restores v2's
+ * streaming generate-description node + its live reasoning heartbeat). Runs
+ * CONCURRENTLY with the validators (see {@link runValidationStage}), so it
+ * adds no critical-path latency — exactly the v2 PreValidation fan-out shape.
+ * Returns the accumulated, think-tag-stripped description (or '' on any error
+ * / no model). Single-shot stream → the OpenRouter reasoning-replay stall does
+ * not apply.
+ */
+async function streamDescription(args: {
+  model: LanguageModel | undefined;
+  prompt: string;
+  sql: string;
+  checks?: string[];
+  rc?: MastraRc;
+  tracing?: TracingContext;
+}): Promise<string> {
+  const {model, prompt, sql, checks, rc, tracing} = args;
+  if (!model || !sql || !prompt) return '';
+  const modelId = (model as {modelId?: string}).modelId;
+  const provider = modelId?.includes('/') ? modelId.split('/')[0] : undefined;
+  const span = tracing?.currentSpan?.createChildSpan({
+    type: SpanType.MODEL_GENERATION,
+    name: 'generate-description',
+    attributes: {model: modelId, provider, resultType: 'response_generation'},
+  });
+  try {
+    const result = streamText({
+      model,
+      prompt: buildDescriptionPrompt(prompt, sql, checks),
+    });
+    let out = '';
+    for await (const part of result.fullStream) {
+      const p = part as {type: string; text?: string; textDelta?: string};
+      if (p.type === 'text-delta' || p.type === 'reasoning-delta') {
+        const token = p.text ?? p.textDelta ?? '';
+        if (token) {
+          out += token;
+          emitThinkingToken(rc, token);
+        }
+      }
+    }
+    span?.end({
+      attributes: {model: modelId, provider},
+      usage: await result.usage,
+    } as never);
+    return stripThinkTags(out);
+  } catch (err) {
+    span?.error({error: err as Error});
+    return '';
+  }
+}
+
 async function runValidationStage(args: {
   sql: string;
   chatLlm: LanguageModel | undefined;
   dbConnector: IDbConnector | undefined;
   prompt: string;
   checklist?: string;
+  checks?: string[];
   onStatus?: (stage: 'syntactic' | 'semantic') => void;
   tracing?: TracingContext;
   lastAttempt?: boolean;
+  /** Cheap-tier model for the streaming description; when set (and a valid
+   * SQL candidate exists) the description runs concurrently with the
+   * validators and its tokens stream to the client as `thinkingToken`. */
+  descriptionLlm?: LanguageModel;
+  rc?: MastraRc;
 }): Promise<{
   passed: boolean;
   feedback?: string;
   kind?: 'syntactic' | 'semantic';
+  description?: string;
 }> {
   const {sql} = args;
   if (!sql)
@@ -593,7 +695,11 @@ async function runValidationStage(args: {
   // won't run), so it wins when both return.
   args.onStatus?.('syntactic');
   args.onStatus?.('semantic');
-  const [syntactic, semantic] = await Promise.all([
+  // Run syntactic (DB EXPLAIN), semantic (LLM judge), AND the streaming
+  // description (LLM, when enabled) CONCURRENTLY — v2's PreValidation fan-out.
+  // The description overlaps the semantic call, so it adds ~no wall-clock; its
+  // tokens stream to the client as `thinkingToken` while validation runs.
+  const [syntactic, semantic, description] = await Promise.all([
     validateSqlSyntactic(sql, args.dbConnector),
     validateSqlSemantic({
       sql,
@@ -602,12 +708,22 @@ async function runValidationStage(args: {
       checklist: args.checklist,
       tracing: args.tracing,
     }),
+    streamDescription({
+      model: args.descriptionLlm,
+      prompt: args.prompt,
+      sql,
+      checks: args.checks,
+      rc: args.rc,
+      tracing: args.tracing,
+    }),
   ]);
-  if (!syntactic.passed) return {...syntactic, kind: 'syntactic'};
+  const desc = description || undefined;
+  if (!syntactic.passed)
+    return {...syntactic, kind: 'syntactic', description: desc};
   // On the final attempt, executable SQL beats an empty dataset: the
   // semantic judge is advisory, so don't let it fail the run outright.
-  if (args.lastAttempt) return {passed: true};
-  return {...semantic, kind: 'semantic'};
+  if (args.lastAttempt) return {passed: true, description: desc};
+  return {...semantic, kind: 'semantic', description: desc};
 }
 
 /**
@@ -647,6 +763,12 @@ export async function runSqlAttempt(args: {
   /** Fired when the table set was widened after a `table_not_found` verdict,
    * so the step can emit a "Reselecting tables" status (v2 ReselectTables). */
   onReselectTables?: (mergedTables: string[]) => void;
+  /** Cheap-tier model for the streaming description (v2 generate-description).
+   * When set, a natural-language description streams to the client as
+   * `thinkingToken` events concurrently with validation. Omit to disable. */
+  descriptionLlm?: LanguageModel;
+  /** RequestContext, used to reach the SSE `eventWriter` for `thinkingToken`. */
+  rc?: MastraRc;
 }): Promise<SqlAttemptResult> {
   const stage = await runGenerationStage(args);
   if (stage.error) {
@@ -658,9 +780,12 @@ export async function runSqlAttempt(args: {
     dbConnector: args.dbConnector,
     prompt: args.prompt,
     checklist: args.checklist,
+    checks: args.checks,
     onStatus: args.onStatus,
     tracing: args.tracing,
     lastAttempt: args.lastAttempt,
+    descriptionLlm: args.descriptionLlm,
+    rc: args.rc,
   });
   const tables =
     !verdict.passed && verdict.kind === 'syntactic'
@@ -678,7 +803,9 @@ export async function runSqlAttempt(args: {
     sql: stage.sql,
     passed: verdict.passed,
     feedback: verdict.feedback,
-    description: stage.description,
+    // Prefer the streamed natural-language description; fall back to the
+    // static one from the generation stage when description streaming is off.
+    description: verdict.description ?? stage.description,
     tables,
   };
 }

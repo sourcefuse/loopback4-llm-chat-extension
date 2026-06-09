@@ -202,7 +202,7 @@ function populateStreamMetrics(
     | LLMStreamToolStatusEvent
     | undefined;
   if (lastDescription) {
-    result.description = lastDescription.data.status.replace(
+    result.description = (lastDescription.data.status ?? '').replace(
       'DESCRIPTION:',
       '',
     );

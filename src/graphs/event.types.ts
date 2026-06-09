@@ -23,9 +23,13 @@ export type LLMStreamToolEvent = {
 export type LLMStreamToolStatusEvent = {
   type: LLMStreamEventType.ToolStatus;
   data: {
-    id: string;
-    status: string;
+    id?: string;
+    status?: string;
     data?: AnyObject;
+    // Streamed reasoning/description token (v2 generate-description). When
+    // present, `id`/`status` are absent — the event is a "thinking" heartbeat,
+    // not a step-status change.
+    thinkingToken?: string;
   };
 };
 

@@ -265,6 +265,56 @@ describe('db-query generate helpers (unit)', () => {
       // syntactic passed (okConn) + lastAttempt => accept, never empty
       expect(r.passed).to.be.true();
     });
+
+    it('streams the description as thinkingToken events when descriptionLlm + rc are set', async () => {
+      const events: Array<{type: string; data: {thinkingToken?: string}}> = [];
+      const rc = {
+        get: (k: string) =>
+          k === 'eventWriter'
+            ? (e: {type: string; data: {thinkingToken?: string}}) =>
+                events.push(e)
+            : undefined,
+      } as never;
+      const r = await runSqlAttempt({
+        chatLlm: model('SELECT name FROM employees;'),
+        dbConnector: okConn,
+        prompt: 'list employees',
+        tables: ['employees'],
+        buildPrompt: buildGenerateSqlPrompt,
+        descriptionLlm: model('Lists the names of all employees.'),
+        rc,
+      });
+      expect(r.passed).to.be.true();
+      // At least one thinkingToken event streamed, and the accumulated
+      // description came back (not the static fallback).
+      const thinking = events.filter(e => e.data.thinkingToken !== undefined);
+      expect(thinking.length).to.be.greaterThan(0);
+      expect(r.description ?? '').to.match(/employees/i);
+    });
+
+    it('emits NO thinkingToken and uses the static description when descriptionLlm is omitted', async () => {
+      const events: Array<{data: {thinkingToken?: string}}> = [];
+      const rc = {
+        get: (k: string) =>
+          k === 'eventWriter'
+            ? (e: {data: {thinkingToken?: string}}) => events.push(e)
+            : undefined,
+      } as never;
+      const r = await runSqlAttempt({
+        chatLlm: model('SELECT 1;'),
+        dbConnector: okConn,
+        prompt: 'q',
+        tables: ['t'],
+        buildPrompt: buildGenerateSqlPrompt,
+        buildDescription: (_sql, p) => `Generated SQL for: ${p}`,
+        rc,
+        // descriptionLlm intentionally omitted → streaming disabled
+      });
+      expect(
+        events.some(e => e.data.thinkingToken !== undefined),
+      ).to.be.false();
+      expect(r.description).to.equal('Generated SQL for: q');
+    });
   });
 
   describe('classifySqlError (v2 SyntacticValidatorNode reclassification)', () => {
