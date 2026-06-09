@@ -1,6 +1,7 @@
 import {expect, sinon} from '@loopback/testlab';
 import {RequestContext} from '@mastra/core/request-context';
 import type {Tool} from '@mastra/core/tools';
+import {DatasetActionType} from '../../components/db-query/constant';
 import {checkCacheStep} from '../../mastra/workflows/db-query/steps/check-cache.step';
 import {checkTemplatesStep} from '../../mastra/workflows/db-query/steps/check-templates.step';
 import {failedStep} from '../../mastra/workflows/db-query/steps/failed.step';
@@ -73,7 +74,12 @@ describe('db-query workflow steps (unit)', () => {
   // ──────────────────────────────────────────────────────────
 
   describe('checkCacheStep', () => {
-    type Out = {cacheHit: boolean; datasetId?: string};
+    type Out = {
+      cacheHit: boolean;
+      datasetId?: string;
+      sampleSql?: string;
+      samplePrompt?: string;
+    };
 
     async function runCheckCache(
       inputData: {prompt?: string},
@@ -152,7 +158,38 @@ describe('db-query workflow steps (unit)', () => {
       expect(status).to.not.be.undefined();
     });
 
-    it('Similar verdict returns a cache MISS (forces re-generation with the hit as example)', async () => {
+    it('Similar verdict is a cache MISS that seeds SQL gen with the validated example (sampleSql)', async () => {
+      const invoke = sinon
+        .stub()
+        .resolves([{pageContent: 'list staff', metadata: {id: 'ds-1'}}]);
+      const helpers = await import('../../mastra/workflows/db-query/_helpers');
+      sinon
+        .stub(helpers, 'tracedGenerateText')
+        .resolves({text: 'Similar 1'} as Awaited<
+          ReturnType<typeof helpers.tracedGenerateText>
+        >);
+      const findById = sinon.stub().resolves({
+        id: 'ds-1',
+        query: 'SELECT name FROM employees',
+        actions: [],
+      });
+
+      const out = await runCheckCache(
+        {prompt: 'x'},
+        makeRc({
+          queryCache: {invoke},
+          chatLlm: {modelId: 'mock'} as MastraRcShape['chatLlm'],
+          datasetStore: {findById} as never,
+        }),
+      );
+
+      // Still regenerates (cacheHit:false) but carries the worked example.
+      expect(out.cacheHit).to.be.false();
+      expect(out.sampleSql).to.equal('SELECT name FROM employees');
+      expect(out.samplePrompt).to.equal('list staff');
+    });
+
+    it('Similar verdict does NOT seed with a disliked example (plain miss)', async () => {
       const invoke = sinon
         .stub()
         .resolves([{pageContent: 'p', metadata: {id: 'ds-1'}}]);
@@ -162,12 +199,18 @@ describe('db-query workflow steps (unit)', () => {
         .resolves({text: 'Similar 1'} as Awaited<
           ReturnType<typeof helpers.tracedGenerateText>
         >);
+      const findById = sinon.stub().resolves({
+        id: 'ds-1',
+        query: 'SELECT 1',
+        actions: [{action: DatasetActionType.Disliked}],
+      });
 
       const out = await runCheckCache(
         {prompt: 'x'},
         makeRc({
           queryCache: {invoke},
           chatLlm: {modelId: 'mock'} as MastraRcShape['chatLlm'],
+          datasetStore: {findById} as never,
         }),
       );
 

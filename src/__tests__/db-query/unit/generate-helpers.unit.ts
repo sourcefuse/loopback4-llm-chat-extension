@@ -10,6 +10,7 @@ import {
   getAllSchemaTables,
   idToString,
   isCachedDatasetUsable,
+  loadCachedSampleQuery,
   pickRelevantTables,
   resolvePersistDeps,
   runSqlAttempt,
@@ -114,6 +115,21 @@ describe('db-query generate helpers (unit)', () => {
         feedback: 'Syntactic error: near EXTRACT',
       });
       expect(p).to.match(/near EXTRACT/);
+    });
+    it('embeds a Similar-cache worked example when sampleSql is supplied', () => {
+      const p = buildGenerateSqlPrompt({
+        prompt: 'top earners',
+        tables: ['employees'],
+        sampleSql: 'SELECT name FROM employees ORDER BY salary DESC',
+        samplePrompt: 'highest paid staff',
+      });
+      expect(p).to.match(/<similar-example-query>/);
+      expect(p).to.match(/ORDER BY salary DESC/);
+      expect(p).to.match(/highest paid staff/);
+    });
+    it('omits the example block when no sampleSql is supplied', () => {
+      const p = buildGenerateSqlPrompt({prompt: 'x', tables: ['t']});
+      expect(p).to.not.match(/similar-example-query/);
     });
   });
 
@@ -535,6 +551,35 @@ describe('db-query generate helpers (unit)', () => {
         },
       } as never;
       expect(await isCachedDatasetUsable(store, 'd1')).to.be.false();
+    });
+  });
+
+  describe('loadCachedSampleQuery (Similar-cache example seed)', () => {
+    it('returns the query + prompt for a usable dataset', async () => {
+      const store = {
+        findById: async () => ({id: 'd1', query: 'SELECT 1', actions: []}),
+      } as never;
+      const r = await loadCachedSampleQuery(store, 'd1', 'how many');
+      expect(r).to.eql({sampleSql: 'SELECT 1', samplePrompt: 'how many'});
+    });
+    it('returns undefined for a disliked dataset (poor example)', async () => {
+      const store = {
+        findById: async () => ({
+          id: 'd1',
+          query: 'SELECT 1',
+          actions: [{action: DatasetActionType.Disliked}],
+        }),
+      } as never;
+      expect(await loadCachedSampleQuery(store, 'd1', 'q')).to.be.undefined();
+    });
+    it('returns undefined when the store is unbound or the query is empty', async () => {
+      expect(
+        await loadCachedSampleQuery(undefined, 'd1', 'q'),
+      ).to.be.undefined();
+      const store = {
+        findById: async () => ({id: 'd1', query: '', actions: []}),
+      } as never;
+      expect(await loadCachedSampleQuery(store, 'd1', 'q')).to.be.undefined();
     });
   });
 

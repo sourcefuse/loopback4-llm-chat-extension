@@ -175,6 +175,33 @@ export async function isCachedDatasetUsable(
     return false;
   }
 }
+
+/**
+ * Load a "Similar" cache hit's query to seed SQL generation as a worked
+ * example (restores v2 sampleSql/sampleSqlPrompt). Returns undefined — so the
+ * caller silently falls back to generating from scratch — when the store is
+ * unbound, the dataset is missing/empty, or it was disliked (a disliked query
+ * is a poor example to imitate).
+ */
+export async function loadCachedSampleQuery(
+  store: IDataSetStore | undefined,
+  datasetId: string,
+  samplePrompt: string,
+): Promise<{sampleSql: string; samplePrompt: string} | undefined> {
+  if (!store) return undefined;
+  try {
+    const dataset = await store.findById(datasetId, {
+      include: [{relation: 'actions'}],
+    });
+    if (!dataset?.query) return undefined;
+    if (dataset.actions?.some(a => a.action === DatasetActionType.Disliked)) {
+      return undefined;
+    }
+    return {sampleSql: dataset.query, samplePrompt};
+  } catch {
+    return undefined;
+  }
+}
 /**
  * Pick the SQL-generation tier (restores v2 SqlGenerationNode cost
  * optimisation, which v3 dropped — every gen ran on the smart tier). Cheap
@@ -444,7 +471,26 @@ export type SqlGenInput = {
   checklist?: string;
   feedback?: string;
   originalSql?: string;
+  // A user-validated query from the cache judged "Similar" to this request,
+  // shown to the model as a worked example (restores v2 sampleSql/Prompt).
+  sampleSql?: string;
+  samplePrompt?: string;
 };
+
+/**
+ * Render the "similar validated example" block for the SQL-gen prompt
+ * (v2 sql-generation.node `<similar-example-query>`). Empty when no sample.
+ */
+function formatSampleExample(input: SqlGenInput): string {
+  if (!input.sampleSql) return '';
+  const forQuestion = input.samplePrompt
+    ? `\nThis was generated for the following question:\n${input.samplePrompt}`
+    : '';
+  return `\n<similar-example-query>
+Here is an example query for reference that is similar to the question asked and has been validated by the user:
+${input.sampleSql}${forQuestion}
+</similar-example-query>`;
+}
 
 function formatChecks(checks: string[] | undefined): string {
   if (!checks?.length) return '';
@@ -489,6 +535,8 @@ async function runGenerationStage(args: {
   checklist?: string;
   feedback?: string;
   initialSql?: string;
+  sampleSql?: string;
+  samplePrompt?: string;
   buildPrompt: (input: SqlGenInput) => string;
   buildDescription?: (sql: string, prompt: string) => string;
   tracing?: TracingContext;
@@ -505,6 +553,8 @@ async function runGenerationStage(args: {
       checklist: args.checklist,
       feedback: args.feedback,
       originalSql: args.initialSql,
+      sampleSql: args.sampleSql,
+      samplePrompt: args.samplePrompt,
     }),
     args.tracing,
   );
@@ -574,6 +624,10 @@ export async function runSqlAttempt(args: {
   checks?: string[];
   checklist?: string;
   feedback?: string;
+  /** A user-validated "Similar" cache query shown to the model as a worked
+   * example (restores v2 sampleSql/sampleSqlPrompt). */
+  sampleSql?: string;
+  samplePrompt?: string;
   buildPrompt: (input: SqlGenInput) => string;
   initialSql?: string;
   buildDescription?: (sql: string, prompt: string) => string;
@@ -705,7 +759,7 @@ export function buildGenerateSqlPrompt(input: SqlGenInput): string {
   return `You are a SQL expert. Generate a single ANSI SQL query that satisfies the user's request.
 
 User request: ${input.prompt}
-Allowed tables and columns (use ONLY these column names verbatim — do not invent or rename columns): ${tablesLine}${formatChecks(input.checks)}
+Allowed tables and columns (use ONLY these column names verbatim — do not invent or rename columns): ${tablesLine}${formatChecks(input.checks)}${formatSampleExample(input)}
 Validation checklist:
 ${checklistLine}
 ${feedbackLine}

@@ -21,6 +21,9 @@ export const getColumnsStep = createStep({
     // terminal WITHOUT generating SQL; `replyToUser` is surfaced to the user.
     unanswerable: z.boolean().optional(),
     replyToUser: z.string().optional(),
+    // Worked-example query from a "Similar" cache hit, carried to SQL gen.
+    sampleSql: z.string().optional(),
+    samplePrompt: z.string().optional(),
   }),
   execute: async ({inputData, requestContext, tracingContext}) => {
     emitToolStatus(
@@ -33,14 +36,17 @@ export const getColumnsStep = createStep({
       prompt?: string;
       tables?: string[];
       templateId?: string;
+      sampleSql?: string;
+      samplePrompt?: string;
     };
     const prompt = data.prompt ?? '';
     const tables = data.tables ?? [];
     const templateId = data.templateId;
+    const sample = {sampleSql: data.sampleSql, samplePrompt: data.samplePrompt};
 
     const chatLlm = getCheapLlm(requestContext);
     if (!chatLlm || tables.length === 0) {
-      return {prompt, tables, templateId};
+      return {prompt, tables, templateId, ...sample};
     }
 
     const tablesWithColumns = getTablesWithColumns(
@@ -71,6 +77,6 @@ export const getColumnsStep = createStep({
     // `unknown` (no LLM, empty schema, or LLM/parse error) is NOT a verdict
     // of unanswerability — keep the full upstream set and proceed.
     const tablesOut = picked.kind === 'tables' ? picked.tables : tables;
-    return {prompt, tables: tablesOut, templateId};
+    return {prompt, tables: tablesOut, templateId, ...sample};
   },
 });

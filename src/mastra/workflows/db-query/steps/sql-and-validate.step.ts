@@ -98,6 +98,8 @@ export const sqlAndValidateStep = createStep({
     datasetId: z.string().optional(),
     unanswerable: z.boolean().optional(),
     replyToUser: z.string().optional(),
+    sampleSql: z.string().optional(),
+    samplePrompt: z.string().optional(),
   }),
   execute: async ({inputData, requestContext, tracingContext}) => {
     const data = inputData as {
@@ -111,6 +113,8 @@ export const sqlAndValidateStep = createStep({
       sql?: string;
       unanswerable?: boolean;
       replyToUser?: string;
+      sampleSql?: string;
+      samplePrompt?: string;
     };
 
     const cached = cachedSqlPassthrough(data);
@@ -154,6 +158,8 @@ export const sqlAndValidateStep = createStep({
       checks: getGlobalContext(requestContext),
       checklist: data.checklist,
       feedback: data.feedback,
+      sampleSql: data.sampleSql,
+      samplePrompt: data.samplePrompt,
       buildPrompt: buildGenerateSqlPrompt,
       buildDescription: (_sql, p) => `Generated SQL for: ${p}`,
       lastAttempt: (data.attempts ?? 0) + 1 >= MAX_VALIDATION_ATTEMPTS,
@@ -169,6 +175,9 @@ export const sqlAndValidateStep = createStep({
       prompt,
       tables: attempt.tables ?? tables,
       checklist: data.checklist ?? '',
+      // Carry the example into the next dountil iteration so retries keep it.
+      sampleSql: data.sampleSql,
+      samplePrompt: data.samplePrompt,
     };
   },
 });

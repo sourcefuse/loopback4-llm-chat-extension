@@ -18,11 +18,15 @@ export const postCacheAndTablesStep = createStep({
     templateId: z.string().optional(),
     datasetId: z.string().optional(),
     prompt: z.string(),
+    sampleSql: z.string().optional(),
+    samplePrompt: z.string().optional(),
   }),
   execute: async ({getStepResult, getInitData, inputData}) => {
     const cache = (getStepResult(STEP_CHECK_CACHE) ?? {cacheHit: false}) as {
       cacheHit: boolean;
       datasetId?: string;
+      sampleSql?: string;
+      samplePrompt?: string;
     };
     const tables = (getStepResult(STEP_GET_TABLES) ?? {tables: []}) as {
       tables: string[];
@@ -43,6 +47,8 @@ export const postCacheAndTablesStep = createStep({
       templateId: templates.templateId,
       datasetId: cache.datasetId,
       prompt,
+      sampleSql: cache.sampleSql,
+      samplePrompt: cache.samplePrompt,
     };
   },
 });

@@ -79,6 +79,8 @@ export const generateChecklistStep = createStep({
     sql: z.string().optional(),
     unanswerable: z.boolean().optional(),
     replyToUser: z.string().optional(),
+    sampleSql: z.string().optional(),
+    samplePrompt: z.string().optional(),
   }),
   execute: async ({inputData, requestContext, tracingContext}) => {
     const wrapped = inputData as Record<string, unknown>;
@@ -91,10 +93,16 @@ export const generateChecklistStep = createStep({
           tables?: string[];
           unanswerable?: boolean;
           replyToUser?: string;
+          sampleSql?: string;
+          samplePrompt?: string;
         }
       | undefined;
     const prompt =
       fromGetColumns?.prompt ?? (wrapped.prompt as string | undefined) ?? '';
+    const sample = {
+      sampleSql: fromGetColumns?.sampleSql,
+      samplePrompt: fromGetColumns?.samplePrompt,
+    };
 
     // The get-columns gate judged the question unanswerable — carry the
     // verdict straight through so sql-and-validate skips SQL generation.
@@ -122,7 +130,7 @@ export const generateChecklistStep = createStep({
     const checklistDisabled =
       config?.nodes?.generateChecklistNode?.enabled === false;
     if (checklistDisabled || tables.length <= CHECKLIST_MIN_TABLES) {
-      return {prompt, tables, checklist: '', attempts: 0};
+      return {prompt, tables, checklist: '', attempts: 0, ...sample};
     }
 
     const checklist = await generateChecklistText(
@@ -132,6 +140,6 @@ export const generateChecklistStep = createStep({
       tracingContext,
     );
 
-    return {prompt, tables, checklist, attempts: 0};
+    return {prompt, tables, checklist, attempts: 0, ...sample};
   },
 });

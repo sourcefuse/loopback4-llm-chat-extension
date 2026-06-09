@@ -7,6 +7,7 @@ import {
   getQueryCache,
   idToString,
   isCachedDatasetUsable,
+  loadCachedSampleQuery,
   tracedGenerateText,
 } from '../_helpers';
 import {inputSchema, STEP_CHECK_CACHE} from './constants';
@@ -17,6 +18,10 @@ export const checkCacheStep = createStep({
   outputSchema: z.object({
     cacheHit: z.boolean(),
     datasetId: z.string().optional(),
+    // A "Similar" cache hit's validated query, threaded into SQL generation
+    // as a worked example (cacheHit stays false — it still regenerates).
+    sampleSql: z.string().optional(),
+    samplePrompt: z.string().optional(),
   }),
   execute: async ({inputData, requestContext, tracingContext}) => {
     const data = inputData as {prompt?: string};
@@ -63,7 +68,17 @@ Return ONLY the verdict, no other text.`;
           STEP_CHECK_CACHE,
           'Found similar query in cache, using it as example',
         );
-        return {cacheHit: false};
+        // Seed SQL generation with the similar query as a worked example
+        // (v2 sampleSql) — still regenerates (cacheHit:false), just informed.
+        const doc = docs[parseInt(similar[1], 10) - 1];
+        const sample = doc?.metadata?.id
+          ? await loadCachedSampleQuery(
+              getDatasetStore(requestContext),
+              idToString(doc.metadata.id),
+              doc.pageContent,
+            )
+          : undefined;
+        return sample ? {cacheHit: false, ...sample} : {cacheHit: false};
       }
 
       const match = text.match(/AsIs\s+(\d+)/i);
