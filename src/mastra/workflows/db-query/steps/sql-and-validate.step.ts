@@ -61,6 +61,18 @@ function unanswerableShortCircuit(data: {
   };
 }
 
+// Tier selection (restores v2 cost optimisation): cheap tier for retries and
+// single-table queries, smart for multi-table first attempts.
+function pickGenLlm(
+  rc: Parameters<typeof getCheapLlm>[0],
+  tableCount: number,
+  isRetry: boolean,
+) {
+  return shouldUseCheapForSqlGen(getDbQueryConfig(rc), tableCount, isRetry)
+    ? getCheapLlm(rc)
+    : getSmartLlm(rc);
+}
+
 function sqlStatusEmitters(
   requestContext: Parameters<typeof emitToolStatus>[0],
 ) {
@@ -132,22 +144,10 @@ export const sqlAndValidateStep = createStep({
     const prompt = data.prompt ?? '';
     const tables = data.tables ?? [];
     const schemaStore = getSchemaStore(requestContext);
-
-    // Tier selection (restores v2 cost optimisation): retries and
-    // single-table queries run on the cheap tier; multi-table first attempts
-    // on smart.
-    const isRetry = (data.attempts ?? 0) > 0;
-    const useCheap = shouldUseCheapForSqlGen(
-      getDbQueryConfig(requestContext),
-      tables.length,
-      isRetry,
-    );
-    const genLlm = useCheap
-      ? getCheapLlm(requestContext)
-      : getSmartLlm(requestContext);
+    const priorAttempts = data.attempts ?? 0;
 
     const attempt = await runSqlAttempt({
-      chatLlm: genLlm,
+      chatLlm: pickGenLlm(requestContext, tables.length, priorAttempts > 0),
       cheapLlm: getCheapLlm(requestContext),
       allTables: getAllSchemaTables(schemaStore),
       tracing: tracingContext,
@@ -162,14 +162,14 @@ export const sqlAndValidateStep = createStep({
       samplePrompt: data.samplePrompt,
       buildPrompt: buildGenerateSqlPrompt,
       buildDescription: (_sql, p) => `Generated SQL for: ${p}`,
-      lastAttempt: (data.attempts ?? 0) + 1 >= MAX_VALIDATION_ATTEMPTS,
+      lastAttempt: priorAttempts + 1 >= MAX_VALIDATION_ATTEMPTS,
       ...sqlStatusEmitters(requestContext),
     });
 
     return {
       sql: attempt.sql,
       passed: attempt.passed,
-      attempts: (data.attempts ?? 0) + 1,
+      attempts: priorAttempts + 1,
       feedback: attempt.feedback,
       description: attempt.description ?? '',
       prompt,
