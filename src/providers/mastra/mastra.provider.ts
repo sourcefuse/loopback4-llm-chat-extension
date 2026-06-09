@@ -1,9 +1,4 @@
-import {
-  BindingScope,
-  inject,
-  injectable,
-  Provider as LoopbackProvider,
-} from '@loopback/core';
+import {BindingScope, inject, injectable, Provider} from '@loopback/core';
 import {Mastra} from '@mastra/core';
 import {Agent} from '@mastra/core/agent';
 import {Memory} from '@mastra/memory';
@@ -34,7 +29,7 @@ import {visualizationWorkflow} from '../../mastra/workflows/visualization/workfl
  * + 7.4.
  */
 @injectable({scope: BindingScope.SINGLETON})
-export class Provider implements LoopbackProvider<Mastra> {
+export class MastraProvider implements Provider<Mastra> {
   constructor(
     @inject(InternalBindings.Storage)
     private storage: MastraCompositeStore,
@@ -78,9 +73,9 @@ export class Provider implements LoopbackProvider<Mastra> {
     const defaultModel = process.env.MASTRA_DEFAULT_CHAT_MODEL;
     if (!defaultModel) {
       throw new Error(
-        'Provider: set MASTRA_DEFAULT_CHAT_MODEL env var ' +
+        'MastraProvider: set MASTRA_DEFAULT_CHAT_MODEL env var ' +
           '(e.g. "google/gemini-1.5-flash", "anthropic/claude-3-5-sonnet-20241022") ' +
-          'or override Provider entirely. The ChatAgent has no ' +
+          'or override MastraProvider entirely. The ChatAgent has no ' +
           'silent default model — refusing to ship a billable OpenAI fallback.',
       );
     }

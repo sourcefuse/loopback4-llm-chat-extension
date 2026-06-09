@@ -2,7 +2,7 @@ import {expect} from '@loopback/testlab';
 import {Mastra} from '@mastra/core';
 import type {MastraCompositeStore} from '@mastra/core/storage';
 import type {MastraEmbeddingModel, MastraVector} from '@mastra/core/vector';
-import {Provider} from '../../providers/mastra/mastra.provider';
+import {MastraProvider} from '../../providers/mastra/mastra.provider';
 
 /**
  * Singleton Mastra runtime provider. This is the heart of the Mastra
@@ -71,7 +71,7 @@ describe('Mastra runtime Provider (unit)', () => {
   it('fails closed when MASTRA_DEFAULT_CHAT_MODEL is unset (refuses silent OpenAI fallback)', async () => {
     // The error message includes the env var name so consumers can
     // find the cause without grepping. Pin both halves.
-    const provider = new Provider(makeStorage());
+    const provider = new MastraProvider(makeStorage());
     await expect(provider.value()).to.be.rejectedWith(
       /MASTRA_DEFAULT_CHAT_MODEL/,
     );
@@ -79,7 +79,7 @@ describe('Mastra runtime Provider (unit)', () => {
 
   it('returns a Mastra instance with the three workflows + ChatAgent registered (baseline contract)', async () => {
     process.env.MASTRA_DEFAULT_CHAT_MODEL = 'openai/gpt-4o-mini';
-    const provider = new Provider(makeStorage());
+    const provider = new MastraProvider(makeStorage());
     const mastra = await provider.value();
 
     expect(mastra).to.be.instanceOf(Mastra);
@@ -100,7 +100,7 @@ describe('Mastra runtime Provider (unit)', () => {
     // of scope here.
     process.env.MASTRA_DEFAULT_CHAT_MODEL = 'openai/gpt-4o-mini';
     process.env.MASTRA_GENERATE_TITLE = 'true';
-    const mastra = await new Provider(makeStorage()).value();
+    const mastra = await new MastraProvider(makeStorage()).value();
     expect(mastra).to.be.instanceOf(Mastra);
   });
 
@@ -108,7 +108,7 @@ describe('Mastra runtime Provider (unit)', () => {
     process.env.MASTRA_DEFAULT_CHAT_MODEL = 'openai/gpt-4o';
     process.env.MASTRA_GENERATE_TITLE = 'true';
     process.env.MASTRA_TITLE_MODEL = 'openai/gpt-4o-mini';
-    const mastra = await new Provider(makeStorage()).value();
+    const mastra = await new MastraProvider(makeStorage()).value();
     expect(mastra).to.be.instanceOf(Mastra);
   });
 
@@ -117,7 +117,11 @@ describe('Mastra runtime Provider (unit)', () => {
     process.env.MASTRA_SEMANTIC_RECALL = 'true';
     process.env.MASTRA_SEMANTIC_RECALL_TOPK = '8';
     process.env.MASTRA_SEMANTIC_RECALL_RANGE = '4';
-    const provider = new Provider(makeStorage(), makeVector(), makeEmbedder());
+    const provider = new MastraProvider(
+      makeStorage(),
+      makeVector(),
+      makeEmbedder(),
+    );
     const mastra = await provider.value();
     expect(mastra).to.be.instanceOf(Mastra);
   });
@@ -128,7 +132,7 @@ describe('Mastra runtime Provider (unit)', () => {
     // provider must NOT throw — Memory just gets `semanticRecall:false`.
     process.env.MASTRA_DEFAULT_CHAT_MODEL = 'openai/gpt-4o';
     process.env.MASTRA_SEMANTIC_RECALL = 'true';
-    const mastra = await new Provider(makeStorage()).value();
+    const mastra = await new MastraProvider(makeStorage()).value();
     expect(mastra).to.be.instanceOf(Mastra);
   });
 });

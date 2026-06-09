@@ -50,7 +50,7 @@ import {SSETransport} from './transports';
 import {AIIntegrationConfig} from './types';
 import {PgVectorStore} from './sub-modules/db/postgresql';
 import {DefaultStorageProvider} from './providers/mastra/storage.provider';
-import {Provider} from './providers/mastra/mastra.provider';
+import {MastraProvider} from './providers/mastra/mastra.provider';
 import {DefaultToolsProvider} from './providers/mastra/tools.provider';
 import {InternalBindings} from './mastra/internal-bindings';
 import {InProcessRunRegistry} from './mastra/bridge/run-registry';
@@ -95,7 +95,7 @@ export class AiIntegrationsComponent implements Component {
       createBindingFromClass(DefaultStorageProvider, {
         key: InternalBindings.Storage.key,
       }).inScope(BindingScope.SINGLETON),
-      createBindingFromClass(Provider, {
+      createBindingFromClass(MastraProvider, {
         key: InternalBindings.Mastra.key,
       }).inScope(BindingScope.SINGLETON),
       createBindingFromClass(InProcessRunRegistry, {

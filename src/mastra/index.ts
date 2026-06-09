@@ -7,7 +7,7 @@
 // `generateQueryInputSchema` / `generateQueryOutputSchema`) which would collide
 // with the package-root `export *` barrel.
 
-export {Provider} from '../providers/mastra/mastra.provider';
+export {MastraProvider} from '../providers/mastra/mastra.provider';
 
 // The three workflows registered on the Mastra singleton, by id:
 //   generateQueryWorkflow -> 'generate-query'
