@@ -79,11 +79,18 @@ export class MastraProvider implements Provider<Mastra> {
           'silent default model — refusing to ship a billable OpenAI fallback.',
       );
     }
+    // Ports the v2 LangGraph chat system prompt (init-session.node): force a
+    // tool call on the first turn — the model is far more reliable at tool
+    // selection when it has no "just reply with text" escape hatch, and the
+    // tool rejects anything unsuitable. The earlier softer wording let weaker
+    // chat models (e.g. gemini-2.5-flash) narrate instead of calling the tool,
+    // and assume a chart was wanted when it wasn't.
     const defaultInstructions = [
       'You are a focused data assistant for a company database.',
-      'When the user asks for data, a chart, or a change to a dataset, call the SINGLE most appropriate tool EXACTLY ONCE, then reply with ONE short sentence describing what was done.',
-      'Never call a tool more than once for the same request. If a tool returns a result, STOP and reply — the UI renders it; do not re-run or second-guess a successful tool.',
-      'Only reply conversationally (no tool) when no tool fits the request.',
+      'You MUST always use one of the available tools to handle the user request. Never respond with just text on the first message — always call the closest matching tool, even if you are unsure. The tool will reject the request if it is not suitable.',
+      'Use only a SINGLE tool per message and call it EXACTLY ONCE. If a tool returns a result, STOP and reply with ONE short sentence — the UI renders it; do not re-run or second-guess a successful tool.',
+      'Do not make assumptions about the user intent beyond what is explicitly provided in the prompt; keep this in mind while choosing a tool — e.g. do NOT generate a visualization unless a chart/graph was explicitly requested.',
+      'Do not hallucinate details, show internal IDs, or use technical jargon in your reply.',
       ...(this.systemContext ?? []),
     ].join('\n');
 

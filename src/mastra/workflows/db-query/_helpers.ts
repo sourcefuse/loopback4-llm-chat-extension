@@ -909,10 +909,23 @@ export function buildGenerateSqlPrompt(input: SqlGenInput): string {
   const feedbackLine = input.feedback
     ? `Previous attempt was rejected with the following feedback that you must address: ${input.feedback}`
     : '';
-  return `You are a SQL expert. Generate a single ANSI SQL query that satisfies the user's request.
+  // Ports the v2 LangGraph sql-generation.node rules — notably the explicit
+  // "use JOINs, subqueries, CTEs or UNIONs" guidance (the thinner Mastra
+  // rewrite had dropped it, so subquery questions like "earn more than the
+  // average salary" failed validation repeatedly), plus no-DML, no-SELECT-*,
+  // no-intent-assumptions, and bracket-grouping for mixed AND/OR.
+  return `You are an expert AI assistant that generates a SQL query from a user question and a database schema. Deliberately read the question and the schema word by word, then write ONE query that answers it.
+
+Rules — follow every one, do not skip any:
+- Generate a SINGLE query. If you need multiple results, combine them with JOINs, subqueries, CTEs, or UNIONs.
+- DO NOT write any DML statement (INSERT, UPDATE, DELETE, DROP, etc.).
+- Select only the columns the question needs — never SELECT *.
+- Use ONLY the table/column names listed below, verbatim — do not invent or rename columns.
+- Do not make assumptions about the user intent beyond what is explicitly provided.
+- When a WHERE clause mixes AND and OR, group the conditions with brackets.
 
 User request: ${input.prompt}
-Allowed tables and columns (use ONLY these column names verbatim — do not invent or rename columns): ${tablesLine}${formatChecks(input.checks)}${formatSampleExample(input)}
+Allowed tables and columns: ${tablesLine}${formatChecks(input.checks)}${formatSampleExample(input)}
 Validation checklist:
 ${checklistLine}
 ${feedbackLine}
