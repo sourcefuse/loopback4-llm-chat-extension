@@ -235,6 +235,16 @@ function mapChunkToEvent(chunk: {
 export class WorkflowRunner {
   private bufferedAssistantText = '';
 
+  // Token streaming. Default OFF: the assistant reply is coalesced into a
+  // single terminal `Message` event (the original contract — safe for
+  // consumers that treat a `message` event as a full snapshot). Opt in with
+  // `MASTRA_STREAM_TOKENS=true` to emit one `Message` per text delta so the
+  // UI renders progressively. Consumers must APPEND `message` events when
+  // this is on (the bundled sandbox UI already does). v2 LangGraph did not
+  // stream tokens — its call-llm node emitted one Message after a blocking
+  // invoke — so OFF preserves byte-for-byte parity.
+  private readonly streamTokens = process.env.MASTRA_STREAM_TOKENS === 'true';
+
   constructor(
     @inject.context() private lb4Ctx: Context,
     @inject(InternalBindings.Mastra) private mastra: Mastra,
@@ -452,8 +462,17 @@ export class WorkflowRunner {
     queue: AsyncEventQueue<LLMStreamEvent>,
   ): void {
     if (chunk.type === 'text-delta') {
-      this.bufferedAssistantText +=
-        readString(asRecord(chunk.payload).text) ?? '';
+      const delta = readString(asRecord(chunk.payload).text) ?? '';
+      if (!delta) return;
+      if (this.streamTokens) {
+        // Emit immediately — consumers append, producing a progressive reply.
+        queue.push({
+          type: LLMStreamEventType.Message,
+          data: {message: delta},
+        });
+      } else {
+        this.bufferedAssistantText += delta;
+      }
       return;
     }
     if (chunk.type === 'step-start') {

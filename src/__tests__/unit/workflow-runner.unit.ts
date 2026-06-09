@@ -148,6 +148,39 @@ describe('WorkflowRunner Unit', () => {
     expect(usage.flush()['chat-llm']).to.eql({input: 11, output: 5});
   });
 
+  it('streams one Message per text-delta when MASTRA_STREAM_TOKENS=true', async () => {
+    createThread.resolves({id: 'thread-new'});
+    stubStreamWith([
+      {type: 'text-delta', payload: {text: 'Hello '}},
+      {type: 'text-delta', payload: {text: 'world'}},
+    ]);
+
+    // streamTokens is read at construction — set the env before makeRunner().
+    const prev = process.env.MASTRA_STREAM_TOKENS;
+    process.env.MASTRA_STREAM_TOKENS = 'true';
+    try {
+      const events = await collect(
+        makeRunner().run('hi', undefined, new AbortController().signal),
+      );
+      // Two separate Message events (deltas), not one coalesced message.
+      expect(events.map(e => e.type)).to.eql([
+        LLMStreamEventType.Init,
+        LLMStreamEventType.Message,
+        LLMStreamEventType.Message,
+        LLMStreamEventType.TokenCount,
+      ]);
+      expect((events[1] as {data: {message: string}}).data.message).to.equal(
+        'Hello ',
+      );
+      expect((events[2] as {data: {message: string}}).data.message).to.equal(
+        'world',
+      );
+    } finally {
+      if (prev === undefined) delete process.env.MASTRA_STREAM_TOKENS;
+      else process.env.MASTRA_STREAM_TOKENS = prev;
+    }
+  });
+
   it('reuses an existing thread when sessionId is provided and omits Init', async () => {
     getThreadById.resolves({
       id: 'thread-existing',

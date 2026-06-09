@@ -686,6 +686,17 @@ Memory env knobs: `MASTRA_DEFAULT_CHAT_MODEL` (required chat model),
 `MASTRA_SEMANTIC_RECALL=true` to enable cross-thread recall (default off; needs
 a vector store + embedder), `MAX_TOKEN_COUNT` to cap history length.
 
+### Token streaming
+
+`MASTRA_STREAM_TOKENS=true` streams the assistant reply token-by-token: the
+extension emits one SSE `message` event per text delta as the model produces
+it, so the UI renders the reply progressively instead of after the full
+generation completes. **Default off** — when off, the reply is coalesced into a
+single `message` event (the original contract, matching the v2 LangGraph
+behaviour). When you enable it, your client MUST treat `message` events as
+**append** chunks (concatenate `data.message` onto the current bubble), not as
+full-message snapshots. The bundled sandbox UI already appends.
+
 ## Activity logs (debugging)
 
 Every workflow step emits its status (e.g. `Extracting relevant tables`,
