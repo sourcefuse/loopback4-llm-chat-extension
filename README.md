@@ -693,9 +693,13 @@ extension emits one SSE `message` event per text delta as the model produces
 it, so the UI renders the reply progressively instead of after the full
 generation completes. **Default off** — when off, the reply is coalesced into a
 single `message` event (the original contract, matching the v2 LangGraph
-behaviour). When you enable it, your client MUST treat `message` events as
-**append** chunks (concatenate `data.message` onto the current bubble), not as
-full-message snapshots. The bundled sandbox UI already appends.
+behaviour, and what existing consumers already expect: one `message` event =
+one finished bubble). When you enable it, your client MUST treat `message`
+events as **append** chunks (concatenate `data.message` onto the *current*
+assistant bubble), not as full-message snapshots and not as a new bubble per
+event — otherwise a single reply fragments into many bubbles. The bundled
+sandbox UI already appends. Leave it **off** for any consumer that renders one
+bubble per `message` event until that UI is updated to append.
 
 ## Activity logs (debugging)
 
@@ -712,6 +716,27 @@ DEBUG=ai-integration:steps npm start    # just workflow step statuses
 
 These mirror the step/activity logs the v2 LangGraph extension surfaced. The
 same statuses are also streamed to the client as `ToolStatus` SSE events.
+
+### Streaming-event volume vs the LangGraph version
+
+The Mastra build emits **fewer SSE events per `/reply`** than the v2 LangGraph
+extension, and this is intentional. v2 emitted a verbose `Log` event at almost
+every node (≈45+ per request: "No relevant queries in cache", "Template
+matched: …", "Classifying the level of change", "Fixed SQL query: …", etc.).
+Those were **server-side narration** — a typical chat UI registers no handler
+for the `log` event type and silently drops them. This build routes that same
+narration to the `debug` channel above (`DEBUG=ai-integration:steps`) instead
+of the SSE wire, so it no longer competes with the events the UI actually
+renders and never spams `console`.
+
+Every **client-rendered** event type is preserved and emitted on the same wire
+contract: `init`, `message`, `tool`, `tool-status`, `token-count`, `status`,
+`error`. Per-step progress is carried by `tool-status` (one per workflow step:
+get-tables, get-columns, sql-and-validate, …) rather than by `log`. So a
+consumer that renders `tool`/`tool-status`/`message` sees equivalent progress;
+only the unrendered `log` firehose moved off the wire. If you want the verbose
+narration on the wire (e.g. to drive a step drawer), add a `log`-event handler
+in your UI — the events are still available via the `debug` channel server-side.
 
 # Observability
 
@@ -831,6 +856,8 @@ export LANGFUSE_BASE_URL="https://cloud.langfuse.com"
 
 The `generation.acceptance.builder.ts` file provides a utility to run acceptance tests for the `llm-chat-component`. These tests validate the functionality of the `/reply` endpoint and ensure that the generated SQL queries and their results align with expectations.
 
+> **Post-migration validation (host apps).** This is the recommended way to confirm report generation still works after upgrading to the Mastra build. The harness is **endpoint-driven** — it drives `POST /reply` and diffs the generated SQL against a golden query — so it is **unchanged by the LangGraph → Mastra migration**: the same `generationAcceptanceBuilder`, the same `GenerationAcceptanceTestCase` shape, and the SSE wire contract are all preserved. A host application that ran this suite against the LangGraph version (e.g. its own `generation.acceptance.ts`) can run the **identical** suite against the Mastra version with no change beyond importing from the `lb4-llm-chat-component/testing` subpath (below). The graph-coupled builders (`db-query.graph.builder`, `get-table.node.builder`) are intentionally not shipped — they targeted the deleted LangGraph internals and are not needed for endpoint-driven validation.
+
 ## Overview
 
 This builder facilitates the execution of multiple test cases, each defined with specific prompts, expected results, and configurations. It also generates detailed reports to analyze the performance and correctness of the tests.
@@ -846,8 +873,10 @@ This builder facilitates the execution of multiple test cases, each defined with
 
 ### Importing the Builder
 
+From a host application, import from the package's `testing` subpath:
+
 ```typescript
-import {generationAcceptanceBuilder} from './generation.acceptance.builder';
+import {generationAcceptanceBuilder} from 'lb4-llm-chat-component/testing';
 ```
 
 ### Running Tests
@@ -873,8 +902,9 @@ const result = await generationAcceptanceBuilder(
   testCases,
   client,
   app,
-  1,
-  true,
+  {testDeal: process.env.SAMPLE_DEAL_NAME ?? ''}, // placeholder substitutions
+  1, // countPerPrompt
+  true, // writeReport
 );
 console.log(result);
 ```
@@ -884,6 +914,7 @@ console.log(result);
 - `cases`: An array of test cases to execute.
 - `client`: The LoopBack test client.
 - `app`: The LoopBack application instance.
+- `params`: A `Record<string, string>` of placeholder substitutions applied to each prompt (e.g. `<testDeal>` → a real deal name).
 - `countPerPrompt`: Number of iterations per test case (default: 1).
 - `writeReport`: Whether to generate a markdown report (default: false).
 
