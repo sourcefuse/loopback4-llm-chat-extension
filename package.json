@@ -75,6 +75,12 @@
   },
   "typesVersions": {
     "*": {
+      "testing": [
+        "dist/components/db-query/testing/index.d.ts"
+      ],
+      "mastra": [
+        "dist/mastra/index.d.ts"
+      ],
       "aws": [
         "dist/sub-modules/providers/aws/index.d.ts"
       ],
@@ -98,9 +104,6 @@
       ],
       "openrouter": [
         "dist/sub-modules/providers/openrouter/index.d.ts"
-      ],
-      "pg": [
-        "dist/sub-modules/providers/pg/index.d.ts"
       ],
       "langfuse": [
         "dist/sub-modules/obf/langfuse/index.d.ts"
