@@ -35,3 +35,12 @@ export {
   inputSchema as generateQueryInputSchema,
   outputSchema as generateQueryOutputSchema,
 } from './workflows/db-query/steps';
+
+// Pure relevant-table-selection helper (the LLM narrowing that runs inside
+// getColumnsStep). Exported so hosts can unit-test table selection WITHOUT an
+// app boot or a RequestContext:
+//   pickRelevantTables({chatLlm, prompt, tablesWithColumns, upstreamTables})
+//     -> {kind: 'tables', tables} | {kind: 'unanswerable', reason} | {kind: 'unknown'}
+// This is the Mastra equivalent of the deleted LangGraph GetTablesNode test seam.
+export {pickRelevantTables} from './workflows/db-query/_helpers';
+export type {RelevantTablesResult} from './workflows/db-query/_helpers';
