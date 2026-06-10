@@ -1,6 +1,6 @@
 {
   "name": "lb4-llm-chat-component",
-  "version": "4.0.0",
+  "version": "3.0.0",
   "description": "A loopback4 component to integrate LLM based capabilities",
   "keywords": [
     "loopback-extension",
@@ -17,6 +17,10 @@
   "exports": {
     ".": "./dist/index.js",
     "./testing": {
+      "type": "./dist/components/db-query/testing/index.d.ts",
+      "default": "./dist/components/db-query/testing/index.js"
+    },
+    "./db-query/testing": {
       "type": "./dist/components/db-query/testing/index.d.ts",
       "default": "./dist/components/db-query/testing/index.js"
     },
@@ -76,6 +80,9 @@
   "typesVersions": {
     "*": {
       "testing": [
+        "dist/components/db-query/testing/index.d.ts"
+      ],
+      "db-query/testing": [
         "dist/components/db-query/testing/index.d.ts"
       ],
       "mastra": [
