@@ -111,7 +111,6 @@ export async function generationAcceptanceBuilder(
     DbQueryAIExtensionBindings.Connector,
   );
 
-  const results: GenerationAcceptanceTestResult[] = [];
   const anyOnly = cases.some(q => q.only);
   const queriesToRun = anyOnly
     ? cases.filter(q => q.only && !q.skip)
@@ -128,23 +127,49 @@ export async function generationAcceptanceBuilder(
       logger,
     );
 
+  const results = await runAllCases({
+    queriesToRun,
+    runOnce,
+    countPerPrompt,
+    retries,
+    delayMs,
+    writeReport,
+    logger,
+  });
+  return buildFinalResult(results);
+}
+
+/** Execute every case (× its iteration count) sequentially, with retry +
+ * throttle, writing the running report after each. Extracted from the builder
+ * to keep that function within Sonar's complexity limit. */
+async function runAllCases(args: {
+  queriesToRun: GenerationAcceptanceTestCase[];
+  runOnce: (
+    q: GenerationAcceptanceTestCase,
+  ) => Promise<GenerationAcceptanceTestResult>;
+  countPerPrompt: number;
+  retries: number;
+  delayMs: number;
+  writeReport: boolean;
+  logger: ILogger;
+}): Promise<GenerationAcceptanceTestResult[]> {
+  const {queriesToRun, runOnce, countPerPrompt, retries, delayMs, writeReport} =
+    args;
+  const results: GenerationAcceptanceTestResult[] = [];
   for (const query of queriesToRun) {
     const count = query.count ?? countPerPrompt;
     for (let i = 0; i < count; i++) {
-      logger.info(
+      args.logger.info(
         `Running query: ${query.case} ${i > 0 ? `Iteration: ${i + 1}` : ''}`,
       );
       results.push(
-        await runWithRetries(runOnce, query, {retries, delayMs}, logger),
+        await runWithRetries(runOnce, query, {retries, delayMs}, args.logger),
       );
-      if (writeReport) {
-        writeResultSoFar(results);
-      }
+      if (writeReport) writeResultSoFar(results);
       if (delayMs) await sleep(delayMs);
     }
   }
-
-  return buildFinalResult(results);
+  return results;
 }
 
 /**
