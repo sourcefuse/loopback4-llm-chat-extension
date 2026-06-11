@@ -16,6 +16,7 @@ import {generateText, type LanguageModel} from 'ai';
 import {AiIntegrationBindings, IRunRegistry} from '../../keys';
 import {CHAT_TITLE_MAX_LENGTH} from '../../constant';
 import {InternalBindings} from '../internal-bindings';
+import {CHAT_AGENT_DIRECTIVES} from '../chat-agent-instructions';
 import {deriveResourceId} from '../resource-id.util';
 import {LLMStreamEvent, LLMStreamEventType} from '../../graphs/event.types';
 import {ToolStore, ToolStatus} from '../../graphs/types';
@@ -650,13 +651,13 @@ export class WorkflowRunner {
   }
 
   private buildInstructions(): string {
-    return [
-      'You are a focused data assistant for a company database.',
-      'When the user asks for data, a chart, or a change to a dataset, call the SINGLE most appropriate tool EXACTLY ONCE, then reply with ONE short sentence describing what was done.',
-      'Never call a tool more than once for the same request. If a tool returns a result (e.g. a dataset or chart was generated), STOP and reply — the UI renders it from the result; you do not need the row data and must not re-run or second-guess a successful tool.',
-      'Only reply conversationally (no tool) when no tool fits the request.',
-      ...(this.systemContext ?? []),
-    ].join('\n');
+    // Shares CHAT_AGENT_DIRECTIVES with the registered-agent fallback so the
+    // two cannot drift. The previous bespoke wording here ("only reply
+    // conversationally when no tool fits") let gemini-class models narrate
+    // instead of calling the query tool — the "LLM did not call the query
+    // tool" routing miss. The shared forceful "MUST call the closest tool"
+    // wording suppresses it.
+    return [...CHAT_AGENT_DIRECTIVES, ...(this.systemContext ?? [])].join('\n');
   }
 
   /**

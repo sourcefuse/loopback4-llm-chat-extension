@@ -10,6 +10,7 @@ import type {RequestContext} from '@mastra/core/request-context';
 import type {Observability} from '@mastra/observability';
 import {AiIntegrationBindings} from '../../keys';
 import {createMaxTokenCountProcessor} from '../../mastra/processors/max-token-count.processor';
+import {CHAT_AGENT_DIRECTIVES} from '../../mastra/chat-agent-instructions';
 import {InternalBindings} from '../../mastra/internal-bindings';
 import {generateQueryWorkflow} from '../../mastra/workflows/db-query/workflows/generate.workflow';
 import {improveQueryWorkflow} from '../../mastra/workflows/db-query/workflows/improve.workflow';
@@ -86,11 +87,7 @@ export class MastraProvider implements Provider<Mastra> {
     // chat models (e.g. gemini-2.5-flash) narrate instead of calling the tool,
     // and assume a chart was wanted when it wasn't.
     const defaultInstructions = [
-      'You are a focused data assistant for a company database.',
-      'You MUST always use one of the available tools to handle the user request. Never respond with just text on the first message — always call the closest matching tool, even if you are unsure. The tool will reject the request if it is not suitable.',
-      'Use only a SINGLE tool per message and call it EXACTLY ONCE. If a tool returns a result, STOP and reply with ONE short sentence — the UI renders it; do not re-run or second-guess a successful tool.',
-      'Do not make assumptions about the user intent beyond what is explicitly provided in the prompt; keep this in mind while choosing a tool — e.g. do NOT generate a visualization unless a chart/graph was explicitly requested.',
-      'Do not hallucinate details, show internal IDs, or use technical jargon in your reply.',
+      ...CHAT_AGENT_DIRECTIVES,
       ...(this.systemContext ?? []),
     ].join('\n');
 
