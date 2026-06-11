@@ -18,6 +18,7 @@ import {
 } from '../../../graphs';
 import {generateMarkdownTable, getModelNameFromEnv} from './utils';
 import {writeFileSync} from 'fs';
+import {setTimeout as sleep} from 'timers/promises';
 import {AnyObject} from '@loopback/repository';
 import {ILogger, LOGGER} from '@sourceloop/core';
 import {IDbConnector} from '../types';
@@ -50,6 +51,36 @@ function userBuilder(tenantId: string, permissions: string[]) {
   };
 }
 
+/**
+ * De-noising knobs for flaky LLM/provider transients (e.g. OpenRouter
+ * rate-limiting under rapid sequential `/reply` calls, which surface as
+ * 0-generation "tool not called" / thrown-error results — NOT real
+ * wrong-SQL failures). Both default off, so behavior is unchanged unless set.
+ *   - `retries`  — re-run a case up to N times when it fails *transiently*
+ *                  (no SQL generated + a string error/no-tool result). Real
+ *                  failures (SQL generated, wrong rows) are never retried.
+ *   - `delayMs`  — throttle: wait between every `/reply` call (and before each
+ *                  retry) to stay under provider rate limits.
+ */
+export interface GenerationAcceptanceRunOptions {
+  retries?: number;
+  delayMs?: number;
+}
+
+/**
+ * A failure worth retrying: the workflow never generated SQL
+ * (`generationCount === 0`) and the result is a string (the "tool not called"
+ * marker or a thrown-error message), i.e. a provider/transport transient
+ * rather than a deterministic wrong-SQL result (which yields a row array).
+ */
+function isTransientFailure(result: GenerationAcceptanceTestResult): boolean {
+  return (
+    !result.success &&
+    result.generationCount === 0 &&
+    typeof result.actualResult === 'string'
+  );
+}
+
 export async function generationAcceptanceBuilder(
   cases: GenerationAcceptanceTestCase[],
   client: Client,
@@ -57,7 +88,9 @@ export async function generationAcceptanceBuilder(
   params: Record<string, string>,
   countPerPrompt = 1,
   writeReport = false,
+  options: GenerationAcceptanceRunOptions = {},
 ): Promise<GenerationAcceptanceSuiteResult> {
+  const {retries = 0, delayMs = 0} = options;
   // setup app
   const config = app.getSync(DbQueryAIExtensionBindings.Config);
   const permissions = [
@@ -84,25 +117,40 @@ export async function generationAcceptanceBuilder(
     ? cases.filter(q => q.only && !q.skip)
     : cases.filter(q => !q.skip);
 
+  const runOnce = (query: GenerationAcceptanceTestCase) =>
+    runSingleTestCase(
+      query,
+      client,
+      token,
+      params,
+      datasetStore,
+      connector,
+      logger,
+    );
+
   for (const query of queriesToRun) {
     const count = query.count ?? countPerPrompt;
     for (let i = 0; i < count; i++) {
       logger.info(
         `Running query: ${query.case} ${i > 0 ? `Iteration: ${i + 1}` : ''}`,
       );
-      const result = await runSingleTestCase(
-        query,
-        client,
-        token,
-        params,
-        datasetStore,
-        connector,
-        logger,
-      );
+      let result = await runOnce(query);
+      for (
+        let attempt = 1;
+        attempt <= retries && isTransientFailure(result);
+        attempt++
+      ) {
+        logger.warn(
+          `Transient failure for ${query.case}; retry ${attempt}/${retries}`,
+        );
+        if (delayMs) await sleep(delayMs);
+        result = await runOnce(query);
+      }
       results.push(result);
       if (writeReport) {
         writeResultSoFar(results);
       }
+      if (delayMs) await sleep(delayMs);
     }
   }
 
