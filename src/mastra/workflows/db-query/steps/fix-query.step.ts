@@ -7,6 +7,7 @@ import {
   getCheapLlm,
   getDbConnector,
   getGlobalContext,
+  getSchemaForPrompt,
   getSchemaStore,
   getSmartLlm,
   getTablesWithColumns,
@@ -52,16 +53,18 @@ export const fixQueryStep = createStep({
     const tables = data.tables ?? [];
     const schemaStore = getSchemaStore(requestContext);
     const columns = getTablesWithColumns(schemaStore, tables);
+    const dbConnector = getDbConnector(requestContext);
 
     const attempt = await runSqlAttempt({
       chatLlm: getSmartLlm(requestContext),
       cheapLlm: getCheapLlm(requestContext),
       allTables: getAllSchemaTables(schemaStore),
       tracing: tracingContext,
-      dbConnector: getDbConnector(requestContext),
+      dbConnector,
       prompt,
       tables,
       columns,
+      schema: getSchemaForPrompt(schemaStore, dbConnector, tables),
       checks: getGlobalContext(requestContext),
       checklist: data.checklist,
       feedback: data.feedback,

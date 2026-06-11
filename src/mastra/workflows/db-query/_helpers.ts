@@ -487,6 +487,16 @@ export type SqlGenInput = {
   prompt: string;
   tables: string[];
   columns?: Record<string, string[]>;
+  /**
+   * Rich schema text (DDL with column descriptions + FOREIGN KEY relations +
+   * per-table context), built via {@link getSchemaForPrompt}. When present it
+   * REPLACES the bare `tables(columns)` line in the prompt — the model needs
+   * the relations + descriptions to know how tables link and what enum/status
+   * columns mean (v2 passed `connector.toDDL(schema)`; the thin Mastra rewrite
+   * had dropped it to column names only, so multi-table joins like
+   * revenue↔deal failed with "no link between the tables").
+   */
+  schema?: string;
   checks?: string[];
   checklist?: string;
   feedback?: string;
@@ -551,6 +561,7 @@ async function runGenerationStage(args: {
   prompt: string;
   tables: string[];
   columns?: Record<string, string[]>;
+  schema?: string;
   checks?: string[];
   checklist?: string;
   feedback?: string;
@@ -569,6 +580,7 @@ async function runGenerationStage(args: {
       prompt: args.prompt,
       tables: args.tables,
       columns: args.columns,
+      schema: args.schema,
       checks: args.checks,
       checklist: args.checklist,
       feedback: args.feedback,
@@ -763,6 +775,7 @@ export async function runSqlAttempt(args: {
   prompt: string;
   tables: string[];
   columns?: Record<string, string[]>;
+  schema?: string;
   checks?: string[];
   checklist?: string;
   feedback?: string;
@@ -904,7 +917,11 @@ export async function generateSqlOnce(
  * Build the SQL-generation prompt used by generate.sqlAndValidateStep.
  */
 export function buildGenerateSqlPrompt(input: SqlGenInput): string {
-  const tablesLine = formatTablesWithColumns(input.tables, input.columns);
+  // Prefer the rich schema (DDL + relations + per-table context) so the model
+  // can see how tables link and what columns mean; fall back to the bare
+  // name list only when no schema text was supplied.
+  const tablesLine =
+    input.schema ?? formatTablesWithColumns(input.tables, input.columns);
   const checklistLine = input.checklist ?? '(none)';
   const feedbackLine = input.feedback
     ? `Previous attempt was rejected with the following feedback that you must address: ${input.feedback}`
@@ -943,10 +960,8 @@ export function buildImproveSqlPrompt(input: SqlGenInput): string {
   const feedbackLine = input.feedback
     ? `Previous attempt was rejected: ${input.feedback}`
     : '';
-  const tablesWithColumns = formatTablesWithColumns(
-    input.tables,
-    input.columns,
-  );
+  const tablesWithColumns =
+    input.schema ?? formatTablesWithColumns(input.tables, input.columns);
   return `You are a SQL expert. Improve the existing SQL query to satisfy the user's new request.
 
 Existing SQL: ${input.originalSql ?? '(none)'}
@@ -1185,19 +1200,35 @@ export async function pickRelevantTables(args: {
   prompt: string;
   tablesWithColumns: Record<string, string[]>;
   upstreamTables: string[];
+  /**
+   * Rich schema text ({@link getSchemaForPrompt}: DDL + FK relations +
+   * per-table context). When present it is shown ALONGSIDE the column map so
+   * the selector can see how tables link and what columns mean — without it the
+   * selector only sees bare names and falsely answers "unanswerable / no link"
+   * for join questions (v2's GetTablesNode always showed table descriptions).
+   */
+  schema?: string;
   tracing?: TracingContext;
 }): Promise<RelevantTablesResult> {
-  const {chatLlm, prompt, tablesWithColumns, upstreamTables, tracing} = args;
+  const {chatLlm, prompt, tablesWithColumns, upstreamTables, schema, tracing} =
+    args;
   if (Object.keys(tablesWithColumns).length === 0) return {kind: 'unknown'};
+  const schemaBlock = schema
+    ? `\nSchema details (descriptions, foreign-key relations and rules — use these to understand how tables link):\n${schema}\n`
+    : '';
   const llmPrompt = `You are an AI assistant that identifies relevant columns from database tables based on a user's query.
 
 Tables with columns:
 ${JSON.stringify(tablesWithColumns, null, 2)}
-
+${schemaBlock}
 User query: ${prompt}
 
-If the query CANNOT be answered from these tables because the required data is
-simply not present, do NOT guess — return exactly:
+Assume tables CAN be related to each other through id / foreign-key columns even
+when a join is not spelled out — never answer "unanswerable" merely because the
+link is not described. If doubtful about a table's relevance, INCLUDE it.
+
+Only return the unanswerable response when the required DATA genuinely does not
+exist in ANY of these tables. In that case return exactly:
 {"${UNANSWERABLE_KEY}": "<one short sentence telling the user what data is missing or asking them to rephrase>"}
 
 Otherwise return a JSON object where each relevant table name is a key and the
@@ -1264,6 +1295,44 @@ export function getTablesWithColumns(
     return out;
   } catch {
     return {};
+  }
+}
+
+/**
+ * Build the RICH schema text for the SQL-gen prompt — the v2 representation
+ * (`connector.toDDL(schema)`): CREATE TABLE blocks with column descriptions as
+ * `-- comments`, `FOREIGN KEY` constraints (so the model sees how tables link),
+ * and the table description. `toDDL` does NOT emit the per-table `context`
+ * array, so it is appended as `-- [table] rule` lines. Returns `undefined`
+ * (caller falls back to the bare name list) when a binding is missing or the
+ * filtered schema is empty.
+ *
+ * This restores what the thin Mastra rewrite dropped: without relations +
+ * descriptions the model cannot join related tables (e.g. revenue↔deal) and
+ * refuses with "no link between the tables".
+ */
+export function getSchemaForPrompt(
+  schemaStore: SchemaStore | undefined,
+  dbConnector: IDbConnector | undefined,
+  tables: string[],
+): string | undefined {
+  if (!schemaStore || !dbConnector) return undefined;
+  try {
+    const filtered = schemaStore.filteredSchema(tables);
+    if (!Object.keys(filtered.tables).length) return undefined;
+    let ddl = dbConnector.toDDL(filtered);
+    const contextLines: string[] = [];
+    for (const [name, def] of Object.entries(filtered.tables)) {
+      for (const line of (def as {context?: string[]}).context ?? []) {
+        contextLines.push(`-- [${name}] ${line}`);
+      }
+    }
+    if (contextLines.length) {
+      ddl += `\n\n-- Table rules (follow these):\n${contextLines.join('\n')}`;
+    }
+    return ddl;
+  } catch {
+    return undefined;
   }
 }
 

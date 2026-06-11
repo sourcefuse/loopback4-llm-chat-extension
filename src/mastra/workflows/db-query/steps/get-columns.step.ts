@@ -3,6 +3,8 @@ import {z} from 'zod';
 import {
   emitToolStatus,
   getCheapLlm,
+  getDbConnector,
+  getSchemaForPrompt,
   getSchemaStore,
   getTablesWithColumns,
   pickRelevantTables,
@@ -49,15 +51,18 @@ export const getColumnsStep = createStep({
       return {prompt, tables, templateId, ...sample};
     }
 
-    const tablesWithColumns = getTablesWithColumns(
-      getSchemaStore(requestContext),
-      tables,
-    );
+    const schemaStore = getSchemaStore(requestContext);
+    const tablesWithColumns = getTablesWithColumns(schemaStore, tables);
     const picked = await pickRelevantTables({
       chatLlm,
       tracing: tracingContext,
       prompt,
       tablesWithColumns,
+      schema: getSchemaForPrompt(
+        schemaStore,
+        getDbConnector(requestContext),
+        tables,
+      ),
       upstreamTables: tables,
     });
 
