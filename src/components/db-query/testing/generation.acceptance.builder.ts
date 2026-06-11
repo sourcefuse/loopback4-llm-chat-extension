@@ -153,23 +153,46 @@ async function runAllCases(args: {
   writeReport: boolean;
   logger: ILogger;
 }): Promise<GenerationAcceptanceTestResult[]> {
-  const {queriesToRun, runOnce, countPerPrompt, retries, delayMs, writeReport} =
-    args;
   const results: GenerationAcceptanceTestResult[] = [];
-  for (const query of queriesToRun) {
-    const count = query.count ?? countPerPrompt;
+  for (const query of args.queriesToRun) {
+    const count = query.count ?? args.countPerPrompt;
     for (let i = 0; i < count; i++) {
-      args.logger.info(
-        `Running query: ${query.case} ${i > 0 ? `Iteration: ${i + 1}` : ''}`,
-      );
-      results.push(
-        await runWithRetries(runOnce, query, {retries, delayMs}, args.logger),
-      );
-      if (writeReport) writeResultSoFar(results);
-      if (delayMs) await sleep(delayMs);
+      await runIteration(args, query, i, results);
     }
   }
   return results;
+}
+
+/** One iteration of one case: log, run-with-retry, append, optionally write the
+ * running report, and throttle. Split out of {@link runAllCases} so neither
+ * function exceeds Sonar's cognitive-complexity limit. */
+async function runIteration(
+  args: {
+    runOnce: (
+      q: GenerationAcceptanceTestCase,
+    ) => Promise<GenerationAcceptanceTestResult>;
+    retries: number;
+    delayMs: number;
+    writeReport: boolean;
+    logger: ILogger;
+  },
+  query: GenerationAcceptanceTestCase,
+  i: number,
+  results: GenerationAcceptanceTestResult[],
+): Promise<void> {
+  args.logger.info(
+    `Running query: ${query.case} ${i > 0 ? `Iteration: ${i + 1}` : ''}`,
+  );
+  results.push(
+    await runWithRetries(
+      args.runOnce,
+      query,
+      {retries: args.retries, delayMs: args.delayMs},
+      args.logger,
+    ),
+  );
+  if (args.writeReport) writeResultSoFar(results);
+  if (args.delayMs) await sleep(args.delayMs);
 }
 
 /**
