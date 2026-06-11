@@ -204,6 +204,19 @@ async function runSingleTestCase(
     result.inputTokens = tokenCount.data.inputTokens;
     result.outputTokens = tokenCount.data.outputTokens;
 
+    // Diagnostic escape hatch: when a case fails ("tool did not complete" /
+    // "tool not called"), the report only records the terminal status — not
+    // the generated SQL, validation feedback, or a model refusal. Set
+    // ACCEPT_DEBUG=true to dump the full event stream for the case so the
+    // actual failure (refusal vs invalid SQL vs wrong filter) is visible.
+    if (process.env.ACCEPT_DEBUG === 'true') {
+      console.log(
+        `\n[ACCEPT_DEBUG] ${query.case} full event body:\n` +
+          JSON.stringify(body, null, 2) +
+          '\n[/ACCEPT_DEBUG]\n',
+      );
+    }
+
     if (!lastStatus) {
       result.actualResult =
         'LLM did not call the query tool. No tool status events were received.';
