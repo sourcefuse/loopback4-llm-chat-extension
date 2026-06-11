@@ -18,7 +18,7 @@ import {
 } from '../../../graphs';
 import {generateMarkdownTable, getModelNameFromEnv} from './utils';
 import {writeFileSync} from 'fs';
-import {setTimeout as sleep} from 'timers/promises';
+import {setTimeout as sleep} from 'node:timers/promises';
 import {AnyObject} from '@loopback/repository';
 import {ILogger, LOGGER} from '@sourceloop/core';
 import {IDbConnector} from '../types';
@@ -134,19 +134,9 @@ export async function generationAcceptanceBuilder(
       logger.info(
         `Running query: ${query.case} ${i > 0 ? `Iteration: ${i + 1}` : ''}`,
       );
-      let result = await runOnce(query);
-      for (
-        let attempt = 1;
-        attempt <= retries && isTransientFailure(result);
-        attempt++
-      ) {
-        logger.warn(
-          `Transient failure for ${query.case}; retry ${attempt}/${retries}`,
-        );
-        if (delayMs) await sleep(delayMs);
-        result = await runOnce(query);
-      }
-      results.push(result);
+      results.push(
+        await runWithRetries(runOnce, query, {retries, delayMs}, logger),
+      );
       if (writeReport) {
         writeResultSoFar(results);
       }
@@ -155,6 +145,34 @@ export async function generationAcceptanceBuilder(
   }
 
   return buildFinalResult(results);
+}
+
+/**
+ * Run one case, re-running it up to `retries` times while it fails
+ * transiently (see {@link isTransientFailure}). Extracted from the main loop
+ * so the builder stays within complexity/nesting limits.
+ */
+async function runWithRetries(
+  runOnce: (
+    q: GenerationAcceptanceTestCase,
+  ) => Promise<GenerationAcceptanceTestResult>,
+  query: GenerationAcceptanceTestCase,
+  opts: Required<GenerationAcceptanceRunOptions>,
+  logger: ILogger,
+): Promise<GenerationAcceptanceTestResult> {
+  let result = await runOnce(query);
+  for (
+    let attempt = 1;
+    attempt <= opts.retries && isTransientFailure(result);
+    attempt++
+  ) {
+    logger.warn(
+      `Transient failure for ${query.case}; retry ${attempt}/${opts.retries}`,
+    );
+    if (opts.delayMs) await sleep(opts.delayMs);
+    result = await runOnce(query);
+  }
+  return result;
 }
 
 async function runSingleTestCase(
