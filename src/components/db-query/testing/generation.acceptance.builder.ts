@@ -9,7 +9,6 @@ import {PermissionKey} from '../../../permissions';
 import {DbQueryAIExtensionBindings} from '../keys';
 import {sign} from 'jsonwebtoken';
 import {randomUUID} from 'crypto';
-import {DbQueryConfig, IDataSetStore} from '../types';
 import {
   LLMStreamEvent,
   LLMStreamEventType,
@@ -21,7 +20,7 @@ import {generateMarkdownTable, getModelNameFromEnv} from './utils';
 import {writeFileSync} from 'fs';
 import {AnyObject} from '@loopback/repository';
 import {ILogger, LOGGER} from '@sourceloop/core';
-import {IDbConnector} from '../types';
+import {IDbConnector, DbQueryConfig, IDataSetStore} from '../types';
 import {AuthenticationBindings} from 'loopback4-authentication';
 
 function parseData(prompt: string, data: Record<string, string>) {
