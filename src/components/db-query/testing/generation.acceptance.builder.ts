@@ -9,6 +9,7 @@ import {PermissionKey} from '../../../permissions';
 import {DbQueryAIExtensionBindings} from '../keys';
 import {sign} from 'jsonwebtoken';
 import {randomUUID} from 'crypto';
+import {DbQueryConfig, IDataSetStore} from '../types';
 import {
   LLMStreamEvent,
   LLMStreamEventType,
@@ -59,7 +60,7 @@ export async function generationAcceptanceBuilder(
   writeReport = false,
 ): Promise<GenerationAcceptanceSuiteResult> {
   // setup app
-  const config = app.getSync(DbQueryAIExtensionBindings.Config);
+  const config = app.getSync<DbQueryConfig>(DbQueryAIExtensionBindings.Config);
   const permissions = [
     ...config.models.map(v => v.readPermissionKey),
     PermissionKey.AskAI,
@@ -68,7 +69,9 @@ export async function generationAcceptanceBuilder(
   ];
   const tenantId = process.env.TEST_TENANT_ID ?? 'test-tenant';
   const token = tokenBuilder(tenantId, permissions);
-  const datasetStore = await app.get(DbQueryAIExtensionBindings.DatasetStore);
+  const datasetStore = await app.get<IDataSetStore>(
+    DbQueryAIExtensionBindings.DatasetStore,
+  );
   const logger = await app.get<ILogger>(LOGGER.LOGGER_INJECT);
   const appWithUser = new Context(app, 'appWithUser');
   app
