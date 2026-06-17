@@ -4,6 +4,7 @@ import {
   emitToolStatus,
   getCheapLlm,
   getDbConnector,
+  getDbQueryConfig,
   getSchemaForPrompt,
   getSchemaStore,
   getTablesWithColumns,
@@ -79,9 +80,17 @@ export const getColumnsStep = createStep({
       };
     }
 
-    // `unknown` (no LLM, empty schema, or LLM/parse error) is NOT a verdict
-    // of unanswerability — keep the full upstream set and proceed.
-    const tablesOut = picked.kind === 'tables' ? picked.tables : tables;
+    // Apply the LLM-picked subset ONLY when `columnSelection` is enabled.
+    // With it off (the default), keep ALL upstream tables so a lookup table the
+    // picker might omit (e.g. `exchange_rates`, needed for currency conversion)
+    // is never dropped before SQL generation — dropping it silently produces
+    // wrong, unconverted results on wide schemas. `true` narrows the schema to
+    // keep the SQL-gen prompt small on very wide schemas (see
+    // `DbQueryConfig.columnSelection`). `unknown` (no LLM / empty schema /
+    // parse error) always keeps the full upstream set.
+    const columnSelection = getDbQueryConfig(requestContext)?.columnSelection;
+    const tablesOut =
+      columnSelection && picked.kind === 'tables' ? picked.tables : tables;
     return {prompt, tables: tablesOut, templateId, ...sample};
   },
 });
