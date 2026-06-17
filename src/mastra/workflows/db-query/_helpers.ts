@@ -401,11 +401,12 @@ export async function tracedGenerateText(args: {
       ...(providerOptions ? {providerOptions: providerOptions as never} : {}),
     });
     span?.end({
-      attributes: {model: modelId, provider, resultType},
-      // `end` accepts AI SDK's raw `usage` shape via EndGenerationOptions —
-      // Mastra converts it to its own UsageStats.
-      usage: result.usage,
-    } as never);
+      // Usage MUST go inside `attributes` (Mastra reads `attributes.usage`);
+      // a top-level `usage:` field is ignored, which is why these workflow
+      // LLM spans previously reported 0 tokens in Langfuse/LangSmith while
+      // the agent span (which sets it correctly) did not.
+      attributes: {model: modelId, provider, resultType, usage: result.usage},
+    });
     return result;
   } catch (err) {
     span?.error({error: err as Error});
@@ -689,9 +690,10 @@ async function streamDescription(args: {
     });
     const out = await pumpThinking(result.fullStream, rc);
     span?.end({
-      attributes: {model: modelId, provider},
-      usage: await result.usage,
-    } as never);
+      // Usage inside `attributes` (Mastra reads `attributes.usage`); a
+      // top-level `usage:` is ignored → 0 tokens on the span.
+      attributes: {model: modelId, provider, usage: await result.usage},
+    });
     return stripThinkTags(out);
   } catch (err) {
     span?.error({error: err as Error});
