@@ -56,6 +56,24 @@ describe('v2→v3 restored regressions (unit)', () => {
       );
     });
 
+    it('preserves other google providerOptions while adding taskType', async () => {
+      const {model, lastOptions} = fakeModel();
+      const wrapped = withGoogleTaskType(model, 'RETRIEVAL_DOCUMENT');
+      await wrapped.doEmbed({
+        values: ['x'],
+        providerOptions: {google: {outputDimensionality: 256}},
+      } as never);
+      const g = (
+        lastOptions() as {
+          providerOptions?: {
+            google?: {taskType?: string; outputDimensionality?: number};
+          };
+        }
+      ).providerOptions?.google;
+      expect(g?.taskType).to.equal('RETRIEVAL_DOCUMENT');
+      expect(g?.outputDimensionality).to.equal(256);
+    });
+
     it('passes through non-doEmbed members unchanged', () => {
       const {model} = fakeModel();
       const wrapped = withGoogleTaskType(model, 'RETRIEVAL_DOCUMENT');

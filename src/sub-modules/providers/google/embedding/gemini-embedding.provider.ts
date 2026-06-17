@@ -3,6 +3,14 @@ import {Provider} from '@loopback/core';
 import type {EmbeddingModelV2} from '@ai-sdk/provider';
 import {EmbeddingProvider} from '../../../../types';
 
+// NOTE on the cast below: `@ai-sdk/google` bundles a newer `@ai-sdk/provider`
+// whose `textEmbeddingModel()` returns an `EmbeddingModelV3`, but the
+// `@ai-sdk/provider` installed at the workspace root only exports
+// `EmbeddingModelV2`. The two are structurally compatible for the
+// `doEmbed`/`providerOptions` surface we touch, so we type against the
+// importable V2 and bridge the nominal V3↔V2 skew with a single documented
+// cast (not a silent `as unknown as` chain).
+
 // v2 (LangGraph) generated retrieval-tuned embeddings via
 // GoogleGenerativeAIEmbeddings({ taskType: RETRIEVAL_DOCUMENT, title }). AI-SDK
 // exposes taskType ONLY as a per-call provider option (not a constructor arg),
@@ -41,12 +49,10 @@ export class GeminiEmbedding implements Provider<EmbeddingProvider> {
     const provider = createGoogleGenerativeAI({
       apiKey: process.env.GOOGLE_API_KEY,
     });
+    // single documented bridge cast — see the note at the top of the file
     const base = provider.textEmbeddingModel(
       process.env.GOOGLE_EMBEDDING_MODEL,
     ) as unknown as EmbeddingModelV2<string>;
-    return withGoogleTaskType(
-      base,
-      GEMINI_EMBED_TASK_TYPE,
-    ) as unknown as EmbeddingProvider;
+    return withGoogleTaskType(base, GEMINI_EMBED_TASK_TYPE);
   }
 }

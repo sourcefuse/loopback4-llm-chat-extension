@@ -142,9 +142,9 @@ export type DbQueryConfig = {
    * Controls the relevant-table/column narrowing step (`getColumnsStep` /
    * `pickRelevantTables`) before SQL generation.
    *
-   * - `true`  — apply the LLM-selected subset of tables (and their columns) to
-   *   the SQL-generation prompt. Use this when the schema is wide (many tables
-   *   / many columns) so the generation prompt stays small and focused.
+   * - `true`  — apply the LLM-selected subset of TABLES to the SQL-generation
+   *   prompt (narrowing is table-level only; column-level pruning is not done).
+   *   Use this when the schema is wide (many tables) so the prompt stays small.
    * - `false` (default) — ignore the selected subset and pass ALL upstream
    *   tables to SQL generation. Safer for joins (lookup tables like
    *   `exchange_rates` are never dropped), but larger prompts → more tokens /
