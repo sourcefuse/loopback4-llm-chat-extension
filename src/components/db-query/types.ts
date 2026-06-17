@@ -138,6 +138,23 @@ export type DbQueryConfig = {
       evaluation?: boolean;
     };
   };
+  /**
+   * Controls the relevant-table/column narrowing step (`getColumnsStep` /
+   * `pickRelevantTables`) before SQL generation.
+   *
+   * - `true`  — apply the LLM-selected subset of tables (and their columns) to
+   *   the SQL-generation prompt. Use this when the schema is wide (many tables
+   *   / many columns) so the generation prompt stays small and focused.
+   * - `false` (default) — ignore the selected subset and pass ALL upstream
+   *   tables to SQL generation. Safer for joins (lookup tables like
+   *   `exchange_rates` are never dropped), but larger prompts → more tokens /
+   *   latency on wide schemas.
+   *
+   * The relevant-table LLM call still runs either way (it also powers the
+   * "unanswerable" gate); this flag only decides whether its narrowing is
+   * applied. Consumers typically wire this from an env var, e.g.
+   * `columnSelection: process.env.COLUMN_SELECTION === 'true'`.
+   */
   columnSelection?: boolean;
 };
 

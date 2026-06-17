@@ -393,7 +393,12 @@ this.bind(DbQueryAIExtensionBindings.Config).to({
   },
   readAccessForAI: false // give access of the query result to the llm
   maxRowsForAI: 0 // number of rows from the result that are passed to the LLM
-  columnSelection: false // add a column selection step in generation in case you have tables with a lot of columns.
+  // Relevant-table/column narrowing before SQL generation (wire from an env
+  // var, e.g. process.env.COLUMN_SELECTION === 'true'):
+  //   true  -> pass only the LLM-selected subset of tables to SQL generation
+  //            (use for WIDE schemas to keep the prompt small)
+  //   false -> (default) pass ALL upstream tables (safer for joins, larger prompt)
+  columnSelection: false
 });
 ```
 
