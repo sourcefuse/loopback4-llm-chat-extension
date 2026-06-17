@@ -45,6 +45,7 @@ import {
   resolveEnvTemperature,
 } from '../workflows/db-query/_helpers';
 import type {MastraRcShape} from '../workflows/db-query/_helpers';
+import {sanitizeFilenameForAwsConverse} from '../../sub-modules/providers/aws/utils';
 
 // Cap the chat agent's tool-calling loop. One data/chart/dataset request
 // needs at most: decide-tool → (tool runs) → summarise = ~2-3 LLM steps.
@@ -584,6 +585,11 @@ export class WorkflowRunner {
                 type: 'file',
                 data: file.buffer ?? Buffer.alloc(0),
                 mediaType: file.mimetype || 'application/pdf',
+                // Bedrock Converse rejects document names with disallowed
+                // characters / consecutive whitespace; sanitise so Bedrock
+                // file uploads work (restores v2 getFile() behaviour). Other
+                // providers ignore / accept the filename.
+                filename: sanitizeFilenameForAwsConverse(file.originalname),
               },
             ],
           },
