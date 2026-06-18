@@ -4,6 +4,7 @@ import {
   emitToolStatus,
   getCheapLlm,
   getTemplateCache,
+  logStepDetail,
   tracedGenerateText,
 } from '../_helpers';
 import {inputSchema, STEP_CHECK_TEMPLATES} from './constants';
@@ -63,6 +64,10 @@ Return 'match <index>' for an exact match or 'no_match'. No other text.`;
         const idx = parseInt(match[1], 10) - 1;
         const doc = docs[idx];
         if (doc?.metadata?.id) {
+          logStepDetail(
+            STEP_CHECK_TEMPLATES,
+            `Template matched: ${doc.pageContent}`,
+          );
           return {matched: true, templateId: doc.metadata.id};
         }
       }

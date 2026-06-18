@@ -8,6 +8,7 @@ import {
   getSchemaForPrompt,
   getSchemaStore,
   getTablesWithColumns,
+  logStepDetail,
   pickRelevantTables,
 } from '../_helpers';
 import {STEP_GET_COLUMNS} from './constants';
@@ -71,6 +72,7 @@ export const getColumnsStep = createStep({
     // question stops here instead of falling through to the expensive
     // SQL-generation/validation loop.
     if (picked.kind === 'unanswerable') {
+      logStepDetail(STEP_GET_COLUMNS, `Unanswerable: ${picked.reason}`);
       return {
         prompt,
         tables: [],
@@ -91,6 +93,7 @@ export const getColumnsStep = createStep({
     const columnSelection = getDbQueryConfig(requestContext)?.columnSelection;
     const tablesOut =
       columnSelection && picked.kind === 'tables' ? picked.tables : tables;
+    logStepDetail(STEP_GET_COLUMNS, `Selected tables: ${tablesOut.join(', ')}`);
     return {prompt, tables: tablesOut, templateId, ...sample};
   },
 });

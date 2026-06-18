@@ -434,6 +434,22 @@ export function emitToolStatus(
 }
 
 /**
+ * Server-ONLY developer detail log. Restores the value-carrying messages
+ * LangGraph (main) emitted as server-side `Log` stream events — generated SQL,
+ * picked tables, validation-failure reasons, matched template — which carried
+ * the actual dynamic values, not just a stage label.
+ *
+ * Unlike {@link emitToolStatus} this does NOT emit a client `tool-status`
+ * event: the verbose detail stays on the `DEBUG=ai-integration:steps` console
+ * channel and never reaches the UI. That mirrors LangGraph, whose `Log` events
+ * the SSE/HTTP transport dropped before the client — so this is parity, not a
+ * new client-facing behaviour, and it won't leak schema/SQL detail to users.
+ */
+export function logStepDetail(id: string, detail: string): void {
+  stepDbg('[%s] %s', id, detail);
+}
+
+/**
  * Stream a single reasoning/description token to the client as a
  * `tool-status` event carrying `thinkingToken` — the exact wire shape the v2
  * LangGraph extension emitted from its (streaming) generate-description node.
@@ -813,8 +829,10 @@ export async function runSqlAttempt(args: {
 }): Promise<SqlAttemptResult> {
   const stage = await runGenerationStage(args);
   if (stage.error) {
+    logStepDetail('sql-generation', `SQL generation failed: ${stage.error}`);
     return {sql: stage.sql, passed: false, feedback: stage.error};
   }
+  logStepDetail('sql-generation', `Generated SQL query: ${stage.sql}`);
   const verdict = await runValidationStage({
     sql: stage.sql,
     chatLlm: args.chatLlm,
@@ -828,6 +846,12 @@ export async function runSqlAttempt(args: {
     descriptionLlm: args.descriptionLlm,
     rc: args.rc,
   });
+  if (!verdict.passed) {
+    logStepDetail(
+      'sql-validation',
+      `Query validation failed (${verdict.kind}): ${verdict.feedback ?? ''}`,
+    );
+  }
   const tables =
     !verdict.passed && verdict.kind === 'syntactic'
       ? await expandTablesOnTableError({
@@ -887,6 +911,7 @@ async function expandTablesOnTableError(args: {
     ]),
   ];
   if (merged.length <= args.currentTables.length) return undefined;
+  logStepDetail('sql-validation', `Reselected tables: ${merged.join(', ')}`);
   args.onReselectTables?.(merged);
   return merged;
 }
