@@ -21,7 +21,7 @@ import {writeFileSync} from 'fs';
 import {setTimeout as sleep} from 'node:timers/promises';
 import {AnyObject} from '@loopback/repository';
 import {ILogger, LOGGER} from '@sourceloop/core';
-import {IDbConnector} from '../types';
+import {IDbConnector, DbQueryConfig, IDataSetStore} from '../types';
 import {AuthenticationBindings} from 'loopback4-authentication';
 
 function parseData(prompt: string, data: Record<string, string>) {
@@ -92,7 +92,7 @@ export async function generationAcceptanceBuilder(
 ): Promise<GenerationAcceptanceSuiteResult> {
   const {retries = 0, delayMs = 0} = options;
   // setup app
-  const config = app.getSync(DbQueryAIExtensionBindings.Config);
+  const config = app.getSync<DbQueryConfig>(DbQueryAIExtensionBindings.Config);
   const permissions = [
     ...config.models.map(v => v.readPermissionKey),
     PermissionKey.AskAI,
@@ -101,7 +101,9 @@ export async function generationAcceptanceBuilder(
   ];
   const tenantId = process.env.TEST_TENANT_ID ?? 'test-tenant';
   const token = tokenBuilder(tenantId, permissions);
-  const datasetStore = await app.get(DbQueryAIExtensionBindings.DatasetStore);
+  const datasetStore = await app.get<IDataSetStore>(
+    DbQueryAIExtensionBindings.DatasetStore,
+  );
   const logger = await app.get<ILogger>(LOGGER.LOGGER_INJECT);
   const appWithUser = new Context(app, 'appWithUser');
   app

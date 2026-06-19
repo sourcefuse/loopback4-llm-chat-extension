@@ -1,6 +1,6 @@
 {
   "name": "lb4-llm-chat-component",
-  "version": "3.0.0",
+  "version": "4.0.0",
   "description": "A loopback4 component to integrate LLM based capabilities",
   "keywords": [
     "loopback-extension",
@@ -12,7 +12,7 @@
     "backfill-mastra-threads": "dist/scripts/backfill-mastra-threads.js"
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": "22 || 24"
   },
   "exports": {
     ".": "./dist/index.js",
@@ -259,7 +259,8 @@
     },
     "commitizen": {
       "inquirer": "^12.9.6"
-    }
+    },
+    "form-data": "4.0.6"
   },
   "config": {
     "commitizen": {
