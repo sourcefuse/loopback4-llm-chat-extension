@@ -121,7 +121,30 @@ type MemoryLike = {
     metadata?: unknown;
   }): Promise<unknown>;
   saveMessages(args: {messages: unknown[]}): Promise<unknown>;
+  // Optional: used only to detect a partially-backfilled thread (created by a
+  // prior run that died before saveMessages) so it can be repaired instead of
+  // skipped forever. Absent on older Memory versions — see countSavedMessages.
+  query?(args: {threadId: string}): Promise<{messages?: unknown[]} | undefined>;
 };
+
+/**
+ * Number of messages already persisted on a thread. Returns 0 when the Memory
+ * implementation exposes no `query` (older versions): callers then fall back
+ * to re-saving, which is safe because message payloads carry the stable source
+ * id (`buildMessagePayloads`) so `saveMessages` upserts rather than duplicates.
+ */
+async function countSavedMessages(
+  memory: MemoryLike,
+  threadId: string,
+): Promise<number> {
+  if (!memory.query) return 0;
+  try {
+    const res = await memory.query({threadId});
+    return Array.isArray(res?.messages) ? res.messages.length : 0;
+  } catch {
+    return 0;
+  }
+}
 
 async function resolveMemory(app: BootableApplication): Promise<MemoryLike> {
   const mastra = await app.get(InternalBindings.Mastra);
@@ -170,28 +193,40 @@ async function backfillChat(
 ): Promise<void> {
   const resourceId = formatResourceId(chat);
   const existing = await memory.getThreadById({threadId: chat.id});
-  if (existing) {
-    summary.skipped++;
-    return;
-  }
   const msgs = await msgRepo.find({
     where: {channelId: chat.id},
     order: ['createdOn ASC'],
   });
+  // Idempotency + crash-repair. createThread and saveMessages are two separate
+  // non-transactional awaits, so a run that died between them leaves a thread
+  // with zero (or partial) messages. Skipping purely on thread existence would
+  // strand that thread empty forever. Skip only when the thread already exists
+  // AND already holds all its messages; otherwise fall through to (re)save —
+  // safe because saveMessages upserts on the stable source message id.
+  if (existing) {
+    const saved = await countSavedMessages(memory, chat.id);
+    if (msgs.length === 0 || saved >= msgs.length) {
+      summary.skipped++;
+      return;
+    }
+  }
   if (DRY_RUN) {
+    const verb = existing ? 'repair (re-save messages for)' : 'create';
     console.log(
-      `[dry-run] would create thread ${chat.id} resourceId=${resourceId} (${msgs.length} messages)`,
+      `[dry-run] would ${verb} thread ${chat.id} resourceId=${resourceId} (${msgs.length} messages)`,
     );
     summary.created++;
     summary.messagesWritten += msgs.length;
     return;
   }
-  await memory.createThread({
-    threadId: chat.id,
-    resourceId,
-    title: chat.title ?? undefined,
-    metadata: chat.metadata ?? undefined,
-  });
+  if (!existing) {
+    await memory.createThread({
+      threadId: chat.id,
+      resourceId,
+      title: chat.title ?? undefined,
+      metadata: chat.metadata ?? undefined,
+    });
+  }
   if (msgs.length) {
     // Memory.saveMessages accepts both the modern MastraDBMessage and
     // the legacy MastraMessageV1 shape; it normalises content

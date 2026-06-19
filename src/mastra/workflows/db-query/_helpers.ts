@@ -1023,6 +1023,21 @@ export async function validateSqlSyntactic(
   dbConnector: IDbConnector | undefined,
 ): Promise<{passed: boolean; feedback?: string}> {
   if (!sql || !dbConnector) return {passed: true};
+  // Defence-in-depth read-only guard. The generation prompt instructs the
+  // model to emit read-only SQL and the connector wraps execution in
+  // `SELECT * FROM (<sql>) AS subquery`, which already rejects a bare
+  // INSERT/UPDATE/DELETE. But a *data-modifying CTE*
+  // (`WITH d AS (DELETE ... RETURNING *) SELECT * FROM d`) survives that wrap
+  // and would execute, and EXPLAIN does not run it — so prompt rules are not
+  // an enforcement boundary. Reject anything that contains a data-modifying
+  // statement before it is ever validated/persisted/executed.
+  const dml = detectDmlStatement(sql);
+  if (dml) {
+    return {
+      passed: false,
+      feedback: `Only read-only SELECT queries are allowed; found a ${dml} statement. Rewrite as a SELECT.`,
+    };
+  }
   try {
     await dbConnector.validate(sql);
     return {passed: true};
@@ -1032,6 +1047,50 @@ export async function validateSqlSyntactic(
       feedback: `Syntactic error: ${(err as Error).message}`,
     };
   }
+}
+
+/**
+ * Return the name of the first data-modifying statement keyword found in
+ * `sql` (anywhere, including inside a CTE body), or `undefined` for a
+ * read-only query. Comments and string/identifier literals are stripped
+ * first so a column named `update_date` or the text `'please delete'` inside
+ * a literal does not trip the guard. Keyword forms are anchored to their
+ * statement shape (e.g. `DELETE FROM`, `UPDATE … SET`, `INSERT INTO`) to
+ * avoid matching an alias or column that merely reuses the word.
+ */
+export function detectDmlStatement(sql: string): string | undefined {
+  const stripped = sql
+    // line + block comments
+    .replace(/--[^\n]*/g, ' ')
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    // single/double-quoted and dollar-quoted literals
+    .replace(/'(?:[^']|'')*'/g, " '' ")
+    .replace(/"(?:[^"]|"")*"/g, ' "" ')
+    .replace(/\$([A-Za-z_]*)\$[\s\S]*?\$\1\$/g, ' $$$$ ');
+  const patterns: Array<[RegExp, string]> = [
+    [/\bINSERT\s+INTO\b/i, 'INSERT'],
+    [/\bUPDATE\b[\s\S]*?\bSET\b/i, 'UPDATE'],
+    [/\bDELETE\s+FROM\b/i, 'DELETE'],
+    [/\bTRUNCATE\b/i, 'TRUNCATE'],
+    [
+      /\bDROP\s+(?:TABLE|VIEW|INDEX|SCHEMA|DATABASE|FUNCTION|SEQUENCE|MATERIALIZED)\b/i,
+      'DROP',
+    ],
+    [/\bALTER\s+(?:TABLE|VIEW|SCHEMA|DATABASE|SEQUENCE|INDEX)\b/i, 'ALTER'],
+    [
+      /\bCREATE\s+(?:TABLE|VIEW|INDEX|SCHEMA|DATABASE|FUNCTION|SEQUENCE|MATERIALIZED|TEMP|TEMPORARY)\b/i,
+      'CREATE',
+    ],
+    [/\bMERGE\s+INTO\b/i, 'MERGE'],
+    [/\bGRANT\b/i, 'GRANT'],
+    [/\bREVOKE\b/i, 'REVOKE'],
+    [/\bCOPY\b/i, 'COPY'],
+    [/\b(?:CALL|DO)\s/i, 'CALL'],
+  ];
+  for (const [re, name] of patterns) {
+    if (re.test(stripped)) return name;
+  }
+  return undefined;
 }
 
 /**

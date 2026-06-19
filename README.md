@@ -27,6 +27,18 @@
 
 A Loopback4 based component to integrate an LLM chat endpoint (powered by [Mastra](https://mastra.ai)) into your application, with pluggable tools, model providers, storage, and observability.
 
+### Upgrading from 3.x to 4.0 (Breaking changes)
+
+`4.0.0` replaces the LangChain/LangGraph runtime with [Mastra](https://mastra.ai) + the Vercel AI SDK. The dependency-injection **binding keys are unchanged**, but the value types behind several of them changed. If you consume `3.x`, review the following:
+
+- **LLM provider value type.** `AiIntegrationBindings.{ChatLLM, CheapLLM, SmartLLM, SmartNonThinkingLLM, FileLLM}` now resolve to an AI-SDK `LanguageModelV2` instead of a LangChain `BaseChatModel`. Code that injects these and calls LangChain APIs (`.invoke()`, `.pipe()`, etc.) must migrate to the AI-SDK surface (or call the model through the component's tools/workflows instead of directly). There is no LangChain compatibility shim.
+- **Embedding provider value type.** `AiIntegrationBindings.EmbeddingModel` now resolves to an AI-SDK embedding model rather than a LangChain `Embeddings`.
+- **`RunnableConfig` and the LangGraph types are no longer exported** (`@langchain/langgraph` was removed). Tools no longer receive a `LangGraphRunnableConfig`; the Mastra tool/step context replaces it.
+- **Removed `db-query` re-exports.** `./nodes`, `./nodes.enum`, `./state`, and the graph classes (e.g. `GetTablesNode`, `services.GetTablesNode`) are gone. The relevant-table selection seam is now `pickRelevantTables` exported from the package's Mastra path; individual node classes are replaced by Mastra workflow steps.
+- **`IDataSetStore` gained required methods.** `deleteById` and `deleteAll` are now required members; existing implementations must add them.
+- **Node.js.** The supported engines are now `22 || 24` (Node 18/20 dropped).
+- **Provider inference knobs.** Some per-provider env vars that the LangChain providers honoured (e.g. `CLAUDE_THINKING`/`CLAUDE_THINKING_BUDGET`, `*_TEMPERATURE`, `*_TOP_P`) are not yet re-wired on the AI-SDK providers. Track [PR #22](https://github.com/sourcefuse/loopback4-llm-chat-extension/pull/22) for the call-time `providerOptions` replacement; set them explicitly via a custom provider if you depend on them today.
+
 ### Installation
 
 Install AIIntegrationsComponent using `npm`;
@@ -47,7 +59,7 @@ export class MyApplication extends BootMixin(
   ServiceMixin(RepositoryMixin(RestApplication)),
 ) {
   constructor(options: ApplicationConfig = {}) {
-    // could be any LLM provider or your own LangGraph supported LLM provider
+    // could be any bundled LLM provider or your own AI-SDK (Mastra) compatible provider
     // you can also have different LLM for different LLM type - cheap, smart and multimodal
     this.bind(AiIntegrationBindings.CheapLLM).toProvider(Ollama);
     this.bind(AiIntegrationBindings.SmartLLM).toProvider(Ollama);
