@@ -389,6 +389,12 @@ export async function tracedGenerateText(args: {
   const span = tracing?.currentSpan?.createChildSpan({
     type: SpanType.MODEL_GENERATION,
     name: label,
+    // `input` MUST be set here (and `output` on end) — the LangSmith/Langfuse
+    // exporter maps span input/output to the run's inputs/outputs. Without it
+    // these workflow LLM spans (get-columns, sql-generation, classify-sql-error,
+    // …) showed blank prompt/completion in the trace, even though attributes
+    // were present.
+    input: prompt,
     attributes: {model: modelId, provider, resultType},
   });
   const providerOptions = buildProviderOptions({forceThinkingOff});
@@ -401,6 +407,7 @@ export async function tracedGenerateText(args: {
       ...(providerOptions ? {providerOptions: providerOptions as never} : {}),
     });
     span?.end({
+      output: result.text,
       // Usage MUST go inside `attributes` (Mastra reads `attributes.usage`);
       // a top-level `usage:` field is ignored, which is why these workflow
       // LLM spans previously reported 0 tokens in Langfuse/LangSmith while
@@ -694,18 +701,23 @@ async function streamDescription(args: {
   if (!model || !sql || !prompt) return '';
   const modelId = (model as {modelId?: string}).modelId;
   const provider = modelId?.includes('/') ? modelId.split('/')[0] : undefined;
+  const descriptionPrompt = buildDescriptionPrompt(prompt, sql, checks);
   const span = tracing?.currentSpan?.createChildSpan({
     type: SpanType.MODEL_GENERATION,
     name: 'generate-description',
+    // See tracedGenerateText: input/output map to the run's inputs/outputs in
+    // the LangSmith/Langfuse exporter; omit them and the span shows blank I/O.
+    input: descriptionPrompt,
     attributes: {model: modelId, provider, resultType: 'response_generation'},
   });
   try {
     const result = streamText({
       model,
-      prompt: buildDescriptionPrompt(prompt, sql, checks),
+      prompt: descriptionPrompt,
     });
     const out = await pumpThinking(result.fullStream, rc);
     span?.end({
+      output: stripThinkTags(out),
       // Usage inside `attributes` (Mastra reads `attributes.usage`); a
       // top-level `usage:` is ignored → 0 tokens on the span.
       attributes: {model: modelId, provider, usage: await result.usage},
