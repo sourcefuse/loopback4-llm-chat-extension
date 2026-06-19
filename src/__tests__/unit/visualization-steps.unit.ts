@@ -187,6 +187,7 @@ describe('visualization workflow steps (unit)', () => {
       // `result['save-dataset']` (Mastra `branch()` arm key). The step
       // is responsible for digging through that wrapper.
       const start = sinon.stub().resolves({
+        status: 'success',
         result: {'save-dataset': {datasetId: 'ds-77', sql: 'SELECT 1'}},
       });
       const createRun = sinon.stub().resolves({start});
@@ -206,9 +207,10 @@ describe('visualization workflow steps (unit)', () => {
     it('falls back to top-level datasetId when the save-dataset branch wrapper is absent', async () => {
       // Defensive path — if Mastra ever flattens branch results, the
       // step still produces a usable datasetId without changes.
-      const start = sinon
-        .stub()
-        .resolves({result: {datasetId: 'flat-ds', sql: 'SELECT 1'}});
+      const start = sinon.stub().resolves({
+        status: 'success',
+        result: {datasetId: 'flat-ds', sql: 'SELECT 1'},
+      });
       const createRun = sinon.stub().resolves({start});
       const getWorkflow = sinon.stub().returns({createRun});
 

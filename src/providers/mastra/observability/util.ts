@@ -1,4 +1,5 @@
 import {Observability, SamplingStrategyType} from '@mastra/observability';
+import {SpanType} from '@mastra/core/observability';
 import {LangfuseExporter} from '@mastra/langfuse';
 import {LangSmithExporter} from '@mastra/langsmith';
 
@@ -73,6 +74,12 @@ export function makeObservability(
           type: SamplingStrategyType.RATIO,
           probability: parseSampleRate(process.env.OTEL_SAMPLE_RATE),
         },
+        // During streaming, every text-delta and tool-step emits a span.
+        // Without this, Langfuse/LangSmith receives one span per token on
+        // the hot path — high export overhead + trace noise. These chunk/step
+        // spans carry no actionable debug info; the parent MODEL_GENERATION
+        // span already captures the full I/O and token usage.
+        excludeSpanTypes: [SpanType.MODEL_CHUNK, SpanType.MODEL_STEP],
       },
     },
   });

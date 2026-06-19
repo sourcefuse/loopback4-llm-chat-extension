@@ -37,14 +37,16 @@ export const getDatasetDataStep = createStep({
     const chartType = readString(upstream.chartType) ?? DEFAULT_CHART_TYPE;
     const userQuery = readString(upstream.userQuery) ?? '';
 
-    const {sql, description} = await fetchDatasetDescriptor(
-      getDatasetStore(requestContext),
-      datasetId,
-    );
-    const rows = await fetchDatasetRows(
-      getDataSetHelper(requestContext),
-      datasetId,
-    );
+    // Two independent reads — run concurrently.
+    const [descriptor, rows] = await Promise.all([
+      fetchDatasetDescriptor(getDatasetStore(requestContext), datasetId),
+      fetchDatasetRows(
+        getDataSetHelper(requestContext),
+        datasetId,
+        requestContext,
+      ),
+    ]);
+    const {sql, description} = descriptor;
 
     return {datasetId, rows, chartType, userQuery, sql, description};
   },

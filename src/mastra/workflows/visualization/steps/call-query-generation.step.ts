@@ -44,6 +44,18 @@ export const callQueryGenerationStep = createStep({
       requestContext,
     });
 
+    // Guard on status before extracting the result — if the nested workflow
+    // failed/suspended/etc., extractWorkflowResult returns {} and datasetId
+    // silently becomes '', sending the visualization step forward with no data.
+    if (result.status !== 'success') {
+      return {
+        datasetId: '',
+        needsQuery: true,
+        chartType: inputData.chartType,
+        userQuery: inputData.userQuery,
+      };
+    }
+
     const rawOut = extractWorkflowResult(result);
     const saveDatasetOut = asRecord(rawOut['save-dataset']);
     const datasetId = readString(saveDatasetOut.datasetId ?? rawOut.datasetId);

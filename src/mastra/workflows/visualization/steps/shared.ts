@@ -1,6 +1,7 @@
 import {z} from 'zod';
 import type {DataSetHelper} from '../../../../components/db-query/services';
 import type {IDataSetStore} from '../../../../components/db-query/types';
+import {getDbQueryConfig, type MastraRc} from '../../db-query/_helpers';
 import type {IVisualizer} from '../../../../components/visualization/types';
 
 export const DEFAULT_CHART_TYPE = 'bar';
@@ -62,10 +63,15 @@ export async function fetchDatasetDescriptor(
 export async function fetchDatasetRows(
   helper: DataSetHelper | undefined,
   datasetId: string,
+  rc?: MastraRc,
 ): Promise<unknown[]> {
   if (!helper || !datasetId) return [];
   try {
-    const rows = await helper.getDataFromDataset(datasetId);
+    // Respect maxRowsForAI from DbQueryConfig — passing unbounded rows to the
+    // visualizer/LLM path is expensive and unnecessary. Default cap mirrors
+    // DataSetHelper.getDataFromDataset's own default (100) when unset.
+    const limit = getDbQueryConfig(rc)?.maxRowsForAI ?? 100;
+    const rows = await helper.getDataFromDataset(datasetId, limit);
     return Array.isArray(rows) ? rows : [];
   } catch {
     return [];

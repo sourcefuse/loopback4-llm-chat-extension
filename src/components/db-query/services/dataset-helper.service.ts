@@ -118,16 +118,24 @@ export class DataSetHelper {
   async deleteMany(ids: string[]): Promise<number> {
     if (!ids.length) return 0;
     const {count} = await this.store.deleteAll({id: {inq: ids}});
-    for (const id of ids) {
-      try {
-        await this.semanticCache.deleteByFilter({
-          type: DbQueryStoredTypes.DataSet,
-          datasetId: id,
-        });
-      } catch (err) {
-        debug('dataset %s cache eviction on bulk-delete failed: %O', id, err);
-      }
-    }
+    // Evictions are best-effort and independent — run them in parallel
+    // rather than sequentially (N round-trips serialised).
+    await Promise.all(
+      ids.map(id =>
+        this.semanticCache
+          .deleteByFilter({
+            type: DbQueryStoredTypes.DataSet,
+            datasetId: id,
+          })
+          .catch(err =>
+            debug(
+              'dataset %s cache eviction on bulk-delete failed: %O',
+              id,
+              err,
+            ),
+          ),
+      ),
+    );
     return count;
   }
 }
