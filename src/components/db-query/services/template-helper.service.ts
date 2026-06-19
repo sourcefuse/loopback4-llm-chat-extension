@@ -56,14 +56,21 @@ Do not return any other text or explanation, just the XML tags.
     template: string,
     placeholders: string,
   ): string {
-    // Use replacement FUNCTIONS, not raw strings: String.prototype.replace
-    // interprets `$&`, `$1`, `$$` etc. in the replacement string. User
-    // prompts and SQL templates frequently contain `$` (e.g. `$1` params,
-    // `$$` dollar-quoting), which would otherwise be silently mangled.
-    return this.extractionPromptTemplate
-      .replace('{prompt}', () => prompt)
-      .replace('{template}', () => template)
-      .replace('{placeholders}', () => placeholders);
+    // Single-pass replacement to prevent order-dependent injection:
+    // sequential .replace('{prompt}', ...) then .replace('{template}', ...)
+    // would substitute INTO already-inserted content if the prompt itself
+    // contained the literal text `{template}` or `{placeholders}`.
+    // A single regex pass replaces each marker exactly once, in order,
+    // without ever re-scanning replaced content.
+    const slots: Record<string, string> = {
+      '{prompt}': prompt,
+      '{template}': template,
+      '{placeholders}': placeholders,
+    };
+    return this.extractionPromptTemplate.replace(
+      /\{prompt\}|\{template\}|\{placeholders\}/g,
+      match => slots[match] ?? match,
+    );
   }
 
   async extractPlaceholderValues(
@@ -272,25 +279,40 @@ Do not return any other text or explanation, just the XML tags.
     placeholders: TemplatePlaceholder[],
     values: Record<string, string | null>,
   ): string {
+    // Single-pass substitution: build a map of every known marker to its
+    // replacement text, then replace all markers in one regex scan.
+    // Sequential .replace() is order-dependent and injectable — if a resolved
+    // value contains `{{another_placeholder}}`, a later iteration would
+    // substitute INTO it; with one pass, already-replaced content is never
+    // re-scanned.
+    const optionalBlanks = new Set<string>();
+    const replacements = new Map<string, string>();
+
     for (const placeholder of placeholders) {
       const value = values[placeholder.name] ?? placeholder.default ?? null;
-      const marker = `{{${placeholder.name}}}`;
-
-      if (!sql.includes(marker)) {
-        continue;
-      }
-
       if (placeholder.optional && !value) {
-        sql = sql.replace(
-          new RegExp(String.raw`\s*${this._escapeRegex(marker)}\s*`),
-          ' ',
+        optionalBlanks.add(placeholder.name);
+      } else {
+        replacements.set(
+          placeholder.name,
+          this._formatValue(placeholder.type, value),
         );
-        continue;
       }
-
-      sql = sql.replace(marker, this._formatValue(placeholder.type, value));
     }
-    return sql;
+
+    // Build a single regex matching all known {{name}} markers.
+    const allNames = placeholders.map(p => this._escapeRegex(p.name));
+    if (!allNames.length) return sql;
+    const pattern = new RegExp(
+      String.raw`\s*\{\{(${allNames.join('|')})\}\}\s*`,
+      'g',
+    );
+
+    return sql.replace(pattern, (fullMatch, name: string) => {
+      if (optionalBlanks.has(name)) return ' ';
+      const rep = replacements.get(name);
+      return rep ?? fullMatch;
+    });
   }
 
   private _formatValue(type: string, value: string | null): string {

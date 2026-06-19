@@ -281,7 +281,15 @@ export class WorkflowRunner {
     abort: AbortSignal,
     sessionId?: string,
   ): AsyncIterable<LLMStreamEvent> {
-    const queue = new AsyncEventQueue<LLMStreamEvent>();
+    const queue = new AsyncEventQueue<LLMStreamEvent>({
+      overflowValue: {
+        type: LLMStreamEventType.Error,
+        data: {
+          message:
+            'SSE event queue overflow: too many events were produced before the client could consume them. The stream was closed early.',
+        },
+      },
+    });
     this.bufferedAssistantText = '';
 
     // Stream the chatAgent REGISTERED on the Mastra singleton (not a detached

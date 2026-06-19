@@ -20,9 +20,11 @@ export class AsyncEventQueue<T> implements AsyncIterable<T> {
   private readonly resolvers: Array<(v: IteratorResult<T>) => void> = [];
   private closedFlag = false;
   private readonly maxSize: number;
+  private readonly overflowValue?: T;
 
-  constructor(opts: {maxSize?: number} = {}) {
+  constructor(opts: {maxSize?: number; overflowValue?: T} = {}) {
     this.maxSize = opts.maxSize ?? 10000;
+    this.overflowValue = opts.overflowValue;
   }
 
   get isClosed(): boolean {
@@ -32,8 +34,15 @@ export class AsyncEventQueue<T> implements AsyncIterable<T> {
   push(value: T): void {
     if (this.closedFlag) return;
     if (this.queue.length >= this.maxSize) {
-      // Hard-close instead of throw — see class-level comment for
-      // the why. Drains nothing; consumer's next iteration sees done.
+      // Hard-close instead of throw — see class-level comment for why.
+      // Before closing, emit the overflow sentinel (if provided) so the
+      // consumer sees an explicit Error event rather than a silent done:true.
+      // Without this, an overflow looks identical to a normal stream end —
+      // the client gets a clean EOF with a partial answer and no signal that
+      // events were dropped.
+      if (this.overflowValue !== undefined) {
+        this.push(this.overflowValue);
+      }
       this.close();
       return;
     }

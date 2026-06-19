@@ -19,11 +19,15 @@ export function loadErrorShortCircuit(data: {
   checklist?: string;
   attempts?: number;
 }) {
+  // Force attempts to the cap so the dountil loop exits immediately.
+  // Incrementing by 1 wastes the remaining iterations — each re-enters
+  // fixQueryStep which calls loadErrorShortCircuit again, doing nothing
+  // useful until the counter eventually reaches MAX_IMPROVE_ATTEMPTS.
   return {
     datasetId: data.datasetId ?? '',
     sql: '',
     passed: false,
-    attempts: (data.attempts ?? 0) + 1,
+    attempts: MAX_IMPROVE_ATTEMPTS,
     feedback: 'Unable to load source dataset for improvement',
     description: undefined,
     prompt: data.prompt ?? '',
