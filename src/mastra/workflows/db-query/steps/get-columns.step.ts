@@ -11,24 +11,12 @@ import {
   logStepDetail,
   pickRelevantTables,
 } from '../_helpers';
-import {STEP_GET_COLUMNS} from './constants';
+import {branchContinueSchema, STEP_GET_COLUMNS} from './constants';
 
 export const getColumnsStep = createStep({
   id: STEP_GET_COLUMNS,
   inputSchema: z.any(),
-  outputSchema: z.object({
-    prompt: z.string(),
-    tables: z.array(z.string()),
-    templateId: z.string().optional(),
-    // Set when the LLM judges the question cannot be answered from any
-    // available table. Downstream steps short-circuit to the failed
-    // terminal WITHOUT generating SQL; `replyToUser` is surfaced to the user.
-    unanswerable: z.boolean().optional(),
-    replyToUser: z.string().optional(),
-    // Worked-example query from a "Similar" cache hit, carried to SQL gen.
-    sampleSql: z.string().optional(),
-    samplePrompt: z.string().optional(),
-  }),
+  outputSchema: branchContinueSchema,
   execute: async ({inputData, requestContext, tracingContext}) => {
     emitToolStatus(
       requestContext,
@@ -50,7 +38,7 @@ export const getColumnsStep = createStep({
 
     const chatLlm = getCheapLlm(requestContext);
     if (!chatLlm || tables.length === 0) {
-      return {prompt, tables, templateId, ...sample};
+      return {kind: 'continue' as const, prompt, tables, templateId, ...sample};
     }
 
     const schemaStore = getSchemaStore(requestContext);
@@ -74,6 +62,7 @@ export const getColumnsStep = createStep({
     if (picked.kind === 'unanswerable') {
       logStepDetail(STEP_GET_COLUMNS, `Unanswerable: ${picked.reason}`);
       return {
+        kind: 'continue' as const,
         prompt,
         tables: [],
         templateId,
@@ -94,6 +83,12 @@ export const getColumnsStep = createStep({
     const tablesOut =
       columnSelection && picked.kind === 'tables' ? picked.tables : tables;
     logStepDetail(STEP_GET_COLUMNS, `Selected tables: ${tablesOut.join(', ')}`);
-    return {prompt, tables: tablesOut, templateId, ...sample};
+    return {
+      kind: 'continue' as const,
+      prompt,
+      tables: tablesOut,
+      templateId,
+      ...sample,
+    };
   },
 });

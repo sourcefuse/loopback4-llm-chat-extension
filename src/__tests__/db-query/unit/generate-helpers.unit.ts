@@ -25,6 +25,7 @@ import {
   checkCacheStep,
   generateChecklistStep,
   getTablesStep,
+  STEP_GET_COLUMNS,
 } from '../../../mastra/workflows/db-query/steps';
 
 /** Minimal RequestContext stand-in: workflow steps only call `.get(key)`. */
@@ -538,11 +539,16 @@ describe('db-query generate helpers (unit)', () => {
 
   describe('generateChecklistStep (checklist gate)', () => {
     const threeTables = ['employees', 'currency', 'exchange_rate'];
+    // generateChecklistStep receives Mastra's branch-wrapped envelope:
+    // { [stepId]: BranchResult }. Wrap helpers mirror the runtime shape.
+    const continueInput = (prompt: string, tables: string[]) => ({
+      [STEP_GET_COLUMNS]: {kind: 'continue' as const, prompt, tables},
+    });
 
     it('runs the checklist LLM for multi-table queries when enabled', async () => {
       const out = await runStep(
         generateChecklistStep,
-        {prompt: 'salaries by currency', tables: threeTables},
+        continueInput('salaries by currency', threeTables),
         {chatLlm: model('- only active rows')},
       );
       expect(out.checklist).to.equal('- only active rows');
@@ -551,7 +557,7 @@ describe('db-query generate helpers (unit)', () => {
     it('skips the checklist LLM when the consumer disabled the node', async () => {
       const out = await runStep(
         generateChecklistStep,
-        {prompt: 'salaries by currency', tables: threeTables},
+        continueInput('salaries by currency', threeTables),
         {
           chatLlm: model('- this must be ignored'),
           config: {nodes: {generateChecklistNode: {enabled: false}}},
@@ -564,7 +570,7 @@ describe('db-query generate helpers (unit)', () => {
     it('skips the checklist LLM on <=2 tables (no join to mis-plan)', async () => {
       const out = await runStep(
         generateChecklistStep,
-        {prompt: 'list employees', tables: ['employees', 'currency']},
+        continueInput('list employees', ['employees', 'currency']),
         {chatLlm: model('- this must be ignored')},
       );
       expect(out.checklist).to.equal('');

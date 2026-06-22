@@ -1,6 +1,19 @@
 import type {IAuthUserWithPermissions} from '@sourceloop/core';
 
 /**
+ * Canonical string format for a Mastra Memory `resourceId`.
+ * Centralised here so the runtime writer, the controller reader, and the
+ * backfill script all produce identical strings — changing the format in one
+ * place changes it everywhere.
+ */
+export function formatResourceId(
+  tenantId: string,
+  principalId: string,
+): string {
+  return `${tenantId}:${principalId}`;
+}
+
+/**
  * Stable principal id for a request user — `user.id` when present, else the
  * user-tenant id. Used to build the Mastra Memory `resourceId`.
  */
@@ -29,5 +42,5 @@ export function deriveResourceId(
   if (boundResourceId) return boundResourceId;
   const principalId = resolvePrincipalId(user);
   if (!principalId || !user?.tenantId) return undefined;
-  return `${user.tenantId}:${principalId}`;
+  return formatResourceId(user.tenantId, principalId);
 }

@@ -5,9 +5,13 @@ export {
   STEP_CHECK_TEMPLATES,
   STEP_GET_COLUMNS,
   STEP_SQL_AND_VALIDATE,
+  STEP_RETURN_CACHED,
+  STEP_SAVE_FROM_TEMPLATE,
   inputSchema,
   outputSchema,
+  branchResultSchema,
 } from './constants';
+export type {BranchResult} from './constants';
 
 export {checkCacheStep} from './check-cache.step';
 export {getTablesStep} from './get-tables.step';

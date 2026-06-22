@@ -8,7 +8,12 @@ import {
   idToString,
   tracedGenerateText,
 } from '../_helpers';
-import {STEP_GET_COLUMNS} from './constants';
+import type {BranchResult} from './constants';
+import {
+  STEP_GET_COLUMNS,
+  STEP_RETURN_CACHED,
+  STEP_SAVE_FROM_TEMPLATE,
+} from './constants';
 
 // The checklist LLM call only earns its latency on multi-table queries —
 // single-/two-table requests have nowhere to mis-join, so v2 skipped it
@@ -21,21 +26,16 @@ function normaliseChecklist(raw: string): string {
   return trimmed;
 }
 
-function extractCachePassthrough(wrapped: Record<string, unknown>) {
-  const hit = (wrapped['return-cached'] ??
-    wrapped['save-dataset-from-template']) as
-    | {datasetId?: string; sql?: string}
-    | undefined;
-  if (!hit?.datasetId) return null;
-  return {
-    prompt: '',
-    tables: [] as string[],
-    checklist: '',
-    attempts: 0,
-    cached: true,
-    datasetId: idToString(hit.datasetId),
-    sql: hit.sql ?? '',
-  };
+// Mastra wraps each branch arm's output as { [stepId]: stepOutput }, so we
+// still resolve by step ID to unwrap the envelope — but we then dispatch on
+// the shared `kind` discriminant instead of inferring shape from which key
+// happened to be non-null.
+function extractBranchResult(wrapped: Record<string, unknown>): BranchResult {
+  const result = (wrapped[STEP_RETURN_CACHED] ??
+    wrapped[STEP_SAVE_FROM_TEMPLATE] ??
+    wrapped[STEP_GET_COLUMNS]) as BranchResult | undefined;
+  // Fallback: treat unrecognised input as an empty continue pass
+  return result ?? {kind: 'continue', prompt: '', tables: []};
 }
 
 async function generateChecklistText(
@@ -68,7 +68,7 @@ Return ONLY the explicit constraints as plain-text bullets, or an empty response
 
 export const generateChecklistStep = createStep({
   id: 'generate-checklist',
-  inputSchema: z.any(),
+  inputSchema: z.record(z.string(), z.unknown()),
   outputSchema: z.object({
     prompt: z.string(),
     tables: z.array(z.string()),
@@ -84,41 +84,40 @@ export const generateChecklistStep = createStep({
   }),
   execute: async ({inputData, requestContext, tracingContext}) => {
     const wrapped = inputData as Record<string, unknown>;
-    const cached = extractCachePassthrough(wrapped);
-    if (cached) return cached;
+    const branchResult = extractBranchResult(wrapped);
 
-    const fromGetColumns = wrapped[STEP_GET_COLUMNS] as
-      | {
-          prompt?: string;
-          tables?: string[];
-          unanswerable?: boolean;
-          replyToUser?: string;
-          sampleSql?: string;
-          samplePrompt?: string;
-        }
-      | undefined;
-    const prompt =
-      fromGetColumns?.prompt ?? (wrapped.prompt as string | undefined) ?? '';
-    const sample = {
-      sampleSql: fromGetColumns?.sampleSql,
-      samplePrompt: fromGetColumns?.samplePrompt,
-    };
+    if (branchResult.kind === 'cached' || branchResult.kind === 'template') {
+      if (!branchResult.datasetId) {
+        return {prompt: '', tables: [], checklist: '', attempts: 0};
+      }
+      return {
+        prompt: '',
+        tables: [],
+        checklist: '',
+        attempts: 0,
+        cached: true,
+        datasetId: idToString(branchResult.datasetId),
+        sql: branchResult.sql ?? '',
+      };
+    }
+
+    // kind === 'continue'
+    const {prompt, tables, unanswerable, replyToUser, sampleSql, samplePrompt} =
+      branchResult;
+    const sample = {sampleSql, samplePrompt};
 
     // The get-columns gate judged the question unanswerable — carry the
     // verdict straight through so sql-and-validate skips SQL generation.
-    if (fromGetColumns?.unanswerable) {
+    if (unanswerable) {
       return {
         prompt,
         tables: [],
         checklist: '',
         attempts: 0,
         unanswerable: true,
-        replyToUser: fromGetColumns.replyToUser ?? '',
+        replyToUser: replyToUser ?? '',
       };
     }
-
-    const tables =
-      fromGetColumns?.tables ?? (wrapped.tables as string[] | undefined) ?? [];
 
     // Gate the checklist LLM call (restores v2 generate-checklist.node):
     //   - skip when the consumer disabled it (`enabled === false`), and

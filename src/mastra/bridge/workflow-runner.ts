@@ -617,9 +617,9 @@ export class WorkflowRunner {
 
   private resolveFileSummaryModelConfig(): MastraModelConfig | undefined {
     if (this.chatLlm) return this.chatLlm;
+    if (this.fileLlm) return this.fileLlm;
     const defaultModel = process.env.MASTRA_DEFAULT_CHAT_MODEL;
-    if (!defaultModel) return undefined;
-    return toModelRouterFallbackConfig(defaultModel);
+    return defaultModel ? toModelRouterFallbackConfig(defaultModel) : undefined;
   }
 
   private async resolveAiLanguageModel(

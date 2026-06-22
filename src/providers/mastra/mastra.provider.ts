@@ -9,8 +9,9 @@ import type {Tool} from '@mastra/core/tools';
 import type {RequestContext} from '@mastra/core/request-context';
 import type {Observability} from '@mastra/observability';
 import {AiIntegrationBindings} from '../../keys';
-import {createMaxTokenCountProcessor} from '../../mastra/processors/max-token-count.processor';
+import {TokenLimiter} from '@mastra/core/processors';
 import {CHAT_AGENT_DIRECTIVES} from '../../mastra/chat-agent-instructions';
+import {DEFAULT_MAX_TOKEN_COUNT} from '../../constant';
 import {InternalBindings} from '../../mastra/internal-bindings';
 import {generateQueryWorkflow} from '../../mastra/workflows/db-query/workflows/generate.workflow';
 import {improveQueryWorkflow} from '../../mastra/workflows/db-query/workflows/improve.workflow';
@@ -104,11 +105,10 @@ export class MastraProvider implements Provider<Mastra> {
       rc: RequestContext | undefined,
       key: string,
     ): T | undefined => rc?.get(key) as T | undefined;
-    // Drop-in for the v2 LangGraph `ContextCompressionNode` — trims oldest
-    // non-system messages when running token count exceeds MAX_TOKEN_COUNT
-    // (env or AIIntegrationConfig.maxTokenCount, default 8192). Stays inert
-    // when no env is set and message count is small.
-    const maxTokenCountProcessor = createMaxTokenCountProcessor();
+    const tokenBudget = process.env.MAX_TOKEN_COUNT
+      ? Number.parseInt(process.env.MAX_TOKEN_COUNT, 10)
+      : DEFAULT_MAX_TOKEN_COUNT;
+    const maxTokenCountProcessor = new TokenLimiter(tokenBudget);
     const chatAgent = new Agent({
       id: 'chat-agent',
       name: 'ChatAgent',

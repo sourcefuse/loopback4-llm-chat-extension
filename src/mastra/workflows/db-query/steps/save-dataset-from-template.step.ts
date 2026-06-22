@@ -12,19 +12,19 @@ import {
   resolvePersistDeps,
   resolveTemplateById,
 } from '../_helpers';
-import {outputSchema} from './constants';
+import {branchTemplateSchema} from './constants';
 
 export const saveDatasetFromTemplateStep = createStep({
   id: 'save-dataset-from-template',
   inputSchema: z.any(),
-  outputSchema,
+  outputSchema: branchTemplateSchema,
   execute: async ({inputData, requestContext}) => {
     const data = inputData as {
       templateId?: string;
       prompt?: string;
       tables?: string[];
     };
-    const fallback = {datasetId: '', sql: ''};
+    const fallback = {kind: 'template' as const, datasetId: '', sql: ''};
     if (!data.templateId || !data.prompt) return fallback;
 
     const persist = resolvePersistDeps(
@@ -57,6 +57,10 @@ export const saveDatasetFromTemplateStep = createStep({
       votes: 0,
     });
 
-    return {datasetId: idToString(dataset.id), sql: resolved.sql};
+    return {
+      kind: 'template' as const,
+      datasetId: idToString(dataset.id),
+      sql: resolved.sql,
+    };
   },
 });

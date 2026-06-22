@@ -494,12 +494,16 @@ describe('db-query workflow steps (unit)', () => {
         {datasetId: '99'},
         makeRc({datasetStore: {findById} as never}),
       );
-      expect(out).to.eql({datasetId: '99', sql: 'SELECT * FROM employees'});
+      expect(out).to.eql({
+        kind: 'cached',
+        datasetId: '99',
+        sql: 'SELECT * FROM employees',
+      });
     });
 
     it('falls back to the input datasetId with empty sql when store is unbound', async () => {
       const out = await runReturnCached({datasetId: 'ds-1'}, makeRc());
-      expect(out).to.eql({datasetId: 'ds-1', sql: ''});
+      expect(out).to.eql({kind: 'cached', datasetId: 'ds-1', sql: ''});
     });
 
     it('falls back gracefully when the store throws (does not propagate)', async () => {
@@ -508,7 +512,7 @@ describe('db-query workflow steps (unit)', () => {
         {datasetId: 'ds-1'},
         makeRc({datasetStore: {findById} as never}),
       );
-      expect(out).to.eql({datasetId: 'ds-1', sql: ''});
+      expect(out).to.eql({kind: 'cached', datasetId: 'ds-1', sql: ''});
     });
   });
 
