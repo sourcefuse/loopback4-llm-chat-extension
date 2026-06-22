@@ -19,7 +19,6 @@
  */
 import type {Application as CoreApplication} from '@loopback/core';
 import {InternalBindings} from '../mastra/internal-bindings';
-import {formatResourceId} from '../mastra/resource-id.util';
 import {Chat} from '../models/chat.model';
 import {Message} from '../models/message.model';
 import {MessageMetadataType} from '../graphs/message-metadata.type';
@@ -47,30 +46,24 @@ interface BackfillSummary {
   errors: Array<{chatId: string; error: string}>;
 }
 
+const PROGRESS_EVERY = 100;
 const DRY_RUN = process.argv.includes('--dry-run');
-const CHUNK_SIZE = parseInt(process.env.BACKFILL_CHUNK_SIZE ?? '200', 10);
 
 /**
- * Tenant-scoped resourceId for a historical Chat row, using the same
- * formatResourceId() helper as the runtime writer so the string format
- * can never silently diverge (separator, field order, etc.).
+ * Tenant-scoped resourceId — MUST match the format the runtime
+ * resource identity format `${tenantId}:${userId}` used by runtime, otherwise
+ * threads end up orphaned (DB rows exist but no live request hits
+ * them at Memory.scope='resource').
  *
- * Known limitation: the runtime resolves principalId as `user.id ?? user.userTenantId`
- * (resource-id.util.ts). The Chat model only stores `userId`; there is no
- * userTenantId column. For users where `user.id` was undefined at write time
- * and the runtime fell back to `userTenantId`, backfilled threads will land
- * under `${tenantId}:${userId}` rather than `${tenantId}:${userTenantId}`.
- * That edge-case mismatch is a data-model gap — the Chat table would need a
- * `userTenantId` column to fully close it.
- *
- * Override via BACKFILL_RESOURCE_ID_FORMAT env var:
- * - 'tenant-user' (default): `${tenantId}:${userId}`
- * - 'user-only': bare `userId`, single-tenant deployments only
+ * Default mirrors the recommended single-tenant-safe format from
+ *. Override via the BACKFILL_RESOURCE_ID_FORMAT env var:
+ * - 'tenant-user' (default): `${tenantId}:${userId}` with userId fallback
+ * - 'user-only': bare `userId`, single-tenant only
  */
-function resourceIdForChat(chat: Chat): string {
+function formatResourceId(chat: Chat): string {
   const mode = process.env.BACKFILL_RESOURCE_ID_FORMAT ?? 'tenant-user';
   if (mode === 'user-only') return chat.userId;
-  if (chat.tenantId) return formatResourceId(chat.tenantId, chat.userId);
+  if (chat.tenantId) return `${chat.tenantId}:${chat.userId}`;
   return chat.userId;
 }
 
@@ -194,18 +187,18 @@ function buildMessagePayloads(
 
 async function backfillChat(
   chat: Chat,
-  msgs: Message[],
   memory: MemoryLike,
+  msgs: Message[],
   summary: BackfillSummary,
 ): Promise<void> {
-  const resourceId = resourceIdForChat(chat);
+  const resourceId = formatResourceId(chat);
   const existing = await memory.getThreadById({threadId: chat.id});
   // Idempotency + crash-repair. createThread and saveMessages are two separate
   // non-transactional awaits, so a run that died between them leaves a thread
   // with zero (or partial) messages. Skipping purely on thread existence would
   // strand that thread empty forever. Skip only when the thread already exists
   // AND already holds all its messages; otherwise fall through to (re)save —
-  // safe because saveMessages idempotently re-saves on the stable source message id.
+  // safe because saveMessages upserts on the stable source message id.
   if (existing) {
     const saved = await countSavedMessages(memory, chat.id);
     if (msgs.length === 0 || saved >= msgs.length) {
@@ -245,37 +238,6 @@ async function backfillChat(
   summary.messagesWritten += msgs.length;
 }
 
-async function backfillChunk(
-  chats: Chat[],
-  memory: MemoryLike,
-  msgRepo: MessageRepository,
-  summary: BackfillSummary,
-): Promise<void> {
-  const chatIds = chats.map(c => c.id);
-  const allMsgs = await msgRepo.find({
-    where: {channelId: {inq: chatIds}},
-    order: ['channelId ASC', 'createdOn ASC'],
-  });
-  const msgsByChat = new Map<string, Message[]>();
-  for (const msg of allMsgs) {
-    const list = msgsByChat.get(msg.channelId);
-    if (list) {
-      list.push(msg);
-    } else {
-      msgsByChat.set(msg.channelId, [msg]);
-    }
-  }
-  for (const chat of chats) {
-    summary.seen++;
-    try {
-      await backfillChat(chat, msgsByChat.get(chat.id) ?? [], memory, summary);
-    } catch (err) {
-      summary.errors.push({chatId: chat.id, error: (err as Error).message});
-      console.error(`[error] chat ${chat.id}:`, (err as Error).message);
-    }
-  }
-}
-
 async function backfill(): Promise<void> {
   const app = await loadConsumerApp();
   const memory = await resolveMemory(app);
@@ -286,8 +248,23 @@ async function backfill(): Promise<void> {
     'repositories.MessageRepository',
   );
   const chats = await chatRepo.find();
-  const total = chats.length;
-  console.log(`[backfill] ${total} chats found, chunk size ${CHUNK_SIZE}`);
+  // Batch-fetch all messages in a single query instead of N per-chat
+  // round-trips. Group by channelId so each backfillChat call gets its
+  // slice without touching the DB again.
+  const chatIds = chats.map(c => c.id).filter(Boolean) as string[];
+  const allMsgs = chatIds.length
+    ? await msgRepo.find({
+        where: {channelId: {inq: chatIds}},
+        order: ['createdOn ASC'],
+      })
+    : [];
+  const msgsByChat = new Map<string, Message[]>();
+  for (const m of allMsgs) {
+    if (!m.channelId) continue;
+    const arr = msgsByChat.get(m.channelId) ?? [];
+    arr.push(m);
+    msgsByChat.set(m.channelId, arr);
+  }
   const summary: BackfillSummary = {
     seen: 0,
     created: 0,
@@ -295,12 +272,20 @@ async function backfill(): Promise<void> {
     messagesWritten: 0,
     errors: [],
   };
-  for (let i = 0; i < total; i += CHUNK_SIZE) {
-    const chunk = chats.slice(i, i + CHUNK_SIZE);
-    await backfillChunk(chunk, memory, msgRepo, summary);
-    console.log(
-      `[progress] ${summary.seen}/${total} seen | ${summary.created} created | ${summary.skipped} skipped | ${summary.errors.length} errors`,
-    );
+  for (const chat of chats) {
+    summary.seen++;
+    const msgs = msgsByChat.get(chat.id) ?? [];
+    try {
+      await backfillChat(chat, memory, msgs, summary);
+    } catch (err) {
+      summary.errors.push({chatId: chat.id, error: (err as Error).message});
+      console.error(`[error] chat ${chat.id}:`, (err as Error).message);
+    }
+    if (summary.seen % PROGRESS_EVERY === 0) {
+      console.log(
+        `[progress] ${summary.seen}/${chats.length} seen | ${summary.created} created | ${summary.skipped} skipped | ${summary.errors.length} errors`,
+      );
+    }
   }
   console.log('\n=== Backfill Summary ===');
   console.log(JSON.stringify(summary, null, 2));

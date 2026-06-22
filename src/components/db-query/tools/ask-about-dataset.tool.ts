@@ -1,11 +1,10 @@
 import {inject} from '@loopback/core';
-import {Agent} from '@mastra/core/agent';
+import {Mastra} from '@mastra/core';
 import {createTool} from '@mastra/core/tools';
 import type {Tool} from '@mastra/core/tools';
-import type {MastraModelConfig} from '@mastra/core/llm';
 import {z} from 'zod';
 import {IGraphTool} from '../../../graphs/types';
-import {AiIntegrationBindings} from '../../../keys';
+import {InternalBindings} from '../../../mastra/internal-bindings';
 import {DbQueryAIExtensionBindings} from '../keys';
 import {DbSchemaHelperService} from '../services';
 import {SchemaStore} from '../services/schema.store';
@@ -22,8 +21,8 @@ import type {IDataSetStore} from '../types';
 export class AskAboutDatasetTool implements IGraphTool {
   key = 'ask-about-dataset';
   constructor(
-    @inject(AiIntegrationBindings.ChatLLM, {optional: true})
-    private readonly chatLlm: MastraModelConfig | undefined,
+    @inject(InternalBindings.Mastra)
+    private readonly mastra: Mastra,
     @inject(DbQueryAIExtensionBindings.DatasetStore)
     private readonly store: IDataSetStore,
     @inject(DbQueryAIExtensionBindings.GlobalContext, {optional: true})
@@ -47,7 +46,7 @@ export class AskAboutDatasetTool implements IGraphTool {
           .string()
           .describe('The question that the user asked about the query.'),
       }),
-      execute: async ({datasetId, question}) => {
+      execute: async ({datasetId, question}, ctx) => {
         const {query, tables} = await this.store.findById(datasetId);
         const compressedSchema = this.schemaStore.filteredSchema(tables);
         const context = [
@@ -63,21 +62,16 @@ export class AskAboutDatasetTool implements IGraphTool {
           `and here is the user's question - ${question}`,
         ].join('\n');
 
-        const model = this.chatLlm ?? process.env.MASTRA_DEFAULT_CHAT_MODEL;
-        if (!model) {
-          throw new Error(
-            'ask-about-dataset: bind AiIntegrationBindings.ChatLLM ' +
-              'or set MASTRA_DEFAULT_CHAT_MODEL. No silent OpenAI fallback.',
-          );
-        }
-        const agent = new Agent({
-          id: 'ask-about-dataset-agent',
-          name: 'AskAboutDatasetAgent',
-          instructions:
-            'Answer the user question concisely. Do not reveal the underlying SQL.',
-          model,
+        // Use the agent registered on the singleton instead of constructing a
+        // new Agent per call. A registered agent's spans reach the configured
+        // observability exporter (Langfuse/LangSmith); a detached new Agent()
+        // emits no traces and re-builds model/instruction plumbing on every
+        // invocation. Pass requestContext so the per-request model binding
+        // (agentModel) is honoured and spans attach to the parent trace.
+        const agent = this.mastra.getAgent('ask-about-dataset-agent');
+        const result = await agent.generate(prompt, {
+          requestContext: ctx?.requestContext,
         });
-        const result = await agent.generate(prompt);
         return result.text ?? '';
       },
     });
