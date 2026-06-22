@@ -415,12 +415,6 @@ export class WorkflowRunner {
       [{role: 'user', content: augmentedQuery}],
       {
         maxSteps: MAX_AGENT_STEPS,
-        // Restore v2 LangGraph parity: the init-session node used tool_choice
-        // 'required' so the model cannot hallucinate a text answer on the first
-        // turn. Without this, Claude Sonnet answers data queries from training
-        // knowledge instead of calling get-data-as-dataset, silently returning
-        // fabricated results with no workflow trace.
-        toolChoice: 'required',
         abortSignal: abort,
         requestContext: ctx,
         memory: {thread: threadId, resource: resourceId},
