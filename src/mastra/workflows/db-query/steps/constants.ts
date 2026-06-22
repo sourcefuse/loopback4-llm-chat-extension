@@ -10,7 +10,10 @@ export const STEP_SQL_AND_VALIDATE = 'sql-and-validate';
 export const STEP_RETURN_CACHED = 'return-cached';
 export const STEP_SAVE_FROM_TEMPLATE = 'save-dataset-from-template';
 
-export type DbQueryStatus = 'AsIs' | 'FromTemplate' | 'Failed' | 'Continue';
+// 'Failed' was present in v2 but is unreachable in v4 — classifyPostCacheStatus
+// only returns 'AsIs', 'FromTemplate', or 'Continue'; removing it narrows the
+// union and eliminates the dead branch.
+export type DbQueryStatus = 'AsIs' | 'FromTemplate' | 'Continue';
 
 export function classifyPostCacheStatus(
   cacheHit: boolean,
@@ -20,6 +23,10 @@ export function classifyPostCacheStatus(
   if (templateMatched) return 'FromTemplate';
   return 'Continue';
 }
+
+/** Span/log label for the SQL-generation LLM call. Extracted to avoid the
+ *  Sonar S4325 duplicate-literal finding across logStepDetail + tracedGenerateText. */
+export const LABEL_SQL_GENERATION = 'sql-generation';
 
 export const inputSchema = z.object({
   prompt: z.string(),

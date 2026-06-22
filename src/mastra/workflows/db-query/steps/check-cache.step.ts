@@ -43,7 +43,7 @@ function docAt(
   docs: CacheDoc[],
   match: RegExpMatchArray,
 ): CacheDoc | undefined {
-  return docs[parseInt(match[1], 10) - 1];
+  return docs[Number.parseInt(match[1], 10) - 1];
 }
 
 // "Similar" → still regenerate (cacheHit:false), but seed SQL gen with the

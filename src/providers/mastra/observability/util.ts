@@ -15,7 +15,7 @@ export function parseSampleRate(
   fallback = 1.0,
 ): number {
   if (raw === undefined || raw === '') return fallback;
-  const parsed = parseFloat(raw);
+  const parsed = Number.parseFloat(raw);
   if (!Number.isFinite(parsed)) return fallback;
   if (parsed < 0) return 0;
   if (parsed > 1) return 1;

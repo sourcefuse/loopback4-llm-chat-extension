@@ -22,12 +22,17 @@ const stepDbg = debugFactory('ai-integration:steps');
  * was persisted). Returns '' for null/undefined.
  */
 export function idToString(v: unknown): string {
-  return v === null || v === undefined ? '' : String(v);
+  if (v === null || v === undefined) return '';
+  // Primitive id coercion: DB autoincrement IDs arrive as numbers; string IDs
+  // pass through unchanged. Object stringification ([object Object]) never
+  // occurs in practice — the function only receives number or string values.
+  return typeof v === 'object' ? JSON.stringify(v) : String(v);
 }
 import {
   LLMStreamEventType,
   type LLMStreamEvent,
 } from '../../../graphs/event.types';
+import {LABEL_SQL_GENERATION} from './steps/constants';
 
 /** Inferred return type of `generateText` without further constraining
  * the (tools, output) generics — used as `tracedGenerateText`'s return
@@ -279,7 +284,7 @@ export function resolveEnvTemperature(): number | undefined {
     process.env.BEDROCK_TEMPERATURE ??
     process.env.OPENAI_TEMPERATURE;
   if (raw === undefined || raw === '') return undefined;
-  const parsed = parseFloat(raw);
+  const parsed = Number.parseFloat(raw);
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
@@ -314,7 +319,7 @@ export function buildProviderOptions(
     // at all so the model uses its default (off for Bedrock/Anthropic).
     return undefined;
   }
-  const budgetTokens = parseInt(
+  const budgetTokens = Number.parseInt(
     process.env.CLAUDE_THINKING_BUDGET ?? '1024',
     10,
   );
@@ -841,10 +846,13 @@ export async function runSqlAttempt(args: {
 }): Promise<SqlAttemptResult> {
   const stage = await runGenerationStage(args);
   if (stage.error) {
-    logStepDetail('sql-generation', `SQL generation failed: ${stage.error}`);
+    logStepDetail(
+      LABEL_SQL_GENERATION,
+      `SQL generation failed: ${stage.error}`,
+    );
     return {sql: stage.sql, passed: false, feedback: stage.error};
   }
-  logStepDetail('sql-generation', `Generated SQL query: ${stage.sql}`);
+  logStepDetail(LABEL_SQL_GENERATION, `Generated SQL query: ${stage.sql}`);
   const verdict = await runValidationStage({
     sql: stage.sql,
     chatLlm: args.chatLlm,
@@ -943,7 +951,7 @@ export async function generateSqlOnce(
       model: chatLlm,
       prompt: promptTemplate,
       tracing,
-      label: 'sql-generation',
+      label: LABEL_SQL_GENERATION,
       resultType: 'planning',
     });
     return {sql: stripSqlFences(result.text)};

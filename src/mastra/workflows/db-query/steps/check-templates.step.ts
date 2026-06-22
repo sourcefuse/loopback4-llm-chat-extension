@@ -61,7 +61,7 @@ Return 'match <index>' for an exact match or 'no_match'. No other text.`;
           STEP_CHECK_TEMPLATES,
           'Matched query template',
         );
-        const idx = parseInt(match[1], 10) - 1;
+        const idx = Number.parseInt(match[1], 10) - 1;
         const doc = docs[idx];
         if (doc?.metadata?.id) {
           logStepDetail(

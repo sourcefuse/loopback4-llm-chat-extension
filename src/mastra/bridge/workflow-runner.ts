@@ -108,7 +108,8 @@ function asToolArgs(value: unknown): RecordLike {
  */
 function toErrorMessage(err: unknown, fallback: string): string {
   if (err instanceof Error) return err.message ?? fallback;
-  return String(err ?? fallback);
+  if (err === null || err === undefined) return fallback;
+  return typeof err === 'object' ? fallback : String(err);
 }
 
 function toolCallEvent(payload: unknown): LLMStreamEvent {
@@ -616,8 +617,11 @@ export class WorkflowRunner {
   }
 
   private resolveFileSummaryModelConfig(): MastraModelConfig | undefined {
-    if (this.chatLlm) return this.chatLlm;
+    // fileLlm FIRST — consumers bind a vision/file-capable model there specifically
+    // for file summarisation. chatLlm is the fallback when no dedicated file model
+    // is bound (the v2 behaviour: SummariseFileNode used FileLLM with chatLlm fallback).
     if (this.fileLlm) return this.fileLlm;
+    if (this.chatLlm) return this.chatLlm;
     const defaultModel = process.env.MASTRA_DEFAULT_CHAT_MODEL;
     return defaultModel ? toModelRouterFallbackConfig(defaultModel) : undefined;
   }
