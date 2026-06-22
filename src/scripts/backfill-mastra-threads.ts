@@ -147,7 +147,9 @@ async function countSavedMessages(
 }
 
 async function resolveMemory(app: BootableApplication): Promise<MemoryLike> {
-  const mastra = await app.get(InternalBindings.Mastra);
+  const mastra = (await app.get(
+    InternalBindings.Mastra,
+  )) as import('@mastra/core').Mastra;
   const memory = await mastra.getAgent('chatAgent')?.getMemory();
   if (!memory) {
     throw new Error(
