@@ -94,13 +94,13 @@ It does not return anything, instead it fires an event internally that renders t
       );
     }
     const run = await workflow.createRun();
-    // Do NOT forward `tracing: ctx.tracing` — on follow-up turns it carries a
-    // stale traceId and the workflow spans get orphaned/dropped. Self-root so
-    // the workflow is always a complete (separate) trace. See get-data-as-
-    // dataset for the full rationale.
+    // Forward tool tracing context so the workflow nests under the agent's
+    // root span (one trace per /reply). See get-data-as-dataset for the
+    // long version of this rationale.
     const result = await run.start({
       inputData: {datasetId, userQuery, type: requestedType},
       requestContext: ctx.requestContext,
+      tracing: ctx.tracing,
     });
     if (result.status === 'suspended') {
       // HITL — emit AwaitingApproval, return empty. Resume in v3.1.
