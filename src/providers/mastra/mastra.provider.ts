@@ -105,6 +105,11 @@ export class MastraProvider implements Provider<Mastra> {
       rc: RequestContext | undefined,
       key: string,
     ): T | undefined => rc?.get(key) as T | undefined;
+    // TokenLimiter trims the oldest non-system messages to fit `tokenBudget`.
+    // Budget must exceed the system prompt (directives + host systemContext) —
+    // the limiter cannot trim system messages, so a too-low budget HARD-BLOCKS
+    // the request. Default (DEFAULT_MAX_TOKEN_COUNT) is sized for that; override
+    // with MAX_TOKEN_COUNT only to a value that still clears your system prompt.
     const tokenBudget = process.env.MAX_TOKEN_COUNT
       ? Number.parseInt(process.env.MAX_TOKEN_COUNT, 10)
       : DEFAULT_MAX_TOKEN_COUNT;
