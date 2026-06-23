@@ -24,3 +24,21 @@ export const CHAT_AGENT_DIRECTIVES: readonly string[] = [
   'Do not make assumptions about the user intent beyond what is explicitly provided in the prompt; keep this in mind while choosing a tool — e.g. do NOT generate a visualization unless a chart/graph was explicitly requested.',
   'Do not hallucinate details, show internal IDs, or use technical jargon in your reply.',
 ];
+
+/**
+ * Assemble the per-request chat-agent system prompt: the shared directives, the
+ * current date, then the host's `systemContext`. Restores the v2
+ * init-session.node ordering (directives → `Current date is …` → context).
+ * The date is passed in (defaulting to now) so the prompt reflects the request
+ * time and stays unit-testable. Shared by WorkflowRunner.buildInstructions.
+ */
+export function buildChatInstructions(
+  systemContext: readonly string[] = [],
+  now: Date = new Date(),
+): string {
+  return [
+    ...CHAT_AGENT_DIRECTIVES,
+    `Current date is ${now.toDateString()}`,
+    ...systemContext,
+  ].join('\n');
+}

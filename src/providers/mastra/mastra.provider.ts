@@ -10,7 +10,7 @@ import type {RequestContext} from '@mastra/core/request-context';
 import type {Observability} from '@mastra/observability';
 import {AiIntegrationBindings} from '../../keys';
 import {TokenLimiter} from '@mastra/core/processors';
-import {CHAT_AGENT_DIRECTIVES} from '../../mastra/chat-agent-instructions';
+import {buildChatInstructions} from '../../mastra/chat-agent-instructions';
 import {DEFAULT_MAX_TOKEN_COUNT} from '../../constant';
 import {InternalBindings} from '../../mastra/internal-bindings';
 import {generateQueryWorkflow} from '../../mastra/workflows/db-query/workflows/generate.workflow';
@@ -87,10 +87,12 @@ export class MastraProvider implements Provider<Mastra> {
     // tool rejects anything unsuitable. The earlier softer wording let weaker
     // chat models (e.g. gemini-2.5-flash) narrate instead of calling the tool,
     // and assume a chart was wanted when it wasn't.
-    const defaultInstructions = [
-      ...CHAT_AGENT_DIRECTIVES,
-      ...(this.systemContext ?? []),
-    ].join('\n');
+    // Fallback instructions for out-of-band paths (Studio / MCP) with no
+    // per-request RequestContext. buildChatInstructions adds the current date
+    // (v2 init-session parity) and appends host systemContext; computed inside
+    // the agent's instructions function below so the date stays fresh on a
+    // long-lived process.
+    const systemContext = this.systemContext;
 
     // Dynamic, request-resolved ChatAgent. The REQUEST-scoped WorkflowRunner
     // streams THIS registered agent (via `mastra.getAgent('chatAgent')`) and
@@ -119,7 +121,7 @@ export class MastraProvider implements Provider<Mastra> {
       name: 'ChatAgent',
       instructions: ({requestContext}) =>
         pick<string>(requestContext, 'agentInstructions') ??
-        defaultInstructions,
+        buildChatInstructions(systemContext),
       model: ({requestContext}) =>
         pick<MastraModelConfig>(requestContext, 'agentModel') ?? defaultModel,
       tools: ({requestContext}) =>

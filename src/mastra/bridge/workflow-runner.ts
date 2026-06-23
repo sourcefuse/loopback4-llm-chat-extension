@@ -16,7 +16,7 @@ import {generateText, type LanguageModel} from 'ai';
 import {AiIntegrationBindings, IRunRegistry} from '../../keys';
 import {CHAT_TITLE_MAX_LENGTH} from '../../constant';
 import {InternalBindings} from '../internal-bindings';
-import {CHAT_AGENT_DIRECTIVES} from '../chat-agent-instructions';
+import {buildChatInstructions} from '../chat-agent-instructions';
 import {deriveResourceId} from '../resource-id.util';
 import {LLMStreamEvent, LLMStreamEventType} from '../../graphs/event.types';
 import {ToolStore, ToolStatus} from '../../graphs/types';
@@ -677,7 +677,14 @@ export class WorkflowRunner {
     // instead of calling the query tool — the "LLM did not call the query
     // tool" routing miss. The shared forceful "MUST call the closest tool"
     // wording suppresses it.
-    return [...CHAT_AGENT_DIRECTIVES, ...(this.systemContext ?? [])].join('\n');
+    //
+    // `Current date is …` restores v2 init-session.node: without it the agent
+    // has no notion of "today", so relative-time questions ("joined last
+    // month", "this year", "latest") resolve against the model's stale
+    // training cutoff. buildChatInstructions computes it per request and
+    // appends the host `systemContext` last (v2 order: directives, date,
+    // context).
+    return buildChatInstructions(this.systemContext);
   }
 
   /**
