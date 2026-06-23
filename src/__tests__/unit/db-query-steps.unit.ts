@@ -193,6 +193,50 @@ describe('db-query workflow steps (unit)', () => {
       sinon.assert.calledWith(checkPermissions, 'ds-9');
     });
 
+    // v2 CheckCacheNode parity: a malformed judge index degrades to a miss
+    // (regenerate) rather than throwing or serving a wrong dataset.
+    it('AsIs verdict with an out-of-bounds index degrades to a cache MISS', async () => {
+      const invoke = sinon
+        .stub()
+        .resolves([{pageContent: 'p', metadata: {id: 'ds-1'}}]);
+      const helpers = await import('../../mastra/workflows/db-query/_helpers');
+      sinon
+        .stub(helpers, 'tracedGenerateText')
+        .resolves({text: 'AsIs 9'} as Awaited<
+          ReturnType<typeof helpers.tracedGenerateText>
+        >);
+
+      const out = await runCheckCache(
+        {prompt: 'x'},
+        makeRc({
+          queryCache: {invoke},
+          chatLlm: {modelId: 'mock'} as MastraRcShape['chatLlm'],
+        }),
+      );
+      expect(out).to.eql({cacheHit: false});
+    });
+
+    it('AsIs verdict with a non-numeric index degrades to a cache MISS', async () => {
+      const invoke = sinon
+        .stub()
+        .resolves([{pageContent: 'p', metadata: {id: 'ds-1'}}]);
+      const helpers = await import('../../mastra/workflows/db-query/_helpers');
+      sinon
+        .stub(helpers, 'tracedGenerateText')
+        .resolves({text: 'AsIs abc'} as Awaited<
+          ReturnType<typeof helpers.tracedGenerateText>
+        >);
+
+      const out = await runCheckCache(
+        {prompt: 'x'},
+        makeRc({
+          queryCache: {invoke},
+          chatLlm: {modelId: 'mock'} as MastraRcShape['chatLlm'],
+        }),
+      );
+      expect(out).to.eql({cacheHit: false});
+    });
+
     it('Similar verdict is a cache MISS that seeds SQL gen with the validated example (sampleSql)', async () => {
       const invoke = sinon
         .stub()
@@ -670,9 +714,9 @@ describe('db-query workflow steps (unit)', () => {
       };
       expect(out.datasetId).to.equal('');
       expect(out.sql).to.equal('');
-      // …and a non-empty failure message (never a silent empty dataset).
-      expect(out.replyToUser).to.be.a.String();
-      expect(out.replyToUser?.length).to.be.greaterThan(0);
+      // …and the generic rephrase message when no upstream reply/feedback
+      // exists (v2 FailedNode default).
+      expect(out.replyToUser).to.match(/rephrasing it or adding more detail/);
     });
 
     it('surfaces the last validation feedback in the failure message', async () => {

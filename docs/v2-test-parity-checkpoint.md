@@ -65,21 +65,34 @@ These v2 tests have NO Mastra analogue by design (mechanism replaced):
 | get-tables filters unauthorized tables + strips schema prefix | db-query-steps.unit.ts getTablesStep |
 | check-cache AsIs missing-perms → regenerate | db-query-steps.unit.ts checkCacheStep |
 | Current date + systemContext in chat prompt | chat-instructions.unit.ts |
+| check-cache out-of-bounds / non-numeric judge index → miss | db-query-steps.unit.ts checkCacheStep |
+| buildImproveSqlPrompt embeds validation checklist | generate-helpers.unit.ts |
+| buildDatasetReadout AI data-access gate (readAccessForAI off/on, cap, fail-safe) | dataset-readout.unit.ts |
+| failedStep generic default-message text | db-query-steps.unit.ts failedStep |
 
-## Remaining gaps (tracked, see follow-up)
+## Re-classified on inspection (were suspected gaps, are N-A by design)
 
-Testable unit gaps still open (behaviour exists, low risk):
-- check-cache invalid/non-numeric LLM index → miss
-- sql-gen historical/baseline feedback-block rendering
-- fix-query empty-LLM → Failed + replyToUser; checklist/historical in improve prompt
-- semantic-validator available-tables + error-tables + feedback in judge prompt
-- save-dataset `readAccessForAI` → resultArray readout
-- get-columns PK/column selection (pickRelevantTables)
-- end-session per-model token map + thread-metadata persistence
-- failedStep exact default-message text
-- summarise-file no-file passthrough + multi-file merge
+- **sql-gen multiple/historical & baseline-sample feedback blocks** — Mastra
+  `buildGenerateSqlPrompt` takes a single `feedback` string (no historical
+  block) and a single sample path; the single-feedback rendering is tested.
+- **fix-query historical errors / per-error schema trim** — single feedback;
+  trim folded into `classifySqlError`.
+- **semantic-validator `<available-tables>` injection** — Mastra
+  `validateSqlSemantic` does not reselect tables; the judge prompt embeds the
+  checklist + request + SQL (verdict parse tested). No table-search analogue.
+- **get-columns PK/column trimming** — `pickRelevantTables` returns only the
+  table list (`{kind:'tables'}`); all columns flow downstream, so PKs are
+  always present. Column-level narrowing was dropped as a prompt-size
+  optimisation, not a correctness/permission behaviour.
 
-LLM end-to-end acceptance (RUN_WITH_LLM, real model) — `generationAcceptanceBuilder`
-exists in `src/components/db-query/testing/` but is not yet wired into a
-`src/__tests__/` file. Wiring restores the v2 get-tables + db-query.graph
-acceptance suites (the strongest "is the app generic" signal).
+## Remaining open (follow-up)
+
+- **end-session per-model token map + thread-metadata persistence** — the
+  coalesced total is tested (workflow-runner.unit.ts); the per-model breakdown
+  + `updateThread`-metadata persist are not yet asserted.
+- **summarise-file** no-file passthrough + multi-file per-pass merge content.
+- **LLM end-to-end acceptance** (RUN_WITH_LLM, real model) —
+  `generationAcceptanceBuilder` exists in `src/components/db-query/testing/`
+  but is not yet wired into a `src/__tests__/` file. Wiring restores the v2
+  get-tables + db-query.graph acceptance suites (strongest "app is generic"
+  signal); gated off in CI.

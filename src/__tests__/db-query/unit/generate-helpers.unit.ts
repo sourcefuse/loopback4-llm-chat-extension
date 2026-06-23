@@ -147,6 +147,17 @@ describe('db-query generate helpers (unit)', () => {
       expect(p).to.match(/also show currency/);
       expect(p).to.match(/add the join/);
     });
+
+    it('embeds the validation checklist when provided (v2 fix-query parity)', () => {
+      const p = buildImproveSqlPrompt({
+        prompt: 'p',
+        tables: ['employees'],
+        originalSql: 'SELECT 1',
+        checklist: 'Must filter by active = true',
+      });
+      expect(p).to.match(/Validation checklist:/);
+      expect(p).to.match(/Must filter by active = true/);
+    });
   });
 
   describe('generateSqlOnce', () => {
