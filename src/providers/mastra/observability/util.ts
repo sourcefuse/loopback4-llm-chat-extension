@@ -74,12 +74,15 @@ export function makeObservability(
           type: SamplingStrategyType.RATIO,
           probability: parseSampleRate(process.env.OTEL_SAMPLE_RATE),
         },
-        // During streaming, every text-delta and tool-step emits a span.
-        // Without this, Langfuse/LangSmith receives one span per token on
-        // the hot path — high export overhead + trace noise. These chunk/step
-        // spans carry no actionable debug info; the parent MODEL_GENERATION
-        // span already captures the full I/O and token usage.
-        excludeSpanTypes: [SpanType.MODEL_CHUNK, SpanType.MODEL_STEP],
+        // Exclude only MODEL_CHUNK — the per-token streaming deltas that flood
+        // the exporter (hundreds per request) and carry no actionable debug
+        // info; the parent MODEL_GENERATION span already has the full I/O.
+        // Do NOT exclude MODEL_STEP: the agent's tool-calling step spans are
+        // the PARENT of the tool + nested db-query/visualization workflow
+        // subtree. Excluding MODEL_STEP orphans that entire subtree (the
+        // exporter drops children whose parent was never exported), which is
+        // why traces showed only ~6 spans with no workflow on every turn.
+        excludeSpanTypes: [SpanType.MODEL_CHUNK],
       },
     },
   });
