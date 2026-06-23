@@ -85,14 +85,26 @@ These v2 tests have NO Mastra analogue by design (mechanism replaced):
   always present. Column-level narrowing was dropped as a prompt-size
   optimisation, not a correctness/permission behaviour.
 
-## Remaining open (follow-up)
+## LLM end-to-end acceptance — ported (Akshat-approved)
+
+The v2 real-LLM suites (`get-tables-node.acceptance` 4 cases + `db-query.graph.acceptance`
+2 cases) were ported into `src/__tests__/acceptance/generation.controllers.acceptance.ts`
+as two `RUN_WITH_LLM`-gated describes (6 pending in CI, run manually with a real
+model). v2 used `GetTablesNode`/`DbQueryGraph` (removed in Mastra), so:
+- End-to-end data cases assert `datasetStore.getData(id)` rows — incl. the
+  currency-conversion value check **Charlie White → 9952.61 USD** and
+  salary > 8000 → Charlie White, Nameless Gonbei.
+- Table-selection cases assert the persisted **dataset.tables CONTAINS** each
+  expected table (faithful contains-check; Mastra has no standalone get-tables
+  node). 4 prompts: joined-last-month, salary>1000 USD, currencies-without-rates,
+  latest-rate-per-currency.
+
+Note: Bizbook (consumer) also runs its own broader real-LLM cases; these are the
+**package's own** self-contained parity tests using the repo's seed fixtures.
+
+## Remaining open (minor)
 
 - **end-session per-model token map + thread-metadata persistence** — the
   coalesced total is tested (workflow-runner.unit.ts); the per-model breakdown
   + `updateThread`-metadata persist are not yet asserted.
 - **summarise-file** no-file passthrough + multi-file per-pass merge content.
-- **LLM end-to-end acceptance** (RUN_WITH_LLM, real model) —
-  `generationAcceptanceBuilder` exists in `src/components/db-query/testing/`
-  but is not yet wired into a `src/__tests__/` file. Wiring restores the v2
-  get-tables + db-query.graph acceptance suites (strongest "app is generic"
-  signal); gated off in CI.
