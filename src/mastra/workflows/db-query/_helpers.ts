@@ -220,9 +220,10 @@ export async function loadCachedSampleQuery(
 export function shouldUseCheapForSqlGen(
   config: DbQueryConfig | undefined,
   tableCount: number,
-  isRetry: boolean,
+  priorAttempts: number,
 ): boolean {
-  if (isRetry) return true;
+  // any prior attempt means this is a validation-fix retry
+  if (priorAttempts > 0) return true;
   const forceSmartSingle =
     config?.nodes?.sqlGenerationNode?.useSmartLLMForSingleTableQueries === true;
   return tableCount <= 1 && !forceSmartSingle;

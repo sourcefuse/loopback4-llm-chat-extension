@@ -641,19 +641,19 @@ describe('db-query generate helpers (unit)', () => {
 
   describe('shouldUseCheapForSqlGen (tier selection)', () => {
     it('cheap on a validation-fix retry regardless of table count', () => {
-      expect(shouldUseCheapForSqlGen(undefined, 5, true)).to.be.true();
+      expect(shouldUseCheapForSqlGen(undefined, 5, 1)).to.be.true();
     });
     it('cheap on a single-table first attempt', () => {
-      expect(shouldUseCheapForSqlGen(undefined, 1, false)).to.be.true();
+      expect(shouldUseCheapForSqlGen(undefined, 1, 0)).to.be.true();
     });
     it('smart on a multi-table first attempt', () => {
-      expect(shouldUseCheapForSqlGen(undefined, 3, false)).to.be.false();
+      expect(shouldUseCheapForSqlGen(undefined, 3, 0)).to.be.false();
     });
     it('smart for single-table when the consumer forces it', () => {
       const config = {
         nodes: {sqlGenerationNode: {useSmartLLMForSingleTableQueries: true}},
       } as never;
-      expect(shouldUseCheapForSqlGen(config, 1, false)).to.be.false();
+      expect(shouldUseCheapForSqlGen(config, 1, 0)).to.be.false();
     });
   });
 

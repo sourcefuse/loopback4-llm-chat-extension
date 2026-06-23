@@ -67,9 +67,13 @@ function unanswerableShortCircuit(data: {
 function pickGenLlm(
   rc: Parameters<typeof getCheapLlm>[0],
   tableCount: number,
-  isRetry: boolean,
+  priorAttempts: number,
 ) {
-  return shouldUseCheapForSqlGen(getDbQueryConfig(rc), tableCount, isRetry)
+  return shouldUseCheapForSqlGen(
+    getDbQueryConfig(rc),
+    tableCount,
+    priorAttempts,
+  )
     ? getCheapLlm(rc)
     : getSmartLlm(rc);
 }
@@ -157,7 +161,7 @@ export const sqlAndValidateStep = createStep({
         ?.generateDescription !== false;
 
     const attempt = await runSqlAttempt({
-      chatLlm: pickGenLlm(requestContext, tables.length, priorAttempts > 0),
+      chatLlm: pickGenLlm(requestContext, tables.length, priorAttempts),
       cheapLlm: getCheapLlm(requestContext),
       allTables: getAllSchemaTables(schemaStore),
       tracing: tracingContext,

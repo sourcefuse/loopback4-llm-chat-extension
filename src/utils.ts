@@ -60,10 +60,22 @@ export function stripThinkingTokens(text: unknown): string {
       ? getTextContent((text as {content?: unknown}).content)
       : getTextContent(text);
   // remove all the content between <think> and <thinking> tags
-  let stripped = message.replace(/<think(ing)?>.*?<\/think(ing)?>/gs, '');
-  // also strip any string that ends with <thinking> or <think>
-  stripped = stripped.replace(/.*?<\/think(ing)?>/gs, '');
-  return stripped.trim();
+  const stripped = message.replace(/<think(ing)?>.*?<\/think(ing)?>/gs, '');
+  // Also drop any orphaned leading reasoning: everything up to and including
+  // the LAST closing think tag (covers streamed output where the opening tag
+  // was already consumed). Done with lastIndexOf rather than a `.*?</think>`
+  // regex — the unanchored lazy pattern backtracks super-linearly (S8786) on
+  // input that has no closing tag, e.g. a long plain answer.
+  return stripBeforeLastClosingThinkTag(stripped).trim();
+}
+
+function stripBeforeLastClosingThinkTag(text: string): string {
+  let cut = -1;
+  for (const tag of ['</thinking>', '</think>']) {
+    const idx = text.lastIndexOf(tag);
+    if (idx !== -1) cut = Math.max(cut, idx + tag.length);
+  }
+  return cut === -1 ? text : text.slice(cut);
 }
 
 export function approxTokenCounter(content: unknown): number {
