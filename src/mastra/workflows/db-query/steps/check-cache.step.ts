@@ -5,6 +5,7 @@ import {z} from 'zod';
 import {
   emitToolStatus,
   getCheapLlm,
+  getDataSetHelper,
   getDatasetStore,
   getQueryCache,
   idToString,
@@ -79,6 +80,26 @@ async function resolveAsIs(
   const doc = docAt(docs, match);
   if (!doc?.metadata?.id) return MISS;
   const datasetId = idToString(doc.metadata.id);
+
+  // Re-check table permissions on the cached dataset before reusing it (v2
+  // CheckCacheNode parity). A semantic-cache hit can surface another user's
+  // dataset in the same tenant; if THIS user lacks permission on its tables,
+  // regenerate instead of serving it. The read-time ACL would block delivery
+  // anyway, but skipping here gives the user a fresh, answerable query rather
+  // than an Unauthorized error. Fail-open when no DataSetHelper is bound.
+  const dataSetHelper = getDataSetHelper(rc);
+  if (dataSetHelper) {
+    const missing = await dataSetHelper.checkPermissions(datasetId);
+    if (missing.length > 0) {
+      emitToolStatus(
+        rc,
+        STEP_CHECK_CACHE,
+        'Cached result needs tables you cannot access — generating a fresh query',
+      );
+      return MISS;
+    }
+  }
+
   const store = getDatasetStore(rc);
   if (store && !(await isCachedDatasetUsable(store, datasetId))) {
     emitToolStatus(

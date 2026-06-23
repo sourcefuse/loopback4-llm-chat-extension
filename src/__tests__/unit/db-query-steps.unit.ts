@@ -51,6 +51,8 @@ describe('db-query workflow steps (unit)', () => {
       rc.set('templateStore', overrides.templateStore);
     if (overrides.permissionHelper)
       rc.set('permissionHelper', overrides.permissionHelper);
+    if (overrides.dataSetHelper)
+      rc.set('dataSetHelper', overrides.dataSetHelper);
     return rc;
   }
 
@@ -160,6 +162,35 @@ describe('db-query workflow steps (unit)', () => {
       expect(out.datasetId).to.equal('ds-7');
       const status = events.find(e => e.type === LLMStreamEventType.ToolStatus);
       expect(status).to.not.be.undefined();
+    });
+
+    // v2 CheckCacheNode parity: an AsIs cache hit on a dataset the user lacks
+    // table permission for must NOT be served — regenerate instead. (A
+    // semantic-cache hit can surface another user's dataset in the same
+    // tenant.) Restores the dropped check-cache permission test.
+    it('AsIs cache hit on a dataset with missing permissions regenerates (no reuse)', async () => {
+      const invoke = sinon
+        .stub()
+        .resolves([{pageContent: 'salaries', metadata: {id: 'ds-9'}}]);
+      const helpers = await import('../../mastra/workflows/db-query/_helpers');
+      sinon
+        .stub(helpers, 'tracedGenerateText')
+        .resolves({text: 'AsIs 1'} as Awaited<
+          ReturnType<typeof helpers.tracedGenerateText>
+        >);
+      const checkPermissions = sinon.stub().resolves(['view_salaries']);
+
+      const out = await runCheckCache(
+        {prompt: 'salaries'},
+        makeRc({
+          queryCache: {invoke},
+          chatLlm: {modelId: 'mock'} as MastraRcShape['chatLlm'],
+          dataSetHelper: {checkPermissions} as never,
+        }),
+      );
+
+      expect(out).to.eql({cacheHit: false});
+      sinon.assert.calledWith(checkPermissions, 'ds-9');
     });
 
     it('Similar verdict is a cache MISS that seeds SQL gen with the validated example (sampleSql)', async () => {
@@ -419,6 +450,51 @@ describe('db-query workflow steps (unit)', () => {
         }),
       );
       expect(out).to.eql({tables: []});
+    });
+
+    // v2 get-tables.node `_filterByPermissions` parity: tables the user has no
+    // read permission for are dropped before the SQL generator ever sees the
+    // schema, so the query can only reference accessible tables.
+    it('filters out tables the user lacks permission for', async () => {
+      const get = sinon.stub().returns({
+        tables: Object.fromEntries([
+          ['employees', {}],
+          ['salaries', {}],
+        ]),
+      });
+      // user can read employees but not salaries
+      const findMissingPermissions = sinon
+        .stub()
+        .callsFake((t: string[]) =>
+          t[0] === 'salaries' ? ['view_salaries'] : [],
+        );
+
+      const out = await runGetTables(
+        makeRc({
+          schemaStore: {get} as never,
+          permissionHelper: {findMissingPermissions} as never,
+        }),
+      );
+
+      expect(out.tables).to.eql(['employees']);
+    });
+
+    it('strips the schema prefix before the permission lookup', async () => {
+      const get = sinon.stub().returns({
+        tables: Object.fromEntries([['main.employees', {}]]),
+      });
+      const findMissingPermissions = sinon.stub().returns([]);
+
+      const out = await runGetTables(
+        makeRc({
+          schemaStore: {get} as never,
+          permissionHelper: {findMissingPermissions} as never,
+        }),
+      );
+
+      expect(out.tables).to.eql(['main.employees']);
+      // lookup uses the bare table name, not the schema-qualified one
+      sinon.assert.calledWith(findMissingPermissions, ['employees']);
     });
   });
 
