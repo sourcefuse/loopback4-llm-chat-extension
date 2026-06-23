@@ -115,7 +115,12 @@ export class ChatController {
       createdOn: m.createdAt ?? m.createdOn,
       role,
     };
-    const mId = String(m.id);
+    const mId =
+      typeof m.id === 'string'
+        ? m.id
+        : typeof m.id === 'number'
+          ? String(m.id)
+          : '';
     const out = chatMessageParts(m.content)
       .map((raw, i) => partToMessage(raw, base, type, baseMeta, mId, i))
       .filter((x): x is Record<string, unknown> => x !== null);
@@ -340,7 +345,8 @@ function readToolResult(result: unknown): {
     };
     return {
       body: typeof r.description === 'string' ? r.description : '',
-      existingDatasetId: r.datasetId != null ? String(r.datasetId) : undefined,
+      existingDatasetId:
+        typeof r.datasetId === 'string' ? r.datasetId : undefined,
       visualization: r.visualization,
       config: r.chartConfig ?? r.config,
     };

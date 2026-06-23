@@ -32,7 +32,7 @@ export function withGoogleTaskType(
           providerOptions: {
             ...options.providerOptions,
             // a caller-supplied taskType (if any) overrides the default
-            google: {taskType, ...(options.providerOptions?.google ?? {})},
+            google: {taskType, ...options.providerOptions?.google},
           },
         });
     },

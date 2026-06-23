@@ -26,7 +26,7 @@ import {AuthenticationBindings} from 'loopback4-authentication';
 
 function parseData(prompt: string, data: Record<string, string>) {
   for (const key of Object.keys(data)) {
-    const value = data[key].split(' ').join('%').split('_').join('%');
+    const value = data[key].replaceAll(' ', '%').replaceAll('_', '%');
     prompt = prompt.replace(new RegExp(String.raw`\<${key}\>`, 'g'), value);
   }
   return prompt;

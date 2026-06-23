@@ -97,7 +97,7 @@ async function loadConsumerApp(): Promise<BootableApplication> {
   const Ctor =
     mod.default ?? mod.Application ?? mod.MyApp ?? Object.values(mod)[0];
   if (typeof Ctor !== 'function') {
-    throw new Error(
+    throw new TypeError(
       `Could not locate an Application constructor in ${modulePath}. Export it as default, Application, or MyApp.`,
     );
   }

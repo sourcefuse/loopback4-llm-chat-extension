@@ -1,4 +1,4 @@
-import {randomUUID} from 'crypto';
+import {randomUUID} from 'node:crypto';
 import debugFactory from 'debug';
 
 const debug = debugFactory('ai-integration:workflow-runner');
@@ -108,8 +108,9 @@ function asToolArgs(value: unknown): RecordLike {
  */
 function toErrorMessage(err: unknown, fallback: string): string {
   if (err instanceof Error) return err.message ?? fallback;
-  if (err === null || err === undefined) return fallback;
-  return typeof err === 'object' ? fallback : String(err);
+  if (typeof err === 'string') return err;
+  if (typeof err === 'number' || typeof err === 'boolean') return String(err);
+  return fallback;
 }
 
 function toolCallEvent(payload: unknown): LLMStreamEvent {
@@ -160,9 +161,9 @@ function chunkErrorEvent(payload: unknown): LLMStreamEvent {
  * multer.single shape); multi-file uploads land as an array. Normalise
  * so callers only deal with the array case.
  */
-function normaliseFileList(
-  files: Express.Multer.File[] | Express.Multer.File | undefined,
-): Express.Multer.File[] {
+type MulterFileInput = Express.Multer.File[] | Express.Multer.File | undefined;
+
+function normaliseFileList(files: MulterFileInput): Express.Multer.File[] {
   if (Array.isArray(files)) return files;
   return files ? [files] : [];
 }
@@ -808,7 +809,8 @@ export class WorkflowRunner {
       // Mastra only auto-titles when MASTRA_GENERATE_TITLE is on (an extra LLM
       // call). A prompt-derived title is free and matches main's behaviour.
       const trimmed = prompt?.trim().slice(0, CHAT_TITLE_MAX_LENGTH);
-      // ternary (not ??) so an empty prompt yields undefined, not ''
+      // ternary (not ??) so an empty prompt yields undefined, not '' — and
+      // not `||` which trips @typescript-eslint/prefer-nullish-coalescing.
       const title = trimmed ? trimmed : undefined;
       const thread = await memory.createThread({resourceId, title});
       emitInit(thread.id);

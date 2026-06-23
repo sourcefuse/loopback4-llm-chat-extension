@@ -10,10 +10,7 @@ import {LangSmithExporter} from '@mastra/langsmith';
  * the observability exporter from booting with `NaN` or a negative /
  * >1 probability that would silently break sampling.
  */
-export function parseSampleRate(
-  raw: string | undefined,
-  fallback = 1.0,
-): number {
+export function parseSampleRate(raw: string | undefined, fallback = 1): number {
   if (raw === undefined || raw === '') return fallback;
   const parsed = Number.parseFloat(raw);
   if (!Number.isFinite(parsed)) return fallback;
