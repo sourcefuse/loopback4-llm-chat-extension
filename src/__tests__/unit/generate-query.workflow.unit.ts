@@ -184,6 +184,7 @@ describe('generateQueryWorkflow (DAG branching, unit)', () => {
     sinon.stub(helpers, 'resolveTemplateById').resolves({
       sql: 'SELECT 1 FROM tmpl',
       description: 'from template',
+      tables: ['tmpl_table'],
     });
     sinon.stub(helpers, 'computeSchemaHash').returns({
       schemaHash: 'abc',
@@ -227,6 +228,9 @@ describe('generateQueryWorkflow (DAG branching, unit)', () => {
     const persisted = create.firstCall.args[0] as Record<string, unknown>;
     expect(persisted.query).to.equal('SELECT 1 FROM tmpl');
     expect(persisted.tenantId).to.equal('t1');
+    // Tier 1: the template's authoritative table is persisted on the dataset
+    // so the read-time ACL (DataSetHelper.getDataFromDataset) gates on it.
+    expect(persisted.tables as string[]).to.containEql('tmpl_table');
   });
 
   // ──────────────────────────────────────────────────────────

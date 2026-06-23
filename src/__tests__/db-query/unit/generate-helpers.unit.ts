@@ -13,6 +13,7 @@ import {
   loadCachedSampleQuery,
   pickRelevantTables,
   resolvePersistDeps,
+  resolveTemplateById,
   runSqlAttempt,
   shouldUseCheapForSqlGen,
   stripJsonFences,
@@ -636,6 +637,67 @@ describe('db-query generate helpers (unit)', () => {
         findById: async () => ({id: 'd1', query: '', actions: []}),
       } as never;
       expect(await loadCachedSampleQuery(store, 'd1', 'q')).to.be.undefined();
+    });
+  });
+
+  describe('resolveTemplateById (template SQL + authoritative tables)', () => {
+    const templateStore = {
+      findById: async () => ({
+        id: 'tmpl-1',
+        tables: ['employees', 'salaries'],
+        template: 'SELECT * FROM salaries',
+      }),
+    } as never;
+
+    it('returns the resolved SQL together with the template tables', async () => {
+      const templateHelper = {
+        resolveTemplate: async () => ({
+          sql: 'SELECT * FROM salaries',
+          description: 'salary report',
+        }),
+      } as never;
+
+      const r = await resolveTemplateById({
+        templateStore,
+        templateHelper,
+        schemaStore: undefined,
+        templateId: 'tmpl-1',
+        prompt: 'salaries',
+      });
+
+      // tables come from the template, NOT the get-tables guess — this is what
+      // lets the read-time ACL gate on every table the template SQL reads.
+      expect(r).to.eql({
+        sql: 'SELECT * FROM salaries',
+        description: 'salary report',
+        tables: ['employees', 'salaries'],
+      });
+    });
+
+    it('returns null when the template resolves to empty SQL', async () => {
+      const templateHelper = {
+        resolveTemplate: async () => ({sql: '', description: ''}),
+      } as never;
+      const r = await resolveTemplateById({
+        templateStore,
+        templateHelper,
+        schemaStore: undefined,
+        templateId: 'tmpl-1',
+        prompt: 'x',
+      });
+      expect(r).to.be.null();
+    });
+
+    it('returns null when stores are unbound', async () => {
+      expect(
+        await resolveTemplateById({
+          templateStore: undefined,
+          templateHelper: undefined,
+          schemaStore: undefined,
+          templateId: 'tmpl-1',
+          prompt: 'x',
+        }),
+      ).to.be.null();
     });
   });
 

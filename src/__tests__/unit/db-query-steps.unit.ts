@@ -47,6 +47,10 @@ describe('db-query workflow steps (unit)', () => {
     if (overrides.schemaHelper) rc.set('schemaHelper', overrides.schemaHelper);
     if (overrides.datasetStore) rc.set('datasetStore', overrides.datasetStore);
     if (overrides.authUser) rc.set('authUser', overrides.authUser);
+    if (overrides.templateStore)
+      rc.set('templateStore', overrides.templateStore);
+    if (overrides.permissionHelper)
+      rc.set('permissionHelper', overrides.permissionHelper);
     return rc;
   }
 
@@ -308,6 +312,62 @@ describe('db-query workflow steps (unit)', () => {
         }),
       );
       expect(out).to.eql({matched: false});
+    });
+
+    // Tier 2 (v2 CheckTemplatesNode parity): a matched template whose tables
+    // the user lacks permission for is skipped (matched:false) so the run
+    // falls through to normal generation rather than serving its data.
+    it('matched template with missing table permissions is skipped (no-match)', async () => {
+      const invoke = sinon
+        .stub()
+        .resolves([{pageContent: 'tmpl', metadata: {id: 'tmpl-9'}}]);
+      const helpers = await import('../../mastra/workflows/db-query/_helpers');
+      sinon
+        .stub(helpers, 'tracedGenerateText')
+        .resolves({text: 'match 1'} as Awaited<
+          ReturnType<typeof helpers.tracedGenerateText>
+        >);
+      const findById = sinon.stub().resolves({tables: ['salaries']});
+      const findMissingPermissions = sinon.stub().returns(['view_salaries']);
+
+      const out = await runCheckTemplates(
+        {prompt: 'salaries'},
+        makeRc({
+          templateCache: {invoke},
+          chatLlm: {modelId: 'mock'} as MastraRcShape['chatLlm'],
+          templateStore: {findById} as never,
+          permissionHelper: {findMissingPermissions} as never,
+        }),
+      );
+
+      expect(out).to.eql({matched: false});
+      sinon.assert.calledWith(findMissingPermissions, ['salaries']);
+    });
+
+    it('matched template the user is authorised for still matches', async () => {
+      const invoke = sinon
+        .stub()
+        .resolves([{pageContent: 'tmpl', metadata: {id: 'tmpl-9'}}]);
+      const helpers = await import('../../mastra/workflows/db-query/_helpers');
+      sinon
+        .stub(helpers, 'tracedGenerateText')
+        .resolves({text: 'match 1'} as Awaited<
+          ReturnType<typeof helpers.tracedGenerateText>
+        >);
+      const findById = sinon.stub().resolves({tables: ['employees']});
+      const findMissingPermissions = sinon.stub().returns([]);
+
+      const out = await runCheckTemplates(
+        {prompt: 'list'},
+        makeRc({
+          templateCache: {invoke},
+          chatLlm: {modelId: 'mock'} as MastraRcShape['chatLlm'],
+          templateStore: {findById} as never,
+          permissionHelper: {findMissingPermissions} as never,
+        }),
+      );
+
+      expect(out).to.eql({matched: true, templateId: 'tmpl-9'});
     });
   });
 

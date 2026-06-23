@@ -3,11 +3,40 @@ import {z} from 'zod';
 import {
   emitToolStatus,
   getCheapLlm,
+  getPermissionHelper,
   getTemplateCache,
+  getTemplateStore,
   logStepDetail,
   tracedGenerateText,
 } from '../_helpers';
 import {inputSchema, STEP_CHECK_TEMPLATES} from './constants';
+
+/**
+ * Table-level ACL gate (parity with v2 CheckTemplatesNode). A matched template
+ * the user lacks read permission for is treated as no-match so the run falls
+ * through to normal SQL generation (which enforces its own permissions) rather
+ * than serving the template's data. Returns true when the template is allowed
+ * (or when the gate can't run — fail-open here is safe because the read-time
+ * ACL in DataSetHelper.getDataFromDataset still guards delivery).
+ */
+async function isTemplateAuthorised(
+  requestContext: Parameters<typeof getPermissionHelper>[0],
+  templateId: string,
+): Promise<boolean> {
+  const permissionHelper = getPermissionHelper(requestContext);
+  const templateStore = getTemplateStore(requestContext);
+  if (!permissionHelper || !templateStore) return true;
+  try {
+    const template = await templateStore.findById(templateId);
+    return (
+      permissionHelper.findMissingPermissions(template.tables).length === 0
+    );
+  } catch {
+    // Can't resolve the template's tables — let it fall through to the matcher
+    // result; the read-time ACL remains the backstop.
+    return true;
+  }
+}
 
 export const checkTemplatesStep = createStep({
   id: STEP_CHECK_TEMPLATES,
@@ -64,6 +93,16 @@ Return 'match <index>' for an exact match or 'no_match'. No other text.`;
         const idx = Number.parseInt(match[1], 10) - 1;
         const doc = docs[idx];
         if (doc?.metadata?.id) {
+          // Upfront table-permission check (v2 parity). If the user lacks
+          // permission on the template's tables, skip the template and fall
+          // through to normal generation rather than serving its data.
+          if (!(await isTemplateAuthorised(requestContext, doc.metadata.id))) {
+            logStepDetail(
+              STEP_CHECK_TEMPLATES,
+              `Template matched but missing table permissions; skipping: ${doc.pageContent}`,
+            );
+            return {matched: false};
+          }
           logStepDetail(
             STEP_CHECK_TEMPLATES,
             `Template matched: ${doc.pageContent}`,

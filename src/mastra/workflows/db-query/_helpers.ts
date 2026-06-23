@@ -42,6 +42,7 @@ type GenerateTextReturn = Awaited<ReturnType<typeof generateText>>;
 import type {
   DataSetHelper,
   DbSchemaHelperService,
+  PermissionHelper,
   TemplateHelper,
 } from '../../../components/db-query/services';
 import type {SchemaStore} from '../../../components/db-query/services/schema.store';
@@ -104,6 +105,11 @@ export interface MastraRcShape {
   schemaHelper?: DbSchemaHelperService;
   templateHelper?: TemplateHelper;
   dataSetHelper?: DataSetHelper;
+  // Tenant/user permission gate. Used by the template path to enforce
+  // table-level ACLs upfront (parity with v2 CheckTemplatesNode) — a matched
+  // template the user lacks table permissions for is skipped so the run falls
+  // through to normal generation rather than serving unauthorized data.
+  permissionHelper?: PermissionHelper;
   queryCache?: {
     invoke: (
       input: string,
@@ -250,6 +256,11 @@ export function getTemplateHelper(rc?: MastraRc): TemplateHelper | undefined {
 }
 export function getDataSetHelper(rc?: MastraRc): DataSetHelper | undefined {
   return rc?.get('dataSetHelper');
+}
+export function getPermissionHelper(
+  rc?: MastraRc,
+): PermissionHelper | undefined {
+  return rc?.get('permissionHelper');
 }
 export function getQueryCache(rc?: MastraRc): MastraRcShape['queryCache'] {
   return rc?.get('queryCache');
@@ -1454,7 +1465,7 @@ export async function resolveTemplateById(args: {
   schemaStore: SchemaStore | undefined;
   templateId: string;
   prompt: string;
-}): Promise<{sql: string; description?: string} | null> {
+}): Promise<{sql: string; description?: string; tables: string[]} | null> {
   const {templateStore, templateHelper, schemaStore, templateId, prompt} = args;
   if (!templateStore || !templateHelper) return null;
   try {
@@ -1478,8 +1489,17 @@ export async function resolveTemplateById(args: {
         }
       },
     );
+    // Surface the template's AUTHORITATIVE table list so the caller can
+    // persist it on the dataset. The read-time ACL
+    // (DataSetHelper.getDataFromDataset) checks dataset.tables; without the
+    // template's own tables it would only see the get-tables guess and could
+    // miss a table the template's SQL actually reads.
     return resolved.sql
-      ? {sql: resolved.sql, description: resolved.description}
+      ? {
+          sql: resolved.sql,
+          description: resolved.description,
+          tables: template.tables ?? [],
+        }
       : null;
   } catch {
     return null;

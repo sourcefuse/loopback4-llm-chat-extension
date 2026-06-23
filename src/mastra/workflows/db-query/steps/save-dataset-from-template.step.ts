@@ -52,7 +52,12 @@ export const saveDatasetFromTemplateStep = createStep({
       query: resolved.sql,
       description: resolved.description ?? '',
       prompt: data.prompt,
-      tables: data.tables ?? [],
+      // Union the template's authoritative tables with the get-tables guess.
+      // The read-time ACL (DataSetHelper.getDataFromDataset) gates on
+      // dataset.tables; persisting only the guess could omit a table the
+      // template SQL reads, letting an unauthorized user through. The union
+      // keeps the gate covering every table the query can touch.
+      tables: [...new Set([...resolved.tables, ...(data.tables ?? [])])],
       schemaHash,
       votes: 0,
     });

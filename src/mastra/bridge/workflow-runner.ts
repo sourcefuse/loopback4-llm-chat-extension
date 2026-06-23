@@ -33,6 +33,7 @@ import type {
 import type {
   DataSetHelper,
   DbSchemaHelperService,
+  PermissionHelper,
   TemplateHelper,
 } from '../../components/db-query/services';
 import type {SchemaStore} from '../../components/db-query/services/schema.store';
@@ -700,6 +701,7 @@ export class WorkflowRunner {
       schemaHelper,
       templateHelper,
       dataSetHelper,
+      permissionHelper,
       queryCache,
       templateCache,
       globalContext,
@@ -729,6 +731,7 @@ export class WorkflowRunner {
       ),
       this.lb4Ctx.get<TemplateHelper>('services.TemplateHelper', opt),
       this.lb4Ctx.get<DataSetHelper>('services.DataSetHelper', opt),
+      this.lb4Ctx.get<PermissionHelper>('services.PermissionHelper', opt),
       this.lb4Ctx.get<MastraRcShape['queryCache']>(
         DbQueryAIExtensionBindings.QueryCache,
         opt,
@@ -772,6 +775,7 @@ export class WorkflowRunner {
       schemaHelper,
       templateHelper,
       dataSetHelper,
+      permissionHelper,
       queryCache,
       templateCache,
       visualizers,
