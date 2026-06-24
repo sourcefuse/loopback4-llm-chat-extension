@@ -140,6 +140,7 @@
     "test": "lb-mocha --timeout=500000 --allow-console-logs \"dist/__tests__\"",
     "posttest": "npm run lint",
     "test:dev": "lb-mocha --timeout=500000 --allow-console-logs dist/__tests__/**/*.js && npm run posttest",
+    "test:acceptance:llm": "npm run build && RUN_WITH_LLM=true OPENROUTER=1 EMBEDDING_PROVIDER=gemini lb-mocha --timeout=500000 --allow-console-logs \"dist/__tests__/acceptance/generation.controllers.acceptance.js\"",
     "clean": "lb-clean dist *.tsbuildinfo .eslintcache",
     "rebuild": "npm run clean && npm run build",
     "prune": "npm prune --production",

@@ -1,5 +1,6 @@
 import {BindingScope} from '@loopback/core';
 import {Client, expect} from '@loopback/testlab';
+import {AuthenticationBindings} from 'loopback4-authentication';
 import {DbQueryAIExtensionBindings, IDataSetStore} from '../../components';
 import {LLMStreamEvent, LLMStreamEventType} from '../../graphs';
 import {AiIntegrationBindings} from '../../keys';
@@ -15,6 +16,7 @@ import {
   setupApplication,
   setupChats,
   setupMessages,
+  stubUser,
 } from '../test-helper';
 
 // All real-model acceptance tests are gated on RUN_WITH_LLM=true (skipped in
@@ -22,23 +24,29 @@ import {
 // get-tables permission filter does not strip any table.
 const TABLE_PERMS = ['1', '2', '3', '4', '5'];
 
-/** POST /generate and return the datasetId from the final tool-status event. */
+/** POST /reply and return the datasetId from the final tool-status event. */
 async function generateDatasetId(
   client: Client,
   token: string,
   prompt: string,
 ): Promise<string> {
   const response = await client
-    .post('/generate')
+    .post('/reply')
     .set('authorization', `Bearer ${token}`)
     .field('prompt', prompt)
     .expect(200);
   const body: LLMStreamEvent[] = response.body;
-  const toolStatuses = body.filter(
-    event => event.type === LLMStreamEventType.ToolStatus,
+  // The datasetId is emitted on the get-data-as-dataset `tool` event
+  // (data.data.datasetId), not on `tool-status` heartbeats.
+  const toolEvents = body.filter(
+    event =>
+      event.type === LLMStreamEventType.Tool &&
+      event.data.tool === 'get-data-as-dataset' &&
+      event.data.data?.['datasetId'],
   );
-  const last = toolStatuses[toolStatuses.length - 1];
-  return last?.data?.data?.['datasetId'] as string;
+  const last = toolEvents[toolEvents.length - 1];
+  return (last?.data as {data?: {datasetId?: string}})?.data
+    ?.datasetId as string;
 }
 
 // ──────────────────────────────────────────────────────────────────
@@ -76,6 +84,13 @@ describe('GenerationController — end-to-end (real LLM)', () => {
     await seedDataset(app);
     await setupChats(app);
     await setupMessages(app);
+    // datasetStore.getData runs the SQL through the connector, which requires a
+    // current user with a tenantId (the HTTP /reply flow gets one from the
+    // bearer token; direct getData calls in the test do not). Bind one on the
+    // app context — request-scoped users from real requests still shadow it.
+    app
+      .bind(AuthenticationBindings.CURRENT_USER)
+      .to(stubUser([...TABLE_PERMS, PermissionKey.AskAI]));
     datasetStore = await app.get<IDataSetStore>(
       DbQueryAIExtensionBindings.DatasetStore,
     );
@@ -147,6 +162,13 @@ describe('GenerationController — table selection (real LLM)', () => {
     await seedExchangeRates(app);
     await setupChats(app);
     await setupMessages(app);
+    // datasetStore.getData runs the SQL through the connector, which requires a
+    // current user with a tenantId (the HTTP /reply flow gets one from the
+    // bearer token; direct getData calls in the test do not). Bind one on the
+    // app context — request-scoped users from real requests still shadow it.
+    app
+      .bind(AuthenticationBindings.CURRENT_USER)
+      .to(stubUser([...TABLE_PERMS, PermissionKey.AskAI]));
     datasetStore = await app.get<IDataSetStore>(
       DbQueryAIExtensionBindings.DatasetStore,
     );
