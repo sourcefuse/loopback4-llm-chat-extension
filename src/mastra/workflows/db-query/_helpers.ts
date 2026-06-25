@@ -262,6 +262,25 @@ export function getPermissionHelper(
 ): PermissionHelper | undefined {
   return rc?.get('permissionHelper');
 }
+
+/**
+ * Drop tables the user lacks read permission for (v2 `_filterByPermissions`).
+ * Shared by getTablesStep (initial selection) and the table_not_found reselect
+ * so a widened table set can never reintroduce an unauthorized table. Strips
+ * the `schema.` prefix before the lookup. Fail-open when no helper is bound.
+ */
+export function filterTablesByPermission(
+  tables: string[],
+  permissionHelper: PermissionHelper | undefined,
+): string[] {
+  if (!permissionHelper) return tables;
+  return tables.filter(
+    t =>
+      permissionHelper.findMissingPermissions([
+        t.toLowerCase().slice(t.indexOf('.') + 1),
+      ]).length === 0,
+  );
+}
 export function getQueryCache(rc?: MastraRc): MastraRcShape['queryCache'] {
   return rc?.get('queryCache');
 }
@@ -893,6 +912,7 @@ export async function runSqlAttempt(args: {
           currentTables: args.tables,
           allTables: args.allTables,
           tracing: args.tracing,
+          permissionHelper: getPermissionHelper(args.rc),
           onReselectTables: args.onReselectTables,
         })
       : undefined;
@@ -921,6 +941,7 @@ async function expandTablesOnTableError(args: {
   currentTables: string[];
   allTables?: string[];
   tracing?: TracingContext;
+  permissionHelper?: PermissionHelper;
   onReselectTables?: (mergedTables: string[]) => void;
 }): Promise<string[] | undefined> {
   const allTables = args.allTables;
@@ -936,12 +957,15 @@ async function expandTablesOnTableError(args: {
     return undefined;
   }
   const allowed = new Set(allTables);
-  const merged = [
-    ...new Set([
-      ...args.currentTables,
-      ...errorTables.filter(t => allowed.has(t)),
-    ]),
-  ];
+  const merged = filterTablesByPermission(
+    [
+      ...new Set([
+        ...args.currentTables,
+        ...errorTables.filter(t => allowed.has(t)),
+      ]),
+    ],
+    args.permissionHelper,
+  );
   if (merged.length <= args.currentTables.length) return undefined;
   logStepDetail('sql-validation', `Reselected tables: ${merged.join(', ')}`);
   args.onReselectTables?.(merged);

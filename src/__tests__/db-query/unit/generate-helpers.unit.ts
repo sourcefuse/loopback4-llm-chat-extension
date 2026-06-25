@@ -11,6 +11,7 @@ import {
   idToString,
   isCachedDatasetUsable,
   loadCachedSampleQuery,
+  filterTablesByPermission,
   pickRelevantTables,
   resolvePersistDeps,
   resolveTemplateById,
@@ -648,6 +649,38 @@ describe('db-query generate helpers (unit)', () => {
         findById: async () => ({id: 'd1', query: '', actions: []}),
       } as never;
       expect(await loadCachedSampleQuery(store, 'd1', 'q')).to.be.undefined();
+    });
+  });
+
+  describe('filterTablesByPermission (get-tables + reselect guard)', () => {
+    const helper = {
+      findMissingPermissions: (t: string[]) =>
+        t[0] === 'salaries' ? ['view_salaries'] : [],
+    } as never;
+
+    it('drops tables the user lacks permission for', () => {
+      expect(
+        filterTablesByPermission(['employees', 'salaries'], helper),
+      ).to.eql(['employees']);
+    });
+
+    it('strips the schema prefix before the lookup', () => {
+      const seen: string[][] = [];
+      const spy = {
+        findMissingPermissions: (t: string[]) => {
+          seen.push(t);
+          return [];
+        },
+      } as never;
+      filterTablesByPermission(['main.employees'], spy);
+      expect(seen).to.eql([['employees']]);
+    });
+
+    it('fails open when no PermissionHelper is bound', () => {
+      expect(filterTablesByPermission(['a', 'b'], undefined)).to.eql([
+        'a',
+        'b',
+      ]);
     });
   });
 
