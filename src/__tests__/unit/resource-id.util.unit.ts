@@ -15,13 +15,16 @@ describe('resource-id util (unit)', () => {
     ({id: 'u1', userTenantId: 'ut1', tenantId: 't1', ...over}) as never;
 
   describe('resolvePrincipalId', () => {
-    it('prefers user.id', () => {
-      expect(resolvePrincipalId(user())).to.equal('u1');
+    // v2 keyed all ownership (chat.userId, dataset/action userId, backfill
+    // resourceId) on userTenantId — the runtime must match or migrated threads
+    // orphan when user.id != userTenantId.
+    it('prefers userTenantId', () => {
+      expect(resolvePrincipalId(user())).to.equal('ut1');
     });
-    it('falls back to userTenantId when id is not a string', () => {
-      expect(resolvePrincipalId(user({id: undefined as never}))).to.equal(
-        'ut1',
-      );
+    it('falls back to user.id when userTenantId is not a string', () => {
+      expect(
+        resolvePrincipalId(user({userTenantId: undefined as never})),
+      ).to.equal('u1');
     });
     it('returns undefined for no user', () => {
       expect(resolvePrincipalId(undefined)).to.be.undefined();
@@ -30,7 +33,7 @@ describe('resource-id util (unit)', () => {
 
   describe('deriveResourceId', () => {
     it('builds ${tenantId}:${principalId}', () => {
-      expect(deriveResourceId(user())).to.equal('t1:u1');
+      expect(deriveResourceId(user())).to.equal('t1:ut1');
     });
     it('prefers an explicitly bound resourceId', () => {
       expect(deriveResourceId(user(), 'custom-resource')).to.equal(

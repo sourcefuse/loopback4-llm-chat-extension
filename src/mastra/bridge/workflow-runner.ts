@@ -17,7 +17,9 @@ import {AiIntegrationBindings, IRunRegistry} from '../../keys';
 import {CHAT_TITLE_MAX_LENGTH} from '../../constant';
 import {InternalBindings} from '../internal-bindings';
 import {buildChatInstructions} from '../chat-agent-instructions';
-import {deriveResourceId} from '../resource-id.util';
+import {deriveResourceId, resolvePrincipalId} from '../resource-id.util';
+import {upsertChatTokenLedger} from '../chat-token-ledger';
+import type {ChatRepository} from '../../repositories';
 import {LLMStreamEvent, LLMStreamEventType} from '../../graphs/event.types';
 import {ToolStore, ToolStatus} from '../../graphs/types';
 import type {Tool} from '@mastra/core/tools';
@@ -354,9 +356,13 @@ export class WorkflowRunner {
       return;
     }
     const {threadId, resourceId, title: threadTitle} = resolved;
-    // Persist cumulative token usage onto the thread's metadata after the run
-    // (best-effort) — mirrors v2 main's ChatStore.updateCounts which tracked
-    // input/output tokens on the chat row. Makes /chats metadata meaningful.
+    // Persist cumulative token usage after the run (best-effort) — mirrors v2
+    // main's ChatStore.updateCounts. TWO sinks:
+    //   1. Memory thread metadata — makes /chats token counts meaningful.
+    //   2. The `chats` ledger row — what the token/chat LIMIT STRATEGIES read.
+    //      The Mastra runtime stopped writing chat rows (threads moved to
+    //      Memory), so without (2) the chats table is empty and the caps never
+    //      fire. Restored here, keyed by threadId to line up with the thread.
     const persistUsage = async (
       inputTokens: number,
       outputTokens: number,
@@ -365,22 +371,29 @@ export class WorkflowRunner {
       // doesn't declare it, so view it through ThreadMemory (updateThread
       // optional + guarded below).
       const tm = memory as unknown as ThreadMemory;
-      if (!tm.updateThread) return;
-      try {
-        const current = await tm.getThreadById({threadId});
-        const md = (current?.metadata as Record<string, unknown>) ?? {};
-        await tm.updateThread({
-          id: threadId,
-          title: current?.title ?? threadTitle,
-          metadata: {
-            ...md,
-            inputTokens: (Number(md.inputTokens) || 0) + inputTokens,
-            outputTokens: (Number(md.outputTokens) || 0) + outputTokens,
-          },
-        });
-      } catch (err) {
-        debug('persistUsage skipped: %o', err);
+      if (tm.updateThread) {
+        try {
+          const current = await tm.getThreadById({threadId});
+          const md = (current?.metadata as Record<string, unknown>) ?? {};
+          await tm.updateThread({
+            id: threadId,
+            title: current?.title ?? threadTitle,
+            metadata: {
+              ...md,
+              inputTokens: (Number(md.inputTokens) || 0) + inputTokens,
+              outputTokens: (Number(md.outputTokens) || 0) + outputTokens,
+            },
+          });
+        } catch (err) {
+          debug('persistUsage (thread metadata) skipped: %o', err);
+        }
       }
+      await this.persistChatLedger(
+        threadId,
+        threadTitle,
+        inputTokens,
+        outputTokens,
+      );
     };
 
     // File summarisation — port of v2 SummariseFileNode. For each
@@ -685,6 +698,41 @@ export class WorkflowRunner {
     // appends the host `systemContext` last (v2 order: directives, date,
     // context).
     return buildChatInstructions(this.systemContext);
+  }
+
+  /**
+   * Write the per-session token-usage row the limit strategies read (restores
+   * v2 ChatStore bookkeeping). Resolves ChatRepository + the authenticated user
+   * from the request context — both optional, so a consumer without the chats
+   * table simply skips. Keyed by threadId; userId uses the same principal
+   * (userTenantId) as the resourceId so ownership filters line up. Best-effort.
+   */
+  private async persistChatLedger(
+    threadId: string,
+    title: string,
+    inputTokens: number,
+    outputTokens: number,
+  ): Promise<void> {
+    try {
+      const repo = await this.lb4Ctx.get<ChatRepository>(
+        'repositories.ChatRepository',
+        {optional: true},
+      );
+      const user = await this.lb4Ctx.get<IAuthUserWithPermissions>(
+        AuthenticationBindings.CURRENT_USER,
+        {optional: true},
+      );
+      const principal = resolvePrincipalId(user);
+      if (!repo || !user?.tenantId || !principal) return;
+      await upsertChatTokenLedger(
+        repo,
+        {id: threadId, tenantId: user.tenantId, userId: principal, title},
+        inputTokens,
+        outputTokens,
+      );
+    } catch (err) {
+      debug('persistChatLedger skipped: %o', err);
+    }
   }
 
   /**

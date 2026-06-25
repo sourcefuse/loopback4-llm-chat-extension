@@ -9,7 +9,9 @@ import {ChatController} from '../../controllers/chat.controller';
  */
 describe('ChatController (unit)', () => {
   const user = {id: 'u1', userTenantId: 'ut1', tenantId: 't1'};
-  const resourceId = 't1:u1'; // deriveResourceId(user) => `${tenantId}:${id}`
+  // deriveResourceId(user) => `${tenantId}:${principal}`; principal prefers
+  // userTenantId (v2 ownership convention).
+  const resourceId = 't1:ut1';
 
   // A Mastra assistant turn: reasoning + a tool-invocation (with a dataset-id
   // readout) + final text — all bundled in one message's content.parts.

@@ -21,8 +21,13 @@ export function resolvePrincipalId(
   user: IAuthUserWithPermissions | undefined,
 ): string | undefined {
   if (!user) return undefined;
-  if (typeof user.id === 'string') return user.id;
-  return user.userTenantId;
+  // Prefer userTenantId: v2 keyed ALL ownership on it (chat.userId =
+  // currentUser.userTenantId, dataset/action userId, and the backfill script's
+  // resourceId), so the runtime must too — otherwise resume/list reads the
+  // wrong Memory scope and migrated threads orphan when user.id != userTenantId.
+  // Fall back to user.id for single-tenant deployments with no userTenantId.
+  if (typeof user.userTenantId === 'string') return user.userTenantId;
+  return typeof user.id === 'string' ? user.id : undefined;
 }
 
 /**
