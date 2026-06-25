@@ -115,9 +115,7 @@ export class ChatController {
       createdOn: m.createdAt ?? m.createdOn,
       role,
     };
-    let mId = '';
-    if (typeof m.id === 'string') mId = m.id;
-    else if (typeof m.id === 'number') mId = String(m.id);
+    const mId = toMessageIdString(m.id);
     const out = chatMessageParts(m.content)
       .map((raw, i) => partToMessage(raw, base, type, baseMeta, mId, i))
       .filter((x): x is Record<string, unknown> => x !== null);
@@ -213,6 +211,13 @@ export class ChatController {
  * Extract readable text from a Mastra message `content`, which may be a string,
  * an array of typed parts ({type:'text', text}, …), or a {parts:[…]} object.
  */
+/** Coerce a Memory message id (string | number | absent) to a string id. */
+function toMessageIdString(id: unknown): string {
+  if (typeof id === 'string') return id;
+  if (typeof id === 'number') return String(id);
+  return '';
+}
+
 function chatMessageText(content: unknown): string {
   if (typeof content === 'string') return content;
   if (Array.isArray(content)) {
