@@ -38,6 +38,42 @@ async function isTemplateAuthorised(
   }
 }
 
+type TemplateDoc = {pageContent: string; metadata: {id?: string}};
+type MatchResult = {matched: boolean; templateId?: string};
+
+/**
+ * Resolve a `match <index>` judge verdict to a step result, applying the
+ * upfront permission gate. Returns undefined for a non-match (or an
+ * out-of-range / id-less doc) so the caller degrades to `{matched:false}`.
+ * Extracted from execute() to keep its complexity + nesting under the limits.
+ */
+async function resolveMatchedTemplate(
+  requestContext: Parameters<typeof getPermissionHelper>[0],
+  verdictText: string,
+  docs: TemplateDoc[],
+): Promise<MatchResult | undefined> {
+  const match = verdictText.match(/match\s+(\d+)/i);
+  if (!match) return undefined;
+  emitToolStatus(
+    requestContext,
+    STEP_CHECK_TEMPLATES,
+    'Matched query template',
+  );
+  const doc = docs[Number.parseInt(match[1], 10) - 1];
+  if (!doc?.metadata?.id) return undefined;
+  // Upfront table-permission check (v2 parity): skip an unauthorized template
+  // so the run falls through to normal generation rather than serving its data.
+  if (!(await isTemplateAuthorised(requestContext, doc.metadata.id))) {
+    logStepDetail(
+      STEP_CHECK_TEMPLATES,
+      `Template matched but missing table permissions; skipping: ${doc.pageContent}`,
+    );
+    return {matched: false};
+  }
+  logStepDetail(STEP_CHECK_TEMPLATES, `Template matched: ${doc.pageContent}`);
+  return {matched: true, templateId: doc.metadata.id};
+}
+
 export const checkTemplatesStep = createStep({
   id: STEP_CHECK_TEMPLATES,
   inputSchema,
@@ -81,35 +117,12 @@ Return 'match <index>' for an exact match or 'no_match'. No other text.`;
         label: 'template-judge',
         resultType: 'reasoning',
       });
-
-      const text = verdict.text.trim();
-      const match = text.match(/match\s+(\d+)/i);
-      if (match) {
-        emitToolStatus(
-          requestContext,
-          STEP_CHECK_TEMPLATES,
-          'Matched query template',
-        );
-        const idx = Number.parseInt(match[1], 10) - 1;
-        const doc = docs[idx];
-        if (doc?.metadata?.id) {
-          // Upfront table-permission check (v2 parity). If the user lacks
-          // permission on the template's tables, skip the template and fall
-          // through to normal generation rather than serving its data.
-          if (!(await isTemplateAuthorised(requestContext, doc.metadata.id))) {
-            logStepDetail(
-              STEP_CHECK_TEMPLATES,
-              `Template matched but missing table permissions; skipping: ${doc.pageContent}`,
-            );
-            return {matched: false};
-          }
-          logStepDetail(
-            STEP_CHECK_TEMPLATES,
-            `Template matched: ${doc.pageContent}`,
-          );
-          return {matched: true, templateId: doc.metadata.id};
-        }
-      }
+      const resolved = await resolveMatchedTemplate(
+        requestContext,
+        verdict.text.trim(),
+        docs,
+      );
+      if (resolved) return resolved;
     } catch {
       // degrade to no match on judge failure
     }

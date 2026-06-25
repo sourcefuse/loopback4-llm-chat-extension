@@ -89,6 +89,16 @@ export function approxTokenCounter(content: unknown): number {
   return 0;
 }
 
+/**
+ * Strip trailing `/` characters from a base URL without a regex — a `/\/+$/`
+ * pattern trips SonarQube's super-linear-backtracking rule (S8786). Linear scan.
+ */
+export function trimTrailingSlashes(url: string): string {
+  let end = url.length;
+  while (end > 0 && url.charCodeAt(end - 1) === 47 /* '/' */) end--;
+  return url.slice(0, end);
+}
+
 export function numericEnumValues(enumType: Object) {
   return Object.keys(enumType)
     .map(key => Number(key))

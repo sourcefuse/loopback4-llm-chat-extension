@@ -1,6 +1,7 @@
 import {createOpenAI} from '@ai-sdk/openai';
 import {Provider} from '@loopback/core';
 import {EmbeddingProvider} from '../../../../types';
+import {trimTrailingSlashes} from '../../../../utils';
 
 // Ollama exposes OpenAI-compatible embeddings at `<base>/v1/embeddings`. Driven
 // through `@ai-sdk/openai` (spec v2/v3) instead of `ollama-ai-provider`, whose
@@ -11,11 +12,11 @@ export class OllamaEmbedding implements Provider<EmbeddingProvider> {
     if (!process.env.OLLAMA_EMBEDDING_MODEL) {
       throw new Error('OLLAMA_EMBEDDING_MODEL environment variable is not set');
     }
-    const base = (
+    const base = trimTrailingSlashes(
       process.env.OLLAMA_URL ??
-      process.env.OLLAMA_BASE_URL ??
-      'http://localhost:11434'
-    ).replace(/\/+$/, '');
+        process.env.OLLAMA_BASE_URL ??
+        'http://localhost:11434',
+    );
     const provider = createOpenAI({
       baseURL: `${base}/v1`,
       apiKey: process.env.OLLAMA_API_KEY ?? 'ollama',

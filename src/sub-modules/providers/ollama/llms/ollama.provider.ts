@@ -1,6 +1,7 @@
 import {createOpenAI} from '@ai-sdk/openai';
 import {Provider} from '@loopback/core';
 import {LLMProvider} from '../../../../types';
+import {trimTrailingSlashes} from '../../../../utils';
 
 // Ollama exposes an OpenAI-compatible API at `<base>/v1`. We drive it through
 // `@ai-sdk/openai` (AI-SDK v6, spec v2/v3) rather than `ollama-ai-provider`,
@@ -15,7 +16,7 @@ export class Ollama implements Provider<LLMProvider> {
       );
     }
     const provider = createOpenAI({
-      baseURL: `${process.env.OLLAMA_BASE_URL.replace(/\/+$/, '')}/v1`,
+      baseURL: `${trimTrailingSlashes(process.env.OLLAMA_BASE_URL)}/v1`,
       // Ollama ignores the key but the OpenAI client requires a non-empty one.
       apiKey: process.env.OLLAMA_API_KEY ?? 'ollama',
     });
