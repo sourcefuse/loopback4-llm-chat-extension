@@ -37,11 +37,11 @@ export class TestApp extends BootMixin(
 ) {
   constructor(options: ApplicationConfig = {}) {
     super(options);
-    // The Ollama embedding model (`ollama-ai-provider`) implements AI-SDK spec
-    // v1, but the installed `ai`/`@ai-sdk/provider` only accepts v2 embedding
-    // models. Pick a v2-compatible provider when EMBEDDING_PROVIDER=gemini so
-    // the knowledge graph can seed under a real LLM run. Evaluated here (not at
-    // module load) so dotenv's .env values are already applied.
+    // Embedding provider for the knowledge-graph seed under a real LLM run.
+    // OllamaEmbedding now drives Ollama's OpenAI-compatible endpoint via
+    // @ai-sdk/openai (spec v2), so local `nomic-embed-text` works with no cloud
+    // key; set EMBEDDING_PROVIDER=gemini to use Google embeddings instead.
+    // Evaluated here (not at module load) so dotenv's .env values are applied.
     const EmbeddingModelProvider =
       process.env.EMBEDDING_PROVIDER === 'gemini'
         ? GeminiEmbedding
@@ -77,8 +77,8 @@ export class TestApp extends BootMixin(
       );
     } else if (process.env.OPENROUTER === '1') {
       // OpenRouter serves the chat models (e.g. anthropic/claude-sonnet-4.6);
-      // embeddings still come from EmbeddingModelProvider (OpenRouter has no
-      // embedding endpoint), so EMBEDDING_PROVIDER=gemini must be set.
+      // embeddings come from EmbeddingModelProvider (OpenRouter has no embedding
+      // endpoint) — defaults to local Ollama, or Google via EMBEDDING_PROVIDER=gemini.
       this.bind(AiIntegrationBindings.CheapLLM).toProvider(OpenRouter);
       this.bind(AiIntegrationBindings.SmartLLM).toProvider(OpenRouter);
       this.bind(AiIntegrationBindings.FileLLM).toProvider(OpenRouter);
