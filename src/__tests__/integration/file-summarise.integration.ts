@@ -190,6 +190,34 @@ describe('WorkflowRunner File Summarise Integration', () => {
     expect(chatUserText).to.match(/\[Attached file "Q3 Report!\.pdf"\]/);
     expect(chatUserText).to.match(/FILE SUMMARY/);
   });
+
+  it('passes the prompt through unchanged when no file is attached (no summarise call)', async () => {
+    await collect(
+      runner.run('just a question', [], new AbortController().signal),
+    );
+
+    // summariseFile must NOT have run — no file model call.
+    expect(capturedFilePrompt).to.be.undefined();
+
+    // The chat agent received the original prompt verbatim, with no
+    // `[Attached file …]` / `FILE SUMMARY` block merged in.
+    expect(capturedChatStream).to.not.be.undefined();
+    const chatInput = JSON.parse(JSON.stringify(capturedChatStream)) as {
+      prompt: Array<{
+        role: string;
+        content: Array<{type: string; text?: string}>;
+      }>;
+    };
+    const chatUserText = chatInput.prompt
+      .filter(m => m.role === 'user')
+      .flatMap(m => m.content)
+      .filter(c => c.type === 'text')
+      .map(c => c.text ?? '')
+      .join('\n');
+    expect(chatUserText).to.match(/just a question/);
+    expect(chatUserText).to.not.match(/Attached file/);
+    expect(chatUserText).to.not.match(/FILE SUMMARY/);
+  });
 });
 
 // --- AI-SDK V2 prompt shape (subset we assert against) ---------------------
