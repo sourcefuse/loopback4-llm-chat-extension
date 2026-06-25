@@ -95,7 +95,7 @@ export function approxTokenCounter(content: unknown): number {
  */
 export function trimTrailingSlashes(url: string): string {
   let end = url.length;
-  while (end > 0 && url.charCodeAt(end - 1) === 47 /* '/' */) end--;
+  while (end > 0 && url[end - 1] === '/') end--;
   return url.slice(0, end);
 }
 

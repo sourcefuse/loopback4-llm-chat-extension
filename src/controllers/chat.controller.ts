@@ -115,12 +115,9 @@ export class ChatController {
       createdOn: m.createdAt ?? m.createdOn,
       role,
     };
-    const mId =
-      typeof m.id === 'string'
-        ? m.id
-        : typeof m.id === 'number'
-          ? String(m.id)
-          : '';
+    let mId = '';
+    if (typeof m.id === 'string') mId = m.id;
+    else if (typeof m.id === 'number') mId = String(m.id);
     const out = chatMessageParts(m.content)
       .map((raw, i) => partToMessage(raw, base, type, baseMeta, mId, i))
       .filter((x): x is Record<string, unknown> => x !== null);
@@ -166,7 +163,7 @@ export class ChatController {
   private async ownedThread(threadId: string, resourceId: string) {
     const memory = await this.memory();
     const thread = await memory?.getThreadById({threadId});
-    if (!thread || thread.resourceId !== resourceId) {
+    if (thread?.resourceId !== resourceId) {
       throw new HttpErrors.NotFound(`Chat thread ${threadId} not found`);
     }
     return {memory: memory!, thread};
