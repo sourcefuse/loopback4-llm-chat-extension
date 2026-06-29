@@ -314,10 +314,10 @@ function toolPartToMessage(
       status: ti.state === 'result' ? 'success' : ti.state,
       existingDatasetId: r.existingDatasetId,
       // present only for the visualization tool — lets the UI rebuild the chart
-      ...(r.visualization !== undefined
-        ? {visualization: r.visualization}
-        : {}),
-      ...(r.config !== undefined ? {config: r.config} : {}),
+      ...(r.visualization === undefined
+        ? {}
+        : {visualization: r.visualization}),
+      ...(r.config === undefined ? {} : {config: r.config}),
     },
   };
 }

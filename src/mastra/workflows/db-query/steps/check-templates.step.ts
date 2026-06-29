@@ -52,7 +52,7 @@ async function resolveMatchedTemplate(
   verdictText: string,
   docs: TemplateDoc[],
 ): Promise<MatchResult | undefined> {
-  const match = verdictText.match(/match\s+(\d+)/i);
+  const match = /match\s+(\d+)/i.exec(verdictText);
   if (!match) return undefined;
   emitToolStatus(
     requestContext,

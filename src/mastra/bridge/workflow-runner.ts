@@ -439,7 +439,7 @@ export class WorkflowRunner {
         abortSignal: abort,
         requestContext: ctx,
         memory: {thread: threadId, resource: resourceId},
-        ...(temperature !== undefined ? {temperature} : {}),
+        ...(temperature === undefined ? {} : {temperature}),
         ...(providerOptions ? {providerOptions: providerOptions as never} : {}),
       },
     );
@@ -598,7 +598,7 @@ export class WorkflowRunner {
     try {
       const result = await generateText({
         model,
-        ...(temperature !== undefined ? {temperature} : {}),
+        ...(temperature === undefined ? {} : {temperature}),
         messages: [
           {
             role: 'system',
@@ -887,9 +887,9 @@ export class WorkflowRunner {
       // Mastra only auto-titles when MASTRA_GENERATE_TITLE is on (an extra LLM
       // call). A prompt-derived title is free and matches main's behaviour.
       const trimmed = prompt?.trim().slice(0, CHAT_TITLE_MAX_LENGTH);
-      // ternary (not ??) so an empty prompt yields undefined, not '' — and
-      // not `||` which trips @typescript-eslint/prefer-nullish-coalescing.
-      const title = trimmed ? trimmed : undefined;
+      // Empty prompt → undefined title (not ''); a plain `||`/`??` either trips
+      // prefer-nullish-coalescing or keeps '', so test for empty explicitly.
+      const title = trimmed === '' ? undefined : trimmed;
       const thread = await memory.createThread({resourceId, title});
       emitInit(thread.id);
       return {threadId: thread.id, resourceId, title: title ?? ''};

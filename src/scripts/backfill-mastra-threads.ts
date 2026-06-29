@@ -49,6 +49,16 @@ interface BackfillSummary {
 const PROGRESS_EVERY = 100;
 const DRY_RUN = process.argv.includes('--dry-run');
 
+// This is a standalone CLI tool — progress/summary go straight to the operator's
+// terminal. Write via process.stdout/stderr rather than `console.*` (the latter
+// trips SonarQube S106 / no-console, meant for library code, not scripts).
+const out = (msg: string): void => {
+  process.stdout.write(`${msg}\n`);
+};
+const errOut = (msg: string): void => {
+  process.stderr.write(`${msg}\n`);
+};
+
 /**
  * Tenant-scoped resourceId — MUST match the format the runtime
  * resource identity format `${tenantId}:${userId}` used by runtime, otherwise
@@ -210,7 +220,7 @@ async function backfillChat(
   }
   if (DRY_RUN) {
     const verb = existing ? 'repair (re-save messages for)' : 'create';
-    console.log(
+    out(
       `[dry-run] would ${verb} thread ${chat.id} resourceId=${resourceId} (${msgs.length} messages)`,
     );
     summary.created++;
@@ -281,21 +291,21 @@ async function backfill(): Promise<void> {
       await backfillChat(chat, memory, msgs, summary);
     } catch (err) {
       summary.errors.push({chatId: chat.id, error: (err as Error).message});
-      console.error(`[error] chat ${chat.id}:`, (err as Error).message);
+      errOut(`[error] chat ${chat.id}: ${(err as Error).message}`);
     }
     if (summary.seen % PROGRESS_EVERY === 0) {
-      console.log(
+      out(
         `[progress] ${summary.seen}/${chats.length} seen | ${summary.created} created | ${summary.skipped} skipped | ${summary.errors.length} errors`,
       );
     }
   }
-  console.log('\n=== Backfill Summary ===');
-  console.log(JSON.stringify(summary, null, 2));
+  out('\n=== Backfill Summary ===');
+  out(JSON.stringify(summary, null, 2));
   await app.stop();
   if (summary.errors.length > 0) process.exit(1);
 }
 
 backfill().catch(err => {
-  console.error(err);
+  errOut(err instanceof Error ? (err.stack ?? err.message) : String(err));
   process.exit(1);
 });

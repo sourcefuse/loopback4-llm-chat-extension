@@ -95,7 +95,7 @@ ${state.prompt}
       model: this.model,
       schema,
       prompt,
-      ...(temperature !== undefined ? {temperature} : {}),
+      ...(temperature === undefined ? {} : {temperature}),
       ...(providerOptions ? {providerOptions} : {}),
     });
     const settings = object as AnyObject;

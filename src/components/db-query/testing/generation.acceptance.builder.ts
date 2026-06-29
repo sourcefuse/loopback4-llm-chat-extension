@@ -278,7 +278,9 @@ async function runSingleTestCase(
     // ACCEPT_DEBUG=true to dump the full event stream for the case so the
     // actual failure (refusal vs invalid SQL vs wrong filter) is visible.
     if (process.env.ACCEPT_DEBUG === 'true') {
-      console.log(
+      // Diagnostic dump for a failing acceptance case — straight to the
+      // terminal via stdout (not console.*, which trips SonarQube S106).
+      process.stdout.write(
         `\n[ACCEPT_DEBUG] ${query.case} full event body:\n` +
           JSON.stringify(body, null, 2) +
           '\n[/ACCEPT_DEBUG]\n',

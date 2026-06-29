@@ -71,7 +71,7 @@ ${state.prompt}
       model: this.model,
       schema,
       prompt,
-      ...(temperature !== undefined ? {temperature} : {}),
+      ...(temperature === undefined ? {} : {temperature}),
       ...(providerOptions ? {providerOptions} : {}),
     });
     return object;

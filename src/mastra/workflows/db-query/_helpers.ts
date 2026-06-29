@@ -22,11 +22,13 @@ const stepDbg = debugFactory('ai-integration:steps');
  * was persisted). Returns '' for null/undefined.
  */
 export function idToString(v: unknown): string {
-  if (v === null || v === undefined) return '';
   // Primitive id coercion: DB autoincrement IDs arrive as numbers; string IDs
-  // pass through unchanged. Object stringification ([object Object]) never
-  // occurs in practice — the function only receives number or string values.
-  return typeof v === 'object' ? JSON.stringify(v) : String(v);
+  // pass through unchanged. Objects never occur in practice (number|string
+  // only); JSON-stringify them rather than fall into '[object Object]'.
+  if (typeof v === 'string') return v;
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+  if (v === null || v === undefined) return '';
+  return JSON.stringify(v);
 }
 import {
   LLMStreamEventType,
@@ -445,7 +447,7 @@ export async function tracedGenerateText(args: {
     const result = await generateText({
       model,
       prompt,
-      ...(temperature !== undefined ? {temperature} : {}),
+      ...(temperature === undefined ? {} : {temperature}),
       ...(providerOptions ? {providerOptions: providerOptions as never} : {}),
     });
     span?.end({

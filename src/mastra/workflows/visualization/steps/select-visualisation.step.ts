@@ -14,6 +14,8 @@ import {
   type VisualizerSelection,
 } from './shared';
 
+const STEP_SELECT_VISUALISATION = 'select-visualisation';
+
 /**
  * Ask the LLM to pick the best-fitting visualizer for the request, or to
  * reject when none fit. Restores the v2 select-visualization.node behaviour:
@@ -34,7 +36,7 @@ async function selectViaLlm(
       model: llm,
       prompt: buildVisualizerSelectionPrompt(userQuery, visualizers),
       tracing,
-      label: 'select-visualisation',
+      label: STEP_SELECT_VISUALISATION,
       resultType: 'planning',
     });
     return parseVisualizerSelection(result.text, visualizers);
@@ -44,7 +46,7 @@ async function selectViaLlm(
 }
 
 export const selectVisualisationStep = createStep({
-  id: 'select-visualisation',
+  id: STEP_SELECT_VISUALISATION,
   inputSchema: z.object({
     datasetId: z.string(),
     userQuery: z.string(),
@@ -64,7 +66,7 @@ export const selectVisualisationStep = createStep({
   execute: async ({inputData, requestContext, tracingContext}) => {
     emitToolStatus(
       requestContext,
-      'select-visualisation',
+      STEP_SELECT_VISUALISATION,
       'Selecting best visualization for the data',
     );
 
