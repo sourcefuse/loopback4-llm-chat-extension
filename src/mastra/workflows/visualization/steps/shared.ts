@@ -130,13 +130,16 @@ export function buildVisualizerSelectionPrompt(
     Boolean(data.sql) ||
     Boolean(data.description) ||
     Boolean(data.columns?.length);
+  const columnsText = data.columns?.length
+    ? data.columns.join(', ')
+    : '(unknown)';
   const dataBlock = hasData
     ? `
 <data>
 Match the chart to the column shape this query returns, not just the wording of the request.
 SQL: ${data.sql ?? '(unavailable)'}
 Description: ${data.description ?? '(none)'}
-Columns: ${data.columns?.length ? data.columns.join(', ') : '(unknown)'}
+Columns: ${columnsText}
 </data>
 `
     : '';
@@ -165,7 +168,32 @@ none: the requested data is a single scalar value and cannot be charted.
 }
 
 function escapeRegExp(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return s.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
+}
+
+/**
+ * Whole-word match of a visualizer name in `lower`, returning the LAST-mentioned
+ * one (the model's verdict). Extracted from parseVisualizerSelection to keep its
+ * complexity under the limit (S1541).
+ */
+function lastMentionedVisualizer(
+  lower: string,
+  visualizers: IVisualizer[],
+): string | undefined {
+  let best: {name: string; idx: number} | undefined;
+  for (const v of visualizers) {
+    const re = new RegExp(
+      String.raw`\b` + escapeRegExp(v.name.toLowerCase()) + String.raw`\b`,
+      'g',
+    );
+    let lastIdx = -1;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(lower)) !== null) lastIdx = m.index;
+    if (lastIdx >= 0 && (!best || lastIdx > best.idx)) {
+      best = {name: v.name, idx: lastIdx};
+    }
+  }
+  return best?.name;
 }
 
 /**
@@ -193,17 +221,7 @@ export function parseVisualizerSelection(
   }
   const exact = visualizers.find(v => v.name.toLowerCase() === lower);
   if (exact) return {chartType: exact.name};
-  // Whole-word match, preferring the last-mentioned name (the model's verdict).
-  let best: {name: string; idx: number} | undefined;
-  for (const v of visualizers) {
-    const re = new RegExp(`\\b${escapeRegExp(v.name.toLowerCase())}\\b`, 'g');
-    let lastIdx = -1;
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(lower)) !== null) lastIdx = m.index;
-    if (lastIdx >= 0 && (!best || lastIdx > best.idx)) {
-      best = {name: v.name, idx: lastIdx};
-    }
-  }
-  if (best) return {chartType: best.name};
+  const last = lastMentionedVisualizer(lower, visualizers);
+  if (last) return {chartType: last};
   return {chartType: visualizers[0]?.name ?? DEFAULT_CHART_TYPE};
 }
