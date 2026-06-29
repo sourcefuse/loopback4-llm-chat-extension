@@ -81,6 +81,33 @@ function pickGenLlm(args: {
     : (args.smart ?? args.chat);
 }
 
+function buildStepResult(
+  attempt: {
+    sql: string;
+    passed: boolean;
+    feedback?: string;
+    description?: string;
+    tables?: string[];
+  },
+  priorAttempts: number,
+  prompt: string,
+  tables: string[],
+  data: {checklist?: string; sampleSql?: string; samplePrompt?: string},
+) {
+  return {
+    sql: attempt.sql,
+    passed: attempt.passed,
+    attempts: priorAttempts + 1,
+    feedback: attempt.feedback,
+    description: attempt.description ?? '',
+    prompt,
+    tables: attempt.tables ?? tables,
+    checklist: data.checklist ?? '',
+    sampleSql: data.sampleSql,
+    samplePrompt: data.samplePrompt,
+  };
+}
+
 function sqlStatusEmitters(
   requestContext: Parameters<typeof emitToolStatus>[0],
 ) {
@@ -200,17 +227,6 @@ export class SqlAndValidateStep implements IWorkflowStep {
       ...sqlStatusEmitters(requestContext),
     });
 
-    return {
-      sql: attempt.sql,
-      passed: attempt.passed,
-      attempts: priorAttempts + 1,
-      feedback: attempt.feedback,
-      description: attempt.description ?? '',
-      prompt,
-      tables: attempt.tables ?? tables,
-      checklist: data.checklist ?? '',
-      sampleSql: data.sampleSql,
-      samplePrompt: data.samplePrompt,
-    };
+    return buildStepResult(attempt, priorAttempts, prompt, tables, data);
   }
 }
