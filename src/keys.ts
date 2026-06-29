@@ -1,9 +1,11 @@
 import type {MastraVector} from '@mastra/core/vector';
+import type {Observability} from '@mastra/observability';
 import {BindingKey} from '@loopback/context';
 import {ITransport} from './transports/types';
 import {
   AIIntegrationConfig,
   EmbeddingProvider,
+  FileMessageBuilder as FileMessageBuilderType,
   ICache,
   LLMProvider,
 } from './types';
@@ -55,6 +57,23 @@ export namespace AiIntegrationBindings {
   );
   export const SystemContext = BindingKey.create<string[]>(
     `services.ai-reporting.system-context`,
+  );
+  // Optional host-facing observability/tracing handler. Mastra equivalent of
+  // v2's `ObfHandler` (a langfuse CallbackHandler injected into every LLM run):
+  // bind a Mastra `Observability` here and MastraProvider folds it into the
+  // Mastra instance so agent / workflow / tool spans are exported. Prefer
+  // binding a dedicated Observability provider; this binding exists so the v2
+  // host-facing API (AiIntegrationBindings.ObfHandler) keeps working.
+  export const ObfHandler = BindingKey.create<Observability>(
+    'services.ai-reporting.obf-handler',
+  );
+  // Optional per-provider file → LLM message-part builder (v2
+  // `LLMProvider.getFile` / `FileMessageBuilder`). When bound, WorkflowRunner's
+  // file-summarisation path uses it to shape the file content block for the
+  // bound model's API (e.g. AWS Bedrock `document` blocks) instead of the
+  // generic `{type:'file'}` default.
+  export const FileMessageBuilder = BindingKey.create<FileMessageBuilderType>(
+    'services.ai-reporting.file-message-builder',
   );
   // NOTE: Runtime infra bindings (Mastra, Storage, Tools,
   // Observability, RunRegistry, ResourceId) live in InternalBindings

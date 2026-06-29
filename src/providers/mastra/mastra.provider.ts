@@ -43,6 +43,12 @@ export class MastraProvider implements Provider<Mastra> {
     private systemContext?: string[],
     @inject(InternalBindings.Observability, {optional: true})
     private observability?: Observability,
+    // v2 host-facing seam: a consumer that binds AiIntegrationBindings.ObfHandler
+    // (the mastra equivalent of v2's langfuse ObfHandler) gets it folded into
+    // the Mastra instance's observability when no internal Observability is
+    // bound. Prefer the dedicated Observability binding when both are present.
+    @inject(AiIntegrationBindings.ObfHandler, {optional: true})
+    private obfHandler?: Observability,
   ) {}
 
   async value(): Promise<Mastra> {
@@ -152,7 +158,7 @@ export class MastraProvider implements Provider<Mastra> {
       },
       storage: this.storage,
       vectors: this.vector ? {default: this.vector} : undefined,
-      observability: this.observability,
+      observability: this.observability ?? this.obfHandler,
     });
   }
 }

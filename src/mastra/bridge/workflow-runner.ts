@@ -14,6 +14,7 @@ import {RequestContext} from '@mastra/core/request-context';
 import {resolveModelConfig, type MastraModelConfig} from '@mastra/core/llm';
 import {generateText, type LanguageModel} from 'ai';
 import {AiIntegrationBindings, IRunRegistry} from '../../keys';
+import type {FileMessageBuilder} from '../../types';
 import {CHAT_TITLE_MAX_LENGTH} from '../../constant';
 import {InternalBindings} from '../internal-bindings';
 import {buildChatInstructions} from '../chat-agent-instructions';
@@ -278,6 +279,11 @@ export class WorkflowRunner {
     private smartLlm?: MastraModelConfig,
     @inject(AiIntegrationBindings.SmartNonThinkingLLM, {optional: true})
     private smartNonThinkingLlm?: MastraModelConfig,
+    // Optional per-provider file → message-part builder (v2
+    // LLMProvider.getFile). When bound, shapes the file content block for the
+    // bound model's API; otherwise the generic {type:'file'} default is used.
+    @inject(AiIntegrationBindings.FileMessageBuilder, {optional: true})
+    private fileMessageBuilder?: FileMessageBuilder,
   ) {}
 
   async *run(
@@ -603,19 +609,7 @@ export class WorkflowRunner {
           },
           {
             role: 'user',
-            content: [
-              {type: 'text', text: query},
-              {
-                type: 'file',
-                data: file.buffer ?? Buffer.alloc(0),
-                mediaType: file.mimetype || 'application/pdf',
-                // Bedrock Converse rejects document names with disallowed
-                // characters / consecutive whitespace; sanitise so Bedrock
-                // file uploads work (restores v2 getFile() behaviour). Other
-                // providers ignore / accept the filename.
-                filename: sanitizeFilenameForAwsConverse(file.originalname),
-              },
-            ],
+            content: [{type: 'text', text: query}, this.buildFileContent(file)],
           },
         ],
         ...(providerOptions ? {providerOptions: providerOptions as never} : {}),
@@ -629,6 +623,31 @@ export class WorkflowRunner {
       });
       return undefined;
     }
+  }
+
+  /**
+   * Build the file content part for the summarisation message. Delegates to a
+   * consumer-bound FileMessageBuilder when present (v2 LLMProvider.getFile —
+   * e.g. AWS Bedrock `document` blocks), otherwise emits the generic AI-SDK
+   * `{type:'file'}` part. The filename is sanitised so Bedrock Converse (which
+   * rejects disallowed characters / consecutive whitespace) accepts the upload;
+   * other providers ignore it.
+   */
+  private buildFileContent(file: Express.Multer.File): {
+    type: 'file';
+    data: Buffer;
+    mediaType: string;
+    filename: string;
+  } {
+    if (this.fileMessageBuilder) {
+      return this.fileMessageBuilder(file) as never;
+    }
+    return {
+      type: 'file',
+      data: file.buffer ?? Buffer.alloc(0),
+      mediaType: file.mimetype || 'application/pdf',
+      filename: sanitizeFilenameForAwsConverse(file.originalname),
+    };
   }
 
   private resolveFileSummaryModelConfig(): MastraModelConfig | undefined {

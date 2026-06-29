@@ -14,6 +14,7 @@ import {
   saveDatasetFromTemplateStep,
   saveDatasetStep,
   sqlAndValidateStep,
+  verifyChecklistStep,
 } from '../steps';
 
 export const generateQueryWorkflow = createWorkflow({
@@ -40,6 +41,7 @@ export const generateQueryWorkflow = createWorkflow({
     ],
   ])
   .then(generateChecklistStep)
+  .then(verifyChecklistStep)
   .dountil(
     sqlAndValidateStep,
     async ({inputData}) =>

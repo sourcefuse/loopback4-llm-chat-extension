@@ -22,6 +22,7 @@ export {saveDatasetFromTemplateStep} from './save-dataset-from-template.step';
 export {failedStep} from './failed.step';
 export {getColumnsStep} from './get-columns.step';
 export {generateChecklistStep} from './generate-checklist.step';
+export {verifyChecklistStep} from './verify-checklist.step';
 export {sqlAndValidateStep} from './sql-and-validate.step';
 export {saveDatasetStep} from './save-dataset.step';
 

@@ -1,43 +1,53 @@
-import {BindingScope, inject, injectable, Provider} from '@loopback/core';
-import {AskAboutDatasetTool} from '../../components/db-query/tools/ask-about-dataset.tool';
-import {GetDataAsDatasetTool} from '../../components/db-query/tools/get-data-as-dataset.tool';
-import {ImproveDatasetTool} from '../../components/db-query/tools/improve-dataset.tool';
-import {GenerateVisualizationTool} from '../../components/visualization/tools/generate-visualization.tool';
-import type {ToolStore} from '../../graphs/types';
+import {
+  BindingScope,
+  Context,
+  inject,
+  injectable,
+  Provider,
+} from '@loopback/core';
+import {TOOL_TAG} from '../../constant';
+import type {IGraphTool, ToolStore} from '../../graphs/types';
+
+const debug = require('debug')('ai-integration:mastra:tools');
 
 /**
- * Default Mastra tool registry — ships the 4 internal tools (get-data,
- * improve-dataset, ask-about-dataset, generate-visualization). Consumers
- * may override the binding entirely or wrap this provider to inject
- * extra tools.
+ * Default Mastra tool registry. Tools are discovered DYNAMICALLY by tag
+ * (`@graphTool()` stamps `isTOOL: true`) instead of being hardcoded — so a
+ * consumer adds a tool simply by binding a `@graphTool()`-decorated class as a
+ * service, with no edit to this provider (restores the v2 tag-based discovery).
  *
- * SINGLETON so the underlying tool instances (which carry their own DI)
- * are constructed once and re-used per request.
+ * The four built-in tools (get-data, improve-dataset, ask-about-dataset,
+ * generate-visualization) are registered the same way. A tool whose
+ * dependencies are not bound (e.g. DbQueryComponent / VisualizerComponent not
+ * mounted) fails to resolve and is skipped, so the store stays resolvable in
+ * partial mounts.
+ *
+ * SINGLETON so the underlying tool instances (which carry their own DI) are
+ * constructed once and re-used per request.
  */
 @injectable({scope: BindingScope.SINGLETON})
 export class DefaultToolsProvider implements Provider<ToolStore> {
   constructor(
-    // Tool injections are optional — three of the four (get-data,
-    // improve, ask) hard-depend on DbQuery bindings (DatasetStore,
-    // SchemaStore, DbSchemaHelperService) and the fourth on
-    // visualization bindings. An app that mounts the AI integrations
-    // component without DbQueryComponent or VisualizerComponent must
-    // still be able to resolve a Mastra tool store — only the tools
-    // whose dependencies are bound end up in the registry.
-    @inject('services.GetDataAsDatasetTool', {optional: true})
-    private readonly getData?: GetDataAsDatasetTool,
-    @inject('services.ImproveDatasetTool', {optional: true})
-    private readonly improve?: ImproveDatasetTool,
-    @inject('services.AskAboutDatasetTool', {optional: true})
-    private readonly ask?: AskAboutDatasetTool,
-    @inject('services.GenerateVisualizationTool', {optional: true})
-    private readonly viz?: GenerateVisualizationTool,
+    @inject.context()
+    private readonly context: Context,
   ) {}
 
-  value(): ToolStore {
-    const list = [this.getData, this.improve, this.ask, this.viz].filter(
-      (t): t is NonNullable<typeof t> => t !== undefined,
-    );
-    return {list};
+  async value(): Promise<ToolStore> {
+    const bindings = this.context.findByTag({[TOOL_TAG]: true});
+    const list: IGraphTool[] = [];
+    const map: Record<string, IGraphTool> = {};
+    for (const binding of bindings) {
+      try {
+        const tool = await this.context.get<IGraphTool>(binding.key);
+        if (!tool?.key) continue;
+        list.push(tool);
+        map[tool.key] = tool;
+      } catch (err) {
+        // A tagged tool whose deps aren't bound (component not mounted) is
+        // skipped rather than failing the whole registry resolution.
+        debug('skipping tool %s — failed to resolve: %o', binding.key, err);
+      }
+    }
+    return {list, map};
   }
 }

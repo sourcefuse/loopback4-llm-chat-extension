@@ -5,6 +5,7 @@ import type {Tool} from '@mastra/core/tools';
 import {z} from 'zod';
 import {IGraphTool} from '../../../graphs/types';
 import {InternalBindings} from '../../../mastra/internal-bindings';
+import {graphTool} from '../../../decorators';
 import {DbQueryAIExtensionBindings} from '../keys';
 import {DbSchemaHelperService} from '../services';
 import {SchemaStore} from '../services/schema.store';
@@ -18,6 +19,7 @@ import type {IDataSetStore} from '../types';
  * RunnableSequence (PromptTemplate -> LLM -> stripThinkingTokens)
  * collapses to one agent.generate() call.
  */
+@graphTool()
 export class AskAboutDatasetTool implements IGraphTool {
   key = 'ask-about-dataset';
   constructor(

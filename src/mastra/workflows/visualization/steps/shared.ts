@@ -19,6 +19,10 @@ export const visualizationOutputSchema = z.object({
   datasetId: z.string().optional(),
   sql: z.string().optional(),
   description: z.string().optional(),
+  // Set when the LLM judged that NONE of the registered visualizers fit the
+  // request (v2 select-visualization.node "none" path). The tool surfaces
+  // this reason to the agent instead of emitting a forced chart.
+  error: z.string().optional(),
 });
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
@@ -84,4 +88,86 @@ export function pickVisualizer(
 ): IVisualizer | undefined {
   if (visualizers.length === 0) return undefined;
   return visualizers.find(v => v.name === chartType) ?? visualizers[0];
+}
+
+/**
+ * Outcome of the LLM visualization-type selection. Either a concrete chart
+ * type, or an explicit rejection carrying the reason no registered visualizer
+ * fits the request (v2 select-visualization.node "none" path).
+ */
+export type VisualizerSelection =
+  | {chartType: string}
+  | {rejected: true; reason: string};
+
+/**
+ * Build the prompt that asks the LLM to pick the best-fitting visualizer for
+ * the user's request — or to reject when none fit. Ports the v2
+ * select-visualization.node prompt: each visualizer is listed with its
+ * description + data requirements (`context`), and the model may answer
+ * "none: <reason>" rather than force-fitting an unsuitable chart.
+ */
+export function buildVisualizerSelectionPrompt(
+  userQuery: string,
+  visualizers: IVisualizer[],
+): string {
+  const options = visualizers
+    .map(
+      v =>
+        `- ${v.name}: ${v.description}${
+          v.context ? ` (Data requirements: ${v.context})` : ''
+        }`,
+    )
+    .join('\n');
+  const example = visualizers[0]?.name ?? DEFAULT_CHART_TYPE;
+  return `You are a data-visualization expert. Select the SINGLE best visualization for the user's request from the available options.
+
+<available-visualizations>
+${options}
+</available-visualizations>
+
+<user-request>
+${userQuery}
+</user-request>
+
+<instructions>
+Reply with ONLY the name of the best-fitting visualization (e.g. "${example}").
+If none of the visualizations fit the requirement, reply with "none" followed by a colon and a short reason describing what the data would need for a visualization to be possible.
+Do not force-fit the request to a visualization that does not make sense — prefer "none" with a clear reason instead.
+</instructions>
+
+<output-example-1>
+${example}
+</output-example-1>
+<output-example-2>
+none: the requested data is a single scalar value and cannot be charted.
+</output-example-2>`;
+}
+
+/**
+ * Parse the selection LLM's reply. A reply starting with "none" is an explicit
+ * rejection (the remainder is the reason). Otherwise we match the reply against
+ * a registered visualizer name; an unrecognised reply falls back to the first
+ * visualizer rather than failing the run.
+ */
+export function parseVisualizerSelection(
+  raw: string,
+  visualizers: IVisualizer[],
+): VisualizerSelection {
+  const text = raw.trim();
+  const lower = text.toLowerCase();
+  if (lower.startsWith('none')) {
+    const reason = text
+      .slice('none'.length)
+      .replace(/^[\s:.\-–—]+/, '')
+      .trim();
+    return {
+      rejected: true,
+      reason: reason || 'No suitable visualization for the request.',
+    };
+  }
+  const exact = visualizers.find(v => v.name.toLowerCase() === lower);
+  if (exact) return {chartType: exact.name};
+  const contained = visualizers.find(v => lower.includes(v.name.toLowerCase()));
+  if (contained) return {chartType: contained.name};
+  return {chartType: visualizers[0]?.name ?? DEFAULT_CHART_TYPE};
 }

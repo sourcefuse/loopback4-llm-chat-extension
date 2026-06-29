@@ -12,12 +12,14 @@ import {
   readString,
 } from '../../../graphs/tool-event.util';
 import {InternalBindings} from '../../../mastra/internal-bindings';
+import {graphTool} from '../../../decorators';
 import {buildDatasetReadout} from '../utils';
 
 /**
  * Mastra-shaped dataset-improvement tool. Final form — calls
  * `mastra.getWorkflow('improveQueryWorkflow').createRun().start()`.
  */
+@graphTool()
 export class ImproveDatasetTool implements IGraphTool {
   key = 'improve-dataset';
   constructor(

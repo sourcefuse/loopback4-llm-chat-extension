@@ -12,6 +12,7 @@ import {
   readString,
 } from '../../../graphs/tool-event.util';
 import {InternalBindings} from '../../../mastra/internal-bindings';
+import {graphTool} from '../../../decorators';
 import {buildDatasetReadout} from '../utils';
 
 /**
@@ -21,6 +22,7 @@ import {buildDatasetReadout} from '../utils';
  * still has stub step bodies until real DbQueryService
  * helpers are wired into each step.
  */
+@graphTool()
 export class GetDataAsDatasetTool implements IGraphTool {
   key = 'get-data-as-dataset';
   constructor(

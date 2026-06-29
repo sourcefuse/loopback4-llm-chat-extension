@@ -14,11 +14,12 @@ import {
   STEP_RETURN_CACHED,
   STEP_SAVE_FROM_TEMPLATE,
 } from './constants';
-
-// The checklist LLM call only earns its latency on multi-table queries —
-// single-/two-table requests have nowhere to mis-join, so v2 skipped it
-// (generate-checklist.node tableCount<=2 guard). Mirror that here.
-const CHECKLIST_MIN_TABLES = 2;
+import {
+  CHECKLIST_MIN_TABLES,
+  checklistStateSchema,
+  mergeChecklist,
+  selectDomainRules,
+} from './checklist.shared';
 
 function normaliseChecklist(raw: string): string {
   const trimmed = raw.trim();
@@ -69,19 +70,7 @@ Return ONLY the explicit constraints as plain-text bullets, or an empty response
 export const generateChecklistStep = createStep({
   id: 'generate-checklist',
   inputSchema: z.record(z.string(), z.unknown()),
-  outputSchema: z.object({
-    prompt: z.string(),
-    tables: z.array(z.string()),
-    checklist: z.string(),
-    attempts: z.number(),
-    cached: z.boolean().optional(),
-    datasetId: z.string().optional(),
-    sql: z.string().optional(),
-    unanswerable: z.boolean().optional(),
-    replyToUser: z.string().optional(),
-    sampleSql: z.string().optional(),
-    samplePrompt: z.string().optional(),
-  }),
+  outputSchema: checklistStateSchema,
   execute: async ({inputData, requestContext, tracingContext}) => {
     const wrapped = inputData as Record<string, unknown>;
     const branchResult = extractBranchResult(wrapped);
@@ -132,12 +121,30 @@ export const generateChecklistStep = createStep({
       return {prompt, tables, checklist: '', attempts: 0, ...sample};
     }
 
-    const checklist = await generateChecklistText(
-      getCheapLlm(requestContext),
-      prompt,
-      tables,
-      tracingContext,
-    );
+    // Two independent cheap-tier LLM passes — run concurrently:
+    //   1. user-stated explicit constraints (filters/sorts/limits), and
+    //   2. the GlobalContext + per-table domain rules relevant to this query
+    //      (v2 generate-checklist.node) — so validation ENFORCES domain rules,
+    //      not just the SQL-gen prompt.
+    const [userChecklist, domainRules] = await Promise.all([
+      generateChecklistText(
+        getCheapLlm(requestContext),
+        prompt,
+        tables,
+        tracingContext,
+      ),
+      selectDomainRules({
+        rc: requestContext,
+        llm: getCheapLlm(requestContext),
+        prompt,
+        tables,
+        label: 'generate-checklist-rules',
+        parallelism: config?.nodes?.generateChecklistNode?.parallelism ?? 1,
+        tracing: tracingContext,
+      }),
+    ]);
+
+    const checklist = mergeChecklist(userChecklist, domainRules);
 
     return {prompt, tables, checklist, attempts: 0, ...sample};
   },

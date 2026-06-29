@@ -24,6 +24,8 @@ export const getDatasetDataStep = createStep({
     userQuery: z.string(),
     sql: z.string().optional(),
     description: z.string().optional(),
+    rejected: z.boolean().optional(),
+    reason: z.string().optional(),
   }),
   execute: async ({inputData, requestContext}) => {
     emitToolStatus(
@@ -33,9 +35,23 @@ export const getDatasetDataStep = createStep({
     );
 
     const upstream = pickFromBranch(inputData, 'call-query-generation');
-    const datasetId = readString(upstream.datasetId) ?? '';
     const chartType = readString(upstream.chartType) ?? DEFAULT_CHART_TYPE;
     const userQuery = readString(upstream.userQuery) ?? '';
+
+    // No visualizer fit the request — skip the data fetch and carry the
+    // rejection straight through to the render step.
+    if (upstream.rejected) {
+      return {
+        datasetId: '',
+        rows: [],
+        chartType,
+        userQuery,
+        rejected: true,
+        reason: readString(upstream.reason),
+      };
+    }
+
+    const datasetId = readString(upstream.datasetId) ?? '';
 
     // Two independent reads — run concurrently.
     const [descriptor, rows] = await Promise.all([

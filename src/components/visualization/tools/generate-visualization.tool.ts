@@ -11,6 +11,7 @@ import {
   readString,
 } from '../../../graphs/tool-event.util';
 import {InternalBindings} from '../../../mastra/internal-bindings';
+import {graphTool} from '../../../decorators';
 
 /**
  * Mastra-shaped visualization tool. Final form — calls
@@ -19,6 +20,7 @@ import {InternalBindings} from '../../../mastra/internal-bindings';
  * legacy registry here; the renderVisualization step of the workflow
  * dispatches to @visualizer() classes via RequestContext at run time.
  */
+@graphTool()
 export class GenerateVisualizationTool implements IGraphTool {
   key = 'generate-visualization';
   constructor(
@@ -118,6 +120,22 @@ It does not return anything, instead it fires an event internally that renders t
     // — no branch-key unwrap needed.
     const root = asRecord(result);
     const rawResult = asRecord(root.result);
+
+    // The selection step rejected every visualizer ("none" path) — surface the
+    // reason to the agent so it can explain why no chart was produced, and do
+    // NOT emit a chart Tool event.
+    const rejectionReason = readString(rawResult.error);
+    if (rejectionReason) {
+      writer?.({
+        type: LLMStreamEventType.ToolStatus,
+        data: {id: toolCallId, status: ToolStatus.Completed},
+      });
+      return {
+        error: rejectionReason,
+        message: `A visualization could not be generated for this request: ${rejectionReason}`,
+      };
+    }
+
     const workflowResult = {
       chartConfig: rawResult.chartConfig,
       visualization: readString(rawResult.visualization),

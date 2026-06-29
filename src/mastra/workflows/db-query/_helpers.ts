@@ -1130,10 +1130,10 @@ export async function validateSqlSemantic(args: {
 
 User request: ${prompt}
 SQL: ${sql}
-Explicit constraints the user stated:
+Constraints and domain rules the query must satisfy:
 ${checklist}
 
-Return ONLY <valid/> unless the SQL CLEARLY and DEFINITELY violates an explicit constraint above (e.g. filters the wrong column, ignores a stated filter). Ignore stylistic choices, column aliases, extra returned columns, ordering, and anything not explicitly stated. When in any doubt, return <valid/>.
+Return ONLY <valid/> unless the SQL CLEARLY and DEFINITELY violates one of the constraints/rules above (e.g. filters the wrong column, ignores a stated filter, breaks a domain rule). Ignore stylistic choices, column aliases, extra returned columns, ordering, and anything not listed above. When in any doubt, return <valid/>.
 If — and only if — there is a clear violation, return: <invalid>one short sentence naming the violated constraint</invalid>
 No other text.`;
   try {

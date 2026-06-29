@@ -12,9 +12,22 @@ export const renderVisualizationStep = createStep({
     userQuery: z.string(),
     sql: z.string().optional(),
     description: z.string().optional(),
+    rejected: z.boolean().optional(),
+    reason: z.string().optional(),
   }),
   outputSchema: visualizationOutputSchema,
   execute: async ({inputData, requestContext}) => {
+    // No visualizer fit the request (v2 "none" path). Surface the reason via
+    // `error` so the tool can tell the user why, instead of forcing a chart.
+    if (inputData.rejected) {
+      return {
+        visualization: undefined,
+        chartConfig: {},
+        datasetId: inputData.datasetId,
+        error: inputData.reason ?? 'No suitable visualization for the request.',
+      };
+    }
+
     const visualizer = pickVisualizer(
       getVisualizers(requestContext),
       inputData.chartType,
