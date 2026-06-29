@@ -89,23 +89,31 @@ export class GenerateChecklistStep implements IWorkflowStep {
     private readonly cheapModel?: LanguageModel,
   ) {}
 
+  private handleCachedOrTemplate(branchResult: BranchResult) {
+    if (branchResult.kind !== 'cached' && branchResult.kind !== 'template') {
+      return undefined;
+    }
+    if (!branchResult.datasetId) {
+      return {prompt: '', tables: [], checklist: '', attempts: 0};
+    }
+    return {
+      prompt: '',
+      tables: [],
+      checklist: '',
+      attempts: 0,
+      cached: true,
+      datasetId: idToString(branchResult.datasetId),
+      sql: branchResult.sql ?? '',
+    };
+  }
+
   async execute({inputData, tracingContext}: WorkflowStepCtx) {
     const wrapped = inputData as Record<string, unknown>;
     const branchResult = extractBranchResult(wrapped);
 
-    if (branchResult.kind === 'cached' || branchResult.kind === 'template') {
-      if (!branchResult.datasetId) {
-        return {prompt: '', tables: [], checklist: '', attempts: 0};
-      }
-      return {
-        prompt: '',
-        tables: [],
-        checklist: '',
-        attempts: 0,
-        cached: true,
-        datasetId: idToString(branchResult.datasetId),
-        sql: branchResult.sql ?? '',
-      };
+    const cachedResult = this.handleCachedOrTemplate(branchResult);
+    if (cachedResult) {
+      return cachedResult;
     }
 
     // kind === 'continue'
