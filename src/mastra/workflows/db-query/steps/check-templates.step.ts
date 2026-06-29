@@ -54,11 +54,6 @@ async function resolveMatchedTemplate(
 ): Promise<MatchResult | undefined> {
   const match = /match\s+(\d+)/i.exec(verdictText);
   if (!match) return undefined;
-  emitToolStatus(
-    requestContext,
-    STEP_CHECK_TEMPLATES,
-    'Matched query template',
-  );
   const doc = docs[Number.parseInt(match[1], 10) - 1];
   if (!doc?.metadata?.id) return undefined;
   // Upfront table-permission check (v2 parity): skip an unauthorized template
@@ -70,6 +65,13 @@ async function resolveMatchedTemplate(
     );
     return {matched: false};
   }
+  // Emit the client-facing match status only AFTER the ACL passes (v2 parity):
+  // a forbidden template falls through silently, so its existence never leaks.
+  emitToolStatus(
+    requestContext,
+    STEP_CHECK_TEMPLATES,
+    'Matched query template',
+  );
   logStepDetail(STEP_CHECK_TEMPLATES, `Template matched: ${doc.pageContent}`);
   return {matched: true, templateId: doc.metadata.id};
 }

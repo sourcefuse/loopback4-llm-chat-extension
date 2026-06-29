@@ -37,8 +37,11 @@ export async function upsertChatTokenLedger(
   if (existing) {
     await repo
       .updateById(row.id, {
-        inputTokens: existing.inputTokens + inputTokens,
-        outputTokens: existing.outputTokens + outputTokens,
+        // Guard NULL/undefined columns: a Chat row inserted by any path that
+        // omits the token columns yields NaN here, which the limit strategies
+        // would then read. Mirrors the thread-metadata path in workflow-runner.
+        inputTokens: (Number(existing.inputTokens) || 0) + inputTokens,
+        outputTokens: (Number(existing.outputTokens) || 0) + outputTokens,
       })
       .catch(() => undefined);
     return;
