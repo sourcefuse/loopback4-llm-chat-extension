@@ -2,7 +2,7 @@ import {expect} from '@loopback/testlab';
 import {
   CHAT_AGENT_DIRECTIVES,
   buildChatInstructions,
-} from '../../mastra/chat-agent-instructions';
+} from '../../runtime/chat-agent-instructions';
 
 /**
  * Restores v2 init-session.node behaviour: the chat agent's system prompt must

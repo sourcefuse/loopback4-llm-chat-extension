@@ -10,12 +10,12 @@ import type {RequestContext} from '@mastra/core/request-context';
 import type {Observability} from '@mastra/observability';
 import {AiIntegrationBindings} from '../../keys';
 import {TokenLimiter} from '@mastra/core/processors';
-import {buildChatInstructions} from '../../mastra/chat-agent-instructions';
+import {buildChatInstructions} from '../../runtime/chat-agent-instructions';
 import {DEFAULT_MAX_TOKEN_COUNT} from '../../constant';
-import {InternalBindings} from '../../mastra/internal-bindings';
-import {generateQueryWorkflow} from '../../mastra/workflows/db-query/workflows/generate.workflow';
-import {improveQueryWorkflow} from '../../mastra/workflows/db-query/workflows/improve.workflow';
-import {visualizationWorkflow} from '../../mastra/workflows/visualization/workflows/visualization.workflow';
+import {InternalBindings} from '../../runtime/internal-bindings';
+import {generateQueryWorkflow} from '../../components/db-query/workflows/generate.workflow';
+import {improveQueryWorkflow} from '../../components/db-query/workflows/improve.workflow';
+import {visualizationWorkflow} from '../../components/visualization/workflows/visualization.workflow';
 
 /**
  * Singleton Mastra instance. Holds storage pools, vector clients, registered

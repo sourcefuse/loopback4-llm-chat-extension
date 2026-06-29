@@ -7,7 +7,7 @@ import {
   lifeCycleObserver,
 } from '@loopback/core';
 import type {Mastra} from '@mastra/core';
-import {InternalBindings} from '../mastra/internal-bindings';
+import {InternalBindings} from '../runtime/internal-bindings';
 
 const debug = debugFactory('ai-integration:mastra-lifecycle');
 

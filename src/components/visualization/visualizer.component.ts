@@ -3,12 +3,15 @@ import {
   Component,
   Constructor,
   ControllerClass,
+  createBindingFromClass,
   LifeCycleObserver,
   ProviderMap,
   ServiceOrProviderClass,
 } from '@loopback/core';
 import {AnyObject} from '@loopback/repository';
+import {STEP_DEFAULT} from '../../constant';
 import {PieVisualizer, BarVisualizer, LineVisualizer} from './visualizers';
+import {VISUALIZATION_STEP_CLASSES} from './steps';
 
 export class VisualizerComponent implements Component {
   services: ServiceOrProviderClass[] | undefined;
@@ -21,7 +24,12 @@ export class VisualizerComponent implements Component {
   constructor() {
     this.controllers = [];
     this.providers = {};
-    this.bindings = [];
+    // DI-backed visualization workflow steps — bound as tagged services (the
+    // `@step(key)` tag makes them discoverable) and marked STEP_DEFAULT so a
+    // host override (a second `@step(key)` binding) is preferred by the resolver.
+    this.bindings = VISUALIZATION_STEP_CLASSES.map(stepClass =>
+      createBindingFromClass(stepClass).tag({[STEP_DEFAULT]: true}),
+    );
     this.lifeCycleObservers = [];
     this.services = [
       // visualizers (consumer-extensible via @visualizer() — the Mastra

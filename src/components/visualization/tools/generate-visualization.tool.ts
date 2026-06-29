@@ -10,7 +10,7 @@ import {
   asRecord,
   readString,
 } from '../../../graphs/tool-event.util';
-import {InternalBindings} from '../../../mastra/internal-bindings';
+import {InternalBindings} from '../../../runtime/internal-bindings';
 import {graphTool} from '../../../decorators';
 
 /**

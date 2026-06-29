@@ -8,7 +8,7 @@ import type {MastraModelConfig} from '@mastra/core/llm';
 import {
   buildProviderOptions,
   resolveEnvTemperature,
-} from '../../../mastra/workflows/db-query/_helpers';
+} from '../../db-query/steps/_helpers';
 import {visualizer} from '../decorators/visualizer.decorator';
 
 @visualizer()

@@ -1,5 +1,5 @@
 import {expect, sinon} from '@loopback/testlab';
-import {InProcessRunRegistry} from '../../mastra/bridge/run-registry';
+import {InProcessRunRegistry} from '../../runtime/bridge/run-registry';
 
 /**
  * Default single-pod RunRegistry. Powers HITL resume in v3.1 — a regression

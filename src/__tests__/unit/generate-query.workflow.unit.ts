@@ -1,10 +1,11 @@
 import {expect, sinon} from '@loopback/testlab';
 import {RequestContext} from '@mastra/core/request-context';
-import * as helpers from '../../mastra/workflows/db-query/_helpers';
-import {generateQueryWorkflow} from '../../mastra/workflows/db-query/workflows/generate.workflow';
-import {MAX_VALIDATION_ATTEMPTS} from '../../mastra/workflows/db-query/steps/constants';
-import type {MastraRcShape} from '../../mastra/workflows/db-query/_helpers';
+import * as helpers from '../../components/db-query/steps/_helpers';
+import {generateQueryWorkflow} from '../../components/db-query/workflows/generate.workflow';
+import {MAX_VALIDATION_ATTEMPTS} from '../../components/db-query/steps/constants';
+import type {MastraRcShape} from '../../components/db-query/steps/_helpers';
 import {DatasetActionType} from '../../components/db-query/constant';
+import {makeContainerStepResolver} from '../fixtures/step-resolver';
 
 /**
  * DAG-level coverage for `generateQueryWorkflow`. The integration test
@@ -32,22 +33,24 @@ describe('generateQueryWorkflow (DAG branching, unit)', () => {
     const rc = new RequestContext<MastraRcShape>();
     rc.set('resourceId', overrides.resourceId ?? 't1:u1');
     rc.set('eventWriter', overrides.eventWriter ?? (() => undefined));
-    // The accessors all fall back to chatLlm when the tier-specific
-    // binding is absent — providing chatLlm alone is enough to make
-    // the steps reach the (stubbed) `tracedGenerateText` boundary.
-    rc.set('chatLlm', {modelId: 'mock'} as MastraRcShape['chatLlm']);
-    if (overrides.queryCache) rc.set('queryCache', overrides.queryCache);
-    if (overrides.templateCache)
-      rc.set('templateCache', overrides.templateCache);
-    if (overrides.schemaStore) rc.set('schemaStore', overrides.schemaStore);
-    if (overrides.schemaHelper) rc.set('schemaHelper', overrides.schemaHelper);
-    if (overrides.datasetStore) rc.set('datasetStore', overrides.datasetStore);
-    if (overrides.templateStore)
-      rc.set('templateStore', overrides.templateStore);
-    if (overrides.templateHelper)
-      rc.set('templateHelper', overrides.templateHelper);
-    if (overrides.dbConnector) rc.set('dbConnector', overrides.dbConnector);
-    if (overrides.authUser) rc.set('authUser', overrides.authUser);
+    // Steps read collaborators + resolved model tiers via constructor DI, so
+    // route the stubs through the container resolver. A mock chatModel is
+    // always provided so the (stubbed) `tracedGenerateText` boundary is
+    // reachable (the cheap/smart tiers fall back to it). The shell reads
+    // `resolveStep` + `eventWriter` from this rc.
+    const {resolver} = makeContainerStepResolver({
+      chatModel: {modelId: 'mock'},
+      queryCache: overrides.queryCache,
+      templateCache: overrides.templateCache,
+      schemaStore: overrides.schemaStore,
+      schemaHelper: overrides.schemaHelper,
+      datasetStore: overrides.datasetStore,
+      templateStore: overrides.templateStore,
+      templateHelper: overrides.templateHelper,
+      connector: overrides.dbConnector,
+      authUser: overrides.authUser,
+    });
+    rc.set('resolveStep', resolver);
     return rc;
   }
 

@@ -12,8 +12,8 @@ import {Memory} from '@mastra/memory';
 // `MastraLanguageModelV2Mock`, but the `createMockModel` factory is the
 // supported entrypoint.
 import {createMockModel} from '@mastra/core/test-utils/llm-mock';
-import {InProcessRunRegistry} from '../../mastra/bridge/run-registry';
-import {WorkflowRunner} from '../../mastra/bridge/workflow-runner';
+import {InProcessRunRegistry} from '../../runtime/bridge/run-registry';
+import {WorkflowRunner} from '../../runtime/bridge/workflow-runner';
 import {LLMStreamEvent, LLMStreamEventType} from '../../graphs/event.types';
 import {UsageAccumulator} from '../../services/usage-accumulator.service';
 

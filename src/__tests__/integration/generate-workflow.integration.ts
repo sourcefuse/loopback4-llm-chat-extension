@@ -1,7 +1,8 @@
 import {expect} from '@loopback/testlab';
 import {createMockModel} from '@mastra/core/test-utils/llm-mock';
 import {RequestContext} from '@mastra/core/request-context';
-import {generateQueryWorkflow} from '../../mastra/workflows/db-query/workflows/generate.workflow';
+import {generateQueryWorkflow} from '../../components/db-query/workflows/generate.workflow';
+import {makeContainerStepResolver} from '../fixtures/step-resolver';
 
 /**
  * In-CI equivalent of v2 main's db-query.graph.acceptance: drives the whole
@@ -22,36 +23,47 @@ describe('generateQueryWorkflow (integration, mocked model)', () => {
 
   function buildContext(): {ctx: RequestContext; saved: object[]} {
     const saved: object[] = [];
-    const ctx = new RequestContext();
-    ctx.set('schemaStore', {
-      get: () => schema,
-      filteredSchema: () => schema,
-    } as never);
-    ctx.set('dbConnector', {
+    const schemaStore = {get: () => schema, filteredSchema: () => schema};
+    const connector = {
       validate: async () => {}, // SQL parses/EXPLAINs cleanly
       execute: async () => [{name: 'Alice'}],
-    } as never);
-    ctx.set('datasetStore', {
+    };
+    const datasetStore = {
       create: async (d: object) => {
         const row = {...d, id: 'ds1'};
         saved.push(row);
         return row;
       },
       findById: async () => saved[0],
-    } as never);
-    ctx.set('authUser', {tenantId: 't1', id: 'u1'} as never);
-    ctx.set(
-      'smartLlm',
-      createMockModel({mockText: SQL, version: 'v2'}) as never,
-    );
+    };
+    const authUser = {tenantId: 't1', id: 'u1'};
+    const smartModel = createMockModel({mockText: SQL, version: 'v2'});
     // Single-table queries route SQL generation to the CHEAP tier (v2 cost
     // optimisation), so bind it too — otherwise generation self-skips.
-    ctx.set(
-      'cheapLlm',
-      createMockModel({mockText: SQL, version: 'v2'}) as never,
-    );
+    const cheapModel = createMockModel({mockText: SQL, version: 'v2'});
+
+    const ctx = new RequestContext();
+    // Collaborators for the steps not yet on constructor DI still read from rc.
+    ctx.set('schemaStore', schemaStore as never);
+    ctx.set('dbConnector', connector as never);
+    ctx.set('datasetStore', datasetStore as never);
+    ctx.set('authUser', authUser as never);
+    ctx.set('smartLlm', smartModel as never);
+    ctx.set('cheapLlm', cheapModel as never);
     ctx.set('resourceId', 't1:u1');
     ctx.set('eventWriter', () => {});
+    // Steps converted to constructor DI (e.g. sql-and-validate) resolve their
+    // collaborators from a real Context, exactly as WorkflowRunner does — bind
+    // the same stubs there. (Steps still on rc-accessors ignore these.)
+    const {resolver} = makeContainerStepResolver({
+      connector,
+      schemaStore,
+      datasetStore,
+      authUser,
+      smartModel,
+      cheapModel,
+    });
+    ctx.set('resolveStep', resolver);
     return {ctx, saved};
   }
 

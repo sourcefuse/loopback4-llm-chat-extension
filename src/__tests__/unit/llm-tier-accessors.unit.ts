@@ -6,7 +6,7 @@ import {
   getSmartLlm,
   getSmartNonThinkingLlm,
   type MastraRcShape,
-} from '../../mastra/workflows/db-query/_helpers';
+} from '../../components/db-query/steps/_helpers';
 
 // Sentinels — the accessors return whatever was stored, identity-comparable.
 const CHAT_MODEL = {kind: 'chat'} as unknown;

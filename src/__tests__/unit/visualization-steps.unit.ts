@@ -1,9 +1,9 @@
 import {expect, sinon} from '@loopback/testlab';
 import {RequestContext} from '@mastra/core/request-context';
-import {callQueryGenerationStep} from '../../mastra/workflows/visualization/steps/call-query-generation.step';
-import {getDatasetDataStep} from '../../mastra/workflows/visualization/steps/get-dataset-data.step';
-import {renderVisualizationStep} from '../../mastra/workflows/visualization/steps/render-visualization.step';
-import {selectVisualisationStep} from '../../mastra/workflows/visualization/steps/select-visualisation.step';
+import {callQueryGenerationStep} from '../../components/visualization/workflows/visualization.workflow';
+import {getDatasetDataStep} from '../../components/visualization/workflows/visualization.workflow';
+import {renderVisualizationStep} from '../../components/visualization/workflows/visualization.workflow';
+import {selectVisualisationStep} from '../../components/visualization/workflows/visualization.workflow';
 import {
   buildVisualizerSelectionPrompt,
   DEFAULT_CHART_TYPE,
@@ -12,9 +12,10 @@ import {
   parseVisualizerSelection,
   pickFromBranch,
   pickVisualizer,
-} from '../../mastra/workflows/visualization/steps/shared';
-import type {MastraRcShape} from '../../mastra/workflows/db-query/_helpers';
+} from '../../components/visualization/steps/shared';
+import type {MastraRcShape} from '../../components/db-query/steps/_helpers';
 import type {IVisualizer} from '../../components/visualization/types';
+import {makeContainerStepResolver} from '../fixtures/step-resolver';
 
 /**
  * Visualization workflow is the second half of the chart pipeline: given
@@ -36,10 +37,17 @@ describe('visualization workflow steps (unit)', () => {
     const rc = new RequestContext<MastraRcShape>();
     rc.set('eventWriter', overrides.eventWriter ?? (() => undefined));
     rc.set('resourceId', overrides.resourceId ?? 't1:u1');
-    if (overrides.visualizers) rc.set('visualizers', overrides.visualizers);
-    if (overrides.datasetStore) rc.set('datasetStore', overrides.datasetStore);
-    if (overrides.dataSetHelper)
-      rc.set('dataSetHelper', overrides.dataSetHelper);
+    // Viz steps read visualizers (tagged) + datasetStore/dataSetHelper + model
+    // tiers via constructor DI, so route the stubs through the container
+    // resolver. The shell reads `resolveStep` + `eventWriter` from this rc.
+    const {resolver} = makeContainerStepResolver({
+      visualizers: overrides.visualizers as IVisualizer[] | undefined,
+      datasetStore: overrides.datasetStore,
+      dataSetHelper: overrides.dataSetHelper,
+      chatModel: overrides.chatLlm,
+      cheapModel: overrides.cheapLlm,
+    });
+    rc.set('resolveStep', resolver);
     return rc;
   }
 

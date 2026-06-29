@@ -1,5 +1,5 @@
 import {expect} from '@loopback/testlab';
-import {AsyncEventQueue} from '../../mastra/bridge/async-event-queue';
+import {AsyncEventQueue} from '../../runtime/bridge/async-event-queue';
 
 /**
  * Migration plan Section 7.7 promise: "1000 concurrent pushes followed

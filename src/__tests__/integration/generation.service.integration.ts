@@ -7,7 +7,7 @@ import {
 } from '@loopback/testlab';
 import {PassThrough} from 'stream';
 import {LLMStreamEvent} from '../../graphs';
-import {WorkflowRunner} from '../../mastra/bridge/workflow-runner';
+import {WorkflowRunner} from '../../runtime/bridge/workflow-runner';
 import {GenerationService} from '../../services';
 import {HttpTransport, SSETransport} from '../../transports';
 

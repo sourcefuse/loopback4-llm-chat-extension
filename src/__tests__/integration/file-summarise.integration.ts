@@ -7,8 +7,8 @@ import {Memory} from '@mastra/memory';
 // See workflow-runner-agent.integration.ts for why the .d.ts is shimmed in
 // mastra-test-utils.d.ts — the package ships the JS but forgets the types.
 import {createMockModel} from '@mastra/core/test-utils/llm-mock';
-import {InProcessRunRegistry} from '../../mastra/bridge/run-registry';
-import {WorkflowRunner} from '../../mastra/bridge/workflow-runner';
+import {InProcessRunRegistry} from '../../runtime/bridge/run-registry';
+import {WorkflowRunner} from '../../runtime/bridge/workflow-runner';
 import {LLMStreamEvent, LLMStreamEventType} from '../../graphs/event.types';
 import {UsageAccumulator} from '../../services/usage-accumulator.service';
 

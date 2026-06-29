@@ -629,52 +629,76 @@ export class MyMastraProvider implements Provider<Mastra> {
 
 ## Steps and workflows
 
-The db-query flow is a Mastra workflow built from individual `createStep` units.
-Each step and each workflow is exported from `lb4-llm-chat-component/mastra`, so
-you can swap one step and re-register the workflow under the key the tools look
-up (`generateQueryWorkflow`).
+The db-query and visualization flows are Mastra workflows, but each step is a
+DI-resolved LoopBack service — an `@step(key)`-decorated class implementing
+`IWorkflowStep` (the Mastra-named successor of the old LangGraph `@graphNode`
+classes). The Mastra workflow only references a step by its `key` through a thin
+committed shell; the actual implementation is resolved from the container at run
+time (`WorkflowRunner` looks it up by tag, exactly like the `@graphTool` tool
+registry). So **overriding one step is a single binding** — no need to recompose
+the workflow.
+
+### Override one step (recommended)
+
+Bind your own `@step(key)` class with the SAME key as the step you want to
+replace. Because the runner resolves steps by tag, your class wins — the rest of
+the workflow is untouched.
 
 ```ts
-// my-generate.workflow.ts
-import {createStep, createWorkflow} from '@mastra/core/workflows';
+import {step, IWorkflowStep, WorkflowStepCtx} from 'lb4-llm-chat-component';
+
+// `key` MUST match the step you're replacing (e.g. 'get-tables'). Keep the same
+// output shape so the downstream steps still wire up.
+@step('get-tables')
+export class MyGetTablesStep implements IWorkflowStep<{prompt?: string}, {tables: string[]}> {
+  async execute({requestContext}: WorkflowStepCtx) {
+    // ...your table-selection logic; request-scoped collaborators (stores,
+    // helpers, the resolved LLM tiers) are on `requestContext`...
+    return {tables: ['employees', 'currencies']};
+  }
+}
+```
+
+Register it as a service in your application (it REBINDS the bundled step —
+exactly one binding may carry a given key, so your registration replaces the
+default):
+
+```ts
+this.service(MyGetTablesStep);
+```
+
+The db-query step keys: `check-cache`, `get-tables`, `check-templates`,
+`post-cache-and-tables`, `return-cached`, `save-dataset-from-template`,
+`get-columns`, `generate-checklist`, `verify-checklist`, `sql-and-validate`,
+`save-dataset`, `failed`; and the improve workflow: `load-existing`,
+`fix-query`, `save-improved`, `improve-failed`. Visualization:
+`select-visualisation`, `call-query-generation`, `get-dataset-data`,
+`render-visualization`. (The constants are exported from
+`lb4-llm-chat-component/mastra` as `STEP_GET_TABLES`, etc.)
+
+### Recompose a whole workflow (advanced)
+
+When you need to change the DAG shape itself (add/remove steps, change a
+branch), build a custom workflow from the exported step shells and rebind the
+Mastra instance under the key the tools look up (`generateQueryWorkflow`):
+
+```ts
+import {createWorkflow} from '@mastra/core/workflows';
 import {
-  // existing steps you keep
   checkCacheStep,
   getTablesStep,
-  checkTemplatesStep,
-  postCacheAndTablesStep,
-  getColumnsStep,
-  generateChecklistStep,
-  sqlAndValidateStep,
-  saveDatasetStep,
-  // workflow input/output contract
+  // ...other step shells you keep...
   generateQueryInputSchema,
   generateQueryOutputSchema,
 } from 'lb4-llm-chat-component/mastra';
 
-// your replacement for one step (must keep the same input/output shape)
-const myGetTablesStep = createStep({
-  id: 'get-tables',
-  inputSchema: getTablesStep.inputSchema,
-  outputSchema: getTablesStep.outputSchema,
-  execute: async ({inputData, requestContext}) => {
-    // ...your table-selection logic...
-    return {tables: ['employees', 'currencies']};
-  },
-});
-
-// recompose the workflow. Mirror the DAG in the package's
-// generate.workflow.ts (branches/dountil); shown linear here for brevity.
 export const myGenerateWorkflow = createWorkflow({
   id: 'generate-query',
   inputSchema: generateQueryInputSchema,
   outputSchema: generateQueryOutputSchema,
 })
-  .then(myGetTablesStep)
-  .then(getColumnsStep)
-  .then(generateChecklistStep)
-  .dountil(sqlAndValidateStep, async ({inputData}) => inputData.passed)
-  .then(saveDatasetStep)
+  .parallel([checkCacheStep, getTablesStep /* , ... */])
+  // ...mirror the DAG in the package's generate.workflow.ts...
   .commit();
 ```
 

@@ -4,7 +4,7 @@ import {createTool} from '@mastra/core/tools';
 import type {Tool} from '@mastra/core/tools';
 import {z} from 'zod';
 import {IGraphTool} from '../../../graphs/types';
-import {InternalBindings} from '../../../mastra/internal-bindings';
+import {InternalBindings} from '../../../runtime/internal-bindings';
 import {graphTool} from '../../../decorators';
 import {DbQueryAIExtensionBindings} from '../keys';
 import {DbSchemaHelperService} from '../services';

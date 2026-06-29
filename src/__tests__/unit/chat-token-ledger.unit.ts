@@ -2,7 +2,7 @@ import {expect, sinon} from '@loopback/testlab';
 import {
   upsertChatTokenLedger,
   type ChatLedgerRepo,
-} from '../../mastra/chat-token-ledger';
+} from '../../runtime/chat-token-ledger';
 
 /**
  * The chats ledger is what the token/chat LIMIT STRATEGIES read. The Mastra

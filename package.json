@@ -25,8 +25,8 @@
       "default": "./dist/components/db-query/testing/index.js"
     },
     "./mastra": {
-      "type": "./dist/mastra/index.d.ts",
-      "default": "./dist/mastra/index.js"
+      "type": "./dist/runtime/index.d.ts",
+      "default": "./dist/runtime/index.js"
     },
     "./aws": {
       "type": "./dist/sub-modules/providers/aws/index.d.ts",
@@ -86,7 +86,7 @@
         "dist/components/db-query/testing/index.d.ts"
       ],
       "mastra": [
-        "dist/mastra/index.d.ts"
+        "dist/runtime/index.d.ts"
       ],
       "aws": [
         "dist/sub-modules/providers/aws/index.d.ts"

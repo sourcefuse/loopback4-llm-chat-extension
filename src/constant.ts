@@ -2,6 +2,18 @@ export const TOOL_TAG = 'isTOOL';
 export const TOOL_NAME = 'TOOL';
 export const GRAPH_NODE_TAG = 'isNODE';
 export const GRAPH_NODE_NAME = 'GRAPH_NODE';
+// Mastra-named equivalents of the LangGraph node tags above. A `@step(key)`
+// class is stamped `isSTEP: true` + `STEP: <key>`, so a workflow step is
+// discovered by tag (`context.findByTag({STEP: key})`) and resolved from DI —
+// exactly the BaseGraph._getNodeFn seam, in Mastra vocabulary. This is what
+// makes individual steps overrideable by a host app: rebind the tagged class.
+export const STEP_TAG = 'isSTEP';
+export const STEP_NAME = 'STEP';
+// Marks a step binding as a BUNDLED default (stamped on the library's own
+// `@step` registrations). When a host binds its own `@step(key)` class with the
+// same key, two bindings share the tag; the resolver prefers the one WITHOUT
+// this marker, so a consumer override wins without having to unbind the default.
+export const STEP_DEFAULT = 'stepDefault';
 // Default token budget for the chat agent's TokenLimiter input processor — it
 // trims the OLDEST non-system messages to keep the request within this budget.
 // It is NOT a cost-trim threshold: if the SYSTEM prompt alone exceeds this, the

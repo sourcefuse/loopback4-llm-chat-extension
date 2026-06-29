@@ -2,7 +2,7 @@ import {expect} from '@loopback/testlab';
 import {
   detectDmlStatement,
   validateSqlSyntactic,
-} from '../../mastra/workflows/db-query/_helpers';
+} from '../../components/db-query/steps/_helpers';
 
 // Defence-in-depth: LLM-generated SQL must be read-only before it is
 // validated / persisted / executed. The connector wraps execution in

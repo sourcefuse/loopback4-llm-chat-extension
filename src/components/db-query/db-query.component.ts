@@ -10,6 +10,7 @@ import {
   ServiceOrProviderClass,
 } from '@loopback/core';
 import {AnyObject} from '@loopback/repository';
+import {STEP_DEFAULT} from '../../constant';
 import {DataSetController, TemplateController} from './controller';
 import {DatasetServiceComponent} from './dataset-service.component';
 import {DbQueryAIExtensionBindings} from './keys';
@@ -25,6 +26,7 @@ import {PermissionHelper} from './services/permission-helper.service';
 import {SchemaStore} from './services/schema.store';
 import {TableSearchService} from './services/search/table-search.service';
 import {PgWithRlsConnector} from './connectors/pg';
+import {DB_QUERY_STEP_CLASSES} from './steps';
 
 export class DbQueryComponent implements Component {
   services: ServiceOrProviderClass[] | undefined;
@@ -44,6 +46,12 @@ export class DbQueryComponent implements Component {
         key: DbQueryAIExtensionBindings.Connector.key,
         defaultScope: BindingScope.TRANSIENT,
       }),
+      // DI-backed workflow steps — bound as tagged services (the `@step(key)`
+      // tag makes them discoverable) and marked STEP_DEFAULT so a host override
+      // (a second `@step(key)` binding) is preferred by the resolver.
+      ...DB_QUERY_STEP_CLASSES.map(stepClass =>
+        createBindingFromClass(stepClass).tag({[STEP_DEFAULT]: true}),
+      ),
     ];
     this.lifeCycleObservers = [TableSeedObserver];
     this.services = [

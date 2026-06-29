@@ -10,7 +10,7 @@ export * from './keys';
 // e.g. a Redis-backed RunRegistry, a Postgres MastraStorage, or an
 // Observability exporter — without polluting the host-facing
 // AiIntegrationBindings model-binding surface.
-export * from './mastra/internal-bindings';
+export * from './runtime/internal-bindings';
 export * from './providers';
 export * from './services';
 export * from './transports';

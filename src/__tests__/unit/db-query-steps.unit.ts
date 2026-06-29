@@ -2,20 +2,21 @@ import {expect, sinon} from '@loopback/testlab';
 import {RequestContext} from '@mastra/core/request-context';
 import type {Tool} from '@mastra/core/tools';
 import {DatasetActionType} from '../../components/db-query/constant';
-import {checkCacheStep} from '../../mastra/workflows/db-query/steps/check-cache.step';
-import {checkTemplatesStep} from '../../mastra/workflows/db-query/steps/check-templates.step';
-import {failedStep} from '../../mastra/workflows/db-query/steps/failed.step';
-import {getTablesStep} from '../../mastra/workflows/db-query/steps/get-tables.step';
-import {postCacheAndTablesStep} from '../../mastra/workflows/db-query/steps/post-cache-and-tables.step';
-import {returnCachedStep} from '../../mastra/workflows/db-query/steps/return-cached.step';
-import {saveDatasetStep} from '../../mastra/workflows/db-query/steps/save-dataset.step';
+import {checkCacheStep} from '../../components/db-query/workflows/generate.workflow';
+import {checkTemplatesStep} from '../../components/db-query/workflows/generate.workflow';
+import {failedStep} from '../../components/db-query/workflows/generate.workflow';
+import {getTablesStep} from '../../components/db-query/workflows/generate.workflow';
+import {makeContainerStepResolver} from '../fixtures/step-resolver';
+import {postCacheAndTablesStep} from '../../components/db-query/workflows/generate.workflow';
+import {returnCachedStep} from '../../components/db-query/workflows/generate.workflow';
+import {saveDatasetStep} from '../../components/db-query/workflows/generate.workflow';
 import {
   STEP_CHECK_CACHE,
   STEP_CHECK_TEMPLATES,
   STEP_GET_TABLES,
   classifyPostCacheStatus,
-} from '../../mastra/workflows/db-query/steps/constants';
-import type {MastraRcShape} from '../../mastra/workflows/db-query/_helpers';
+} from '../../components/db-query/steps/constants';
+import type {MastraRcShape} from '../../components/db-query/steps/_helpers';
 import {LLMStreamEventType} from '../../graphs/event.types';
 import type {LLMStreamEvent} from '../../graphs/event.types';
 
@@ -38,21 +39,26 @@ describe('db-query workflow steps (unit)', () => {
     const rc = new RequestContext<MastraRcShape>();
     rc.set('resourceId', overrides.resourceId ?? 't1:u1');
     rc.set('eventWriter', overrides.eventWriter ?? (() => undefined));
-    if (overrides.chatLlm) rc.set('chatLlm', overrides.chatLlm);
-    if (overrides.cheapLlm) rc.set('cheapLlm', overrides.cheapLlm);
-    if (overrides.queryCache) rc.set('queryCache', overrides.queryCache);
-    if (overrides.templateCache)
-      rc.set('templateCache', overrides.templateCache);
-    if (overrides.schemaStore) rc.set('schemaStore', overrides.schemaStore);
-    if (overrides.schemaHelper) rc.set('schemaHelper', overrides.schemaHelper);
-    if (overrides.datasetStore) rc.set('datasetStore', overrides.datasetStore);
-    if (overrides.authUser) rc.set('authUser', overrides.authUser);
-    if (overrides.templateStore)
-      rc.set('templateStore', overrides.templateStore);
-    if (overrides.permissionHelper)
-      rc.set('permissionHelper', overrides.permissionHelper);
-    if (overrides.dataSetHelper)
-      rc.set('dataSetHelper', overrides.dataSetHelper);
+    // Steps now read collaborators + resolved LLM tiers via constructor DI, so
+    // route the test's stubs through the container resolver (not rc). The shell
+    // still reads `resolveStep` + `eventWriter` from this rc, exactly as
+    // WorkflowRunner wires it in production.
+    const {resolver} = makeContainerStepResolver({
+      schemaStore: overrides.schemaStore,
+      schemaHelper: overrides.schemaHelper,
+      dataSetHelper: overrides.dataSetHelper,
+      permissionHelper: overrides.permissionHelper,
+      datasetStore: overrides.datasetStore,
+      templateStore: overrides.templateStore,
+      queryCache: overrides.queryCache,
+      templateCache: overrides.templateCache,
+      authUser: overrides.authUser,
+      chatModel: overrides.chatLlm,
+      cheapModel: overrides.cheapLlm,
+      smartModel: overrides.smartLlm,
+      smartNonThinkingModel: overrides.smartNonThinkingLlm,
+    });
+    rc.set('resolveStep', resolver);
     return rc;
   }
 
@@ -149,7 +155,7 @@ describe('db-query workflow steps (unit)', () => {
       // For the unit-level assertion, run with a stub LLM that the
       // helper layer will short-circuit on (forceThinkingOff path).
       // Instead, isolate by stubbing the helper directly:
-      const helpers = await import('../../mastra/workflows/db-query/_helpers');
+      const helpers = await import('../../components/db-query/steps/_helpers');
       sinon
         .stub(helpers, 'tracedGenerateText')
         .resolves({text: 'AsIs 1'} as Awaited<
@@ -172,7 +178,7 @@ describe('db-query workflow steps (unit)', () => {
       const invoke = sinon
         .stub()
         .resolves([{pageContent: 'salaries', metadata: {id: 'ds-9'}}]);
-      const helpers = await import('../../mastra/workflows/db-query/_helpers');
+      const helpers = await import('../../components/db-query/steps/_helpers');
       sinon
         .stub(helpers, 'tracedGenerateText')
         .resolves({text: 'AsIs 1'} as Awaited<
@@ -199,7 +205,7 @@ describe('db-query workflow steps (unit)', () => {
       const invoke = sinon
         .stub()
         .resolves([{pageContent: 'p', metadata: {id: 'ds-1'}}]);
-      const helpers = await import('../../mastra/workflows/db-query/_helpers');
+      const helpers = await import('../../components/db-query/steps/_helpers');
       sinon
         .stub(helpers, 'tracedGenerateText')
         .resolves({text: 'AsIs 9'} as Awaited<
@@ -220,7 +226,7 @@ describe('db-query workflow steps (unit)', () => {
       const invoke = sinon
         .stub()
         .resolves([{pageContent: 'p', metadata: {id: 'ds-1'}}]);
-      const helpers = await import('../../mastra/workflows/db-query/_helpers');
+      const helpers = await import('../../components/db-query/steps/_helpers');
       sinon
         .stub(helpers, 'tracedGenerateText')
         .resolves({text: 'AsIs abc'} as Awaited<
@@ -241,7 +247,7 @@ describe('db-query workflow steps (unit)', () => {
       const invoke = sinon
         .stub()
         .resolves([{pageContent: 'list staff', metadata: {id: 'ds-1'}}]);
-      const helpers = await import('../../mastra/workflows/db-query/_helpers');
+      const helpers = await import('../../components/db-query/steps/_helpers');
       sinon
         .stub(helpers, 'tracedGenerateText')
         .resolves({text: 'Similar 1'} as Awaited<
@@ -272,7 +278,7 @@ describe('db-query workflow steps (unit)', () => {
       const invoke = sinon
         .stub()
         .resolves([{pageContent: 'p', metadata: {id: 'ds-1'}}]);
-      const helpers = await import('../../mastra/workflows/db-query/_helpers');
+      const helpers = await import('../../components/db-query/steps/_helpers');
       sinon
         .stub(helpers, 'tracedGenerateText')
         .resolves({text: 'Similar 1'} as Awaited<
@@ -300,7 +306,7 @@ describe('db-query workflow steps (unit)', () => {
       const invoke = sinon
         .stub()
         .resolves([{pageContent: 'p', metadata: {id: 'ds-1'}}]);
-      const helpers = await import('../../mastra/workflows/db-query/_helpers');
+      const helpers = await import('../../components/db-query/steps/_helpers');
       sinon.stub(helpers, 'tracedGenerateText').rejects(new Error('llm down'));
 
       const out = await runCheckCache(
@@ -354,7 +360,7 @@ describe('db-query workflow steps (unit)', () => {
       const invoke = sinon
         .stub()
         .resolves([{pageContent: 'tmpl', metadata: {id: 'tmpl-9'}}]);
-      const helpers = await import('../../mastra/workflows/db-query/_helpers');
+      const helpers = await import('../../components/db-query/steps/_helpers');
       sinon
         .stub(helpers, 'tracedGenerateText')
         .resolves({text: 'match 1'} as Awaited<
@@ -376,7 +382,7 @@ describe('db-query workflow steps (unit)', () => {
       const invoke = sinon
         .stub()
         .resolves([{pageContent: 't', metadata: {id: 'tmpl-1'}}]);
-      const helpers = await import('../../mastra/workflows/db-query/_helpers');
+      const helpers = await import('../../components/db-query/steps/_helpers');
       sinon.stub(helpers, 'tracedGenerateText').rejects(new Error('llm down'));
 
       const out = await runCheckTemplates(
@@ -396,7 +402,7 @@ describe('db-query workflow steps (unit)', () => {
       const invoke = sinon
         .stub()
         .resolves([{pageContent: 'tmpl', metadata: {id: 'tmpl-9'}}]);
-      const helpers = await import('../../mastra/workflows/db-query/_helpers');
+      const helpers = await import('../../components/db-query/steps/_helpers');
       sinon
         .stub(helpers, 'tracedGenerateText')
         .resolves({text: 'match 1'} as Awaited<
@@ -423,7 +429,7 @@ describe('db-query workflow steps (unit)', () => {
       const invoke = sinon
         .stub()
         .resolves([{pageContent: 'tmpl', metadata: {id: 'tmpl-9'}}]);
-      const helpers = await import('../../mastra/workflows/db-query/_helpers');
+      const helpers = await import('../../components/db-query/steps/_helpers');
       sinon
         .stub(helpers, 'tracedGenerateText')
         .resolves({text: 'match 1'} as Awaited<
@@ -450,6 +456,10 @@ describe('db-query workflow steps (unit)', () => {
   // get-tables step
   // ──────────────────────────────────────────────────────────
 
+  // get-tables is the DI-backed GetTablesStep class, exercised here through its
+  // workflow shell (`getTablesStep`). makeRc publishes the static resolver, so
+  // the shell delegates to the class which reads SchemaStore / PermissionHelper
+  // from this same rc — identical wiring to WorkflowRunner.
   describe('getTablesStep', () => {
     async function runGetTables(
       rc?: RequestContext<MastraRcShape>,
@@ -570,6 +580,7 @@ describe('db-query workflow steps (unit)', () => {
       if (args.templates) stepResults[STEP_CHECK_TEMPLATES] = args.templates;
       const ctx = {
         inputData: args.input ?? {},
+        requestContext: makeRc(),
         getStepResult: (id: string) => stepResults[id],
         getInitData: () => args.init,
       } as ExecuteArg<typeof postCacheAndTablesStep>;
@@ -706,6 +717,7 @@ describe('db-query workflow steps (unit)', () => {
       // `datasetId ? Completed : Failed` to decide which status to emit.
       const ctx = {
         inputData: {anything: true},
+        requestContext: makeRc(),
       } as ExecuteArg<typeof failedStep>;
       const out = (await failedStep.execute(ctx)) as {
         datasetId: string;
@@ -722,6 +734,7 @@ describe('db-query workflow steps (unit)', () => {
     it('surfaces the last validation feedback in the failure message', async () => {
       const ctx = {
         inputData: {feedback: 'Query Validation Failed: unknown column foo'},
+        requestContext: makeRc(),
       } as ExecuteArg<typeof failedStep>;
       const out = (await failedStep.execute(ctx)) as {replyToUser?: string};
       expect(out.replyToUser).to.match(/unknown column foo/);
@@ -730,6 +743,7 @@ describe('db-query workflow steps (unit)', () => {
     it('prefers an upstream replyToUser (unanswerable gate) over the generic message', async () => {
       const ctx = {
         inputData: {replyToUser: 'No revenue data is stored in these tables.'},
+        requestContext: makeRc(),
       } as ExecuteArg<typeof failedStep>;
       const out = (await failedStep.execute(ctx)) as {replyToUser?: string};
       expect(out.replyToUser).to.equal(

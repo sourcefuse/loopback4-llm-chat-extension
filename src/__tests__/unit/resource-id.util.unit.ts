@@ -3,7 +3,7 @@ import type {IAuthUserWithPermissions} from '@sourceloop/core';
 import {
   deriveResourceId,
   resolvePrincipalId,
-} from '../../mastra/resource-id.util';
+} from '../../runtime/resource-id.util';
 
 /**
  * The resourceId derivation is the single source of truth shared by the

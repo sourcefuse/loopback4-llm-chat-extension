@@ -18,7 +18,7 @@
  * Refs: the migration plan.
  */
 import type {Application as CoreApplication} from '@loopback/core';
-import {InternalBindings} from '../mastra/internal-bindings';
+import {InternalBindings} from '../runtime/internal-bindings';
 import {Chat} from '../models/chat.model';
 import {Message} from '../models/message.model';
 import {MessageMetadataType} from '../graphs/message-metadata.type';

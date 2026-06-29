@@ -21,18 +21,45 @@ import {
   stripSqlFences,
   validateSqlSemantic,
   validateSqlSyntactic,
-} from '../../../mastra/workflows/db-query/_helpers';
+} from '../../../components/db-query/steps/_helpers';
 import {DatasetActionType} from '../../../components/db-query/constant';
 import {
   checkCacheStep,
   generateChecklistStep,
-  getTablesStep,
-  STEP_GET_COLUMNS,
-} from '../../../mastra/workflows/db-query/steps';
+} from '../../../components/db-query/workflows/generate.workflow';
+import {STEP_GET_COLUMNS} from '../../../components/db-query/steps/constants';
+import {GetTablesStep} from '../../../components/db-query/steps/get-tables.step';
+import {makeContainerStepResolver} from '../../fixtures/step-resolver';
 
-/** Minimal RequestContext stand-in: workflow steps only call `.get(key)`. */
+/**
+ * Minimal RequestContext stand-in: workflow steps only call `.get(key)`. Always
+ * carries `resolveStep` (the static resolver) so a step-shell `.execute()`
+ * resolves its `@step` class, which then reads the rest of the map. A test may
+ * override `resolveStep` via the map.
+ */
 function fakeRc(map: Record<string, unknown>): never {
-  return {get: (k: string) => map[k]} as never;
+  // Converted steps read collaborators + model tiers via constructor DI, so
+  // route the map's stubs through the container resolver; the fake rc only
+  // needs `resolveStep` + `eventWriter` (the step shells read those from rc).
+  const {resolver} = makeContainerStepResolver({
+    queryCache: map.queryCache,
+    templateCache: map.templateCache,
+    datasetStore: map.datasetStore,
+    dataSetHelper: map.dataSetHelper,
+    schemaStore: map.schemaStore,
+    schemaHelper: map.schemaHelper,
+    permissionHelper: map.permissionHelper,
+    templateStore: map.templateStore,
+    config: map.config,
+    chatModel: map.chatLlm,
+    cheapModel: map.cheapLlm,
+    smartModel: map.smartLlm,
+  });
+  const full: Record<string, unknown> = {
+    resolveStep: map.resolveStep ?? resolver,
+    ...map,
+  };
+  return {get: (k: string) => full[k]} as never;
 }
 /** Invoke a Mastra step's execute directly with a fake context. */
 async function runStep(
@@ -44,6 +71,8 @@ async function runStep(
     inputData,
     requestContext: fakeRc(rc),
     tracingContext: undefined,
+    getStepResult: () => undefined,
+    getInitData: () => undefined,
   } as never)) as Record<string, unknown>;
 }
 
@@ -780,19 +809,21 @@ describe('db-query generate helpers (unit)', () => {
     });
   });
 
-  describe('getTablesStep (get-tables baseline)', () => {
+  // get-tables is now the DI-backed GetTablesStep class (resolved by the
+  // workflow shell at run time). The baseline behaviour is asserted by
+  // constructing the class with a stub SchemaStore — the shell/resolver wiring
+  // is covered in the workflow + integration suites.
+  describe('GetTablesStep (get-tables baseline)', () => {
     it('returns the schema table names from SchemaStore', async () => {
-      const out = await runStep(
-        getTablesStep,
-        {prompt: 'x'},
-        {
-          schemaStore: {get: () => ({tables: {employees: {}, currencies: {}}})},
-        },
-      );
+      // SchemaStore is now constructor-injected — pass it to the class, not rc.
+      const step = new GetTablesStep({
+        get: () => ({tables: {employees: {}, currencies: {}}}),
+      } as never);
+      const out = await runStep(step, {prompt: 'x'}, {});
       expect(out.tables).to.eql(['employees', 'currencies']);
     });
     it('returns [] when no SchemaStore is bound', async () => {
-      const out = await runStep(getTablesStep, {prompt: 'x'}, {});
+      const out = await runStep(new GetTablesStep(), {prompt: 'x'}, {});
       expect(out.tables).to.eql([]);
     });
   });

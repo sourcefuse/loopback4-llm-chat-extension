@@ -9,8 +9,8 @@ import {
   STRATEGY,
 } from 'loopback4-authentication';
 import {authorize} from 'loopback4-authorization';
-import {InternalBindings} from '../mastra/internal-bindings';
-import {deriveResourceId} from '../mastra/resource-id.util';
+import {InternalBindings} from '../runtime/internal-bindings';
+import {deriveResourceId} from '../runtime/resource-id.util';
 import {PermissionKey} from '../permissions';
 
 /**

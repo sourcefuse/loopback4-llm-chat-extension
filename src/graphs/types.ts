@@ -1,5 +1,52 @@
 import {Tool} from '@mastra/core/tools';
 import type {AnyObject} from '@loopback/repository';
+import type {Mastra} from '@mastra/core';
+import type {RequestContext} from '@mastra/core/request-context';
+import type {TracingContext} from '@mastra/core/observability';
+
+/**
+ * The Mastra step `execute` argument, as seen by a workflow step. The shell
+ * (see {@link makeStepShell}) forwards Mastra's real execute context unchanged,
+ * so a step body reads `inputData` (the previous step's typed output),
+ * `requestContext` (request-scoped runtime data + the step resolver),
+ * `tracingContext`, and — for fan-in steps — `getStepResult` / `getInitData`.
+ *
+ * `requestContext` is typed `RequestContext<any>` because Mastra's
+ * RequestContext is INVARIANT in its shape generic: a step that narrows it to
+ * MastraRc (= RequestContext<MastraRcShape>) is otherwise neither assignable-to
+ * nor -from RequestContext<unknown>. `any` is the standard escape hatch for
+ * that invariant-generic seam; each step body still uses the typed accessors.
+ */
+export interface WorkflowStepCtx<TIn = unknown> {
+  inputData: TIn;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  requestContext: RequestContext<any>;
+  tracingContext?: TracingContext;
+  getStepResult(stepId: string): unknown;
+  getInitData?(): unknown;
+  // Present on Mastra's step execute ctx; used by steps that invoke a nested
+  // workflow (e.g. call-query-generation runs generateQueryWorkflow).
+  mastra?: Mastra;
+}
+
+/**
+ * DI-resolved workflow step (the Mastra-named successor of the LangGraph
+ * `IGraphNode`). A `@step(key)`-decorated class implements this; the workflow
+ * never references the concrete class — it resolves the instance by tag at run
+ * time (see {@link makeStepShell} + WorkflowRunner.resolveWorkflowStep), so a
+ * host app overrides a step purely by rebinding the tagged class.
+ */
+export interface IWorkflowStep<TIn = unknown, TOut = unknown> {
+  execute(ctx: WorkflowStepCtx<TIn>): Promise<TOut>;
+}
+
+/**
+ * Resolve a `@step(key)`-tagged class instance from the LB4 container. Threaded
+ * into the Mastra RequestContext by WorkflowRunner so a committed step shell
+ * can fetch its DI-backed implementation per request. Mirrors
+ * BaseGraph._getNodeFn (tag lookup → context.get).
+ */
+export type StepResolver = (key: string) => Promise<IWorkflowStep>;
 
 export enum ToolStatus {
   Running = 'running',

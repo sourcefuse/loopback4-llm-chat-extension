@@ -1,5 +1,5 @@
 import {BindingScope, inject, injectable, service} from '@loopback/core';
-import {WorkflowRunner} from '../mastra/bridge/workflow-runner';
+import {WorkflowRunner} from '../runtime/bridge/workflow-runner';
 import {AiIntegrationBindings} from '../keys';
 import {ITransport} from '../transports/types';
 import {ILimitStrategy} from './limit-strategies/types';
