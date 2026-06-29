@@ -100,15 +100,22 @@ export type VisualizerSelection =
   | {rejected: true; reason: string};
 
 /**
- * Build the prompt that asks the LLM to pick the best-fitting visualizer for
- * the user's request — or to reject when none fit. Ports the v2
- * select-visualization.node prompt: each visualizer is listed with its
- * description + data requirements (`context`), and the model may answer
- * "none: <reason>" rather than force-fitting an unsuitable chart.
+ * The data shape the selector reasons about — the generated SQL, the dataset
+ * description, and the column names of the first result row. v2's
+ * select-visualization.node fed {sql, description} into the prompt so the model
+ * matched the chart to the DATA (time-series → line, categories → bar,
+ * proportions → pie) instead of guessing from the request wording alone.
  */
+export interface VisualizationDataContext {
+  sql?: string;
+  description?: string;
+  columns?: string[];
+}
+
 export function buildVisualizerSelectionPrompt(
   userQuery: string,
   visualizers: IVisualizer[],
+  data: VisualizationDataContext = {},
 ): string {
   const options = visualizers
     .map(
@@ -119,7 +126,21 @@ export function buildVisualizerSelectionPrompt(
     )
     .join('\n');
   const example = visualizers[0]?.name ?? DEFAULT_CHART_TYPE;
-  return `You are a data-visualization expert. Select the SINGLE best visualization for the user's request from the available options.
+  const hasData =
+    Boolean(data.sql) ||
+    Boolean(data.description) ||
+    Boolean(data.columns?.length);
+  const dataBlock = hasData
+    ? `
+<data>
+Match the chart to the column shape this query returns, not just the wording of the request.
+SQL: ${data.sql ?? '(unavailable)'}
+Description: ${data.description ?? '(none)'}
+Columns: ${data.columns?.length ? data.columns.join(', ') : '(unknown)'}
+</data>
+`
+    : '';
+  return `You are a data-visualization expert. Select the SINGLE best visualization for the user's request and the data it returns, from the available options.
 
 <available-visualizations>
 ${options}
@@ -128,10 +149,10 @@ ${options}
 <user-request>
 ${userQuery}
 </user-request>
-
+${dataBlock}
 <instructions>
-Reply with ONLY the name of the best-fitting visualization (e.g. "${example}").
-If none of the visualizations fit the requirement, reply with "none" followed by a colon and a short reason describing what the data would need for a visualization to be possible.
+Reply with ONLY the name of the best-fitting visualization (e.g. "${example}") on its own — no explanation.
+If none of the visualizations fit, reply with "none" followed by a colon and a short reason describing what the data would need for a visualization to be possible.
 Do not force-fit the request to a visualization that does not make sense — prefer "none" with a clear reason instead.
 </instructions>
 
@@ -143,11 +164,16 @@ none: the requested data is a single scalar value and cannot be charted.
 </output-example-2>`;
 }
 
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 /**
- * Parse the selection LLM's reply. A reply starting with "none" is an explicit
- * rejection (the remainder is the reason). Otherwise we match the reply against
- * a registered visualizer name; an unrecognised reply falls back to the first
- * visualizer rather than failing the run.
+ * Parse the selection LLM's reply. "none" → explicit rejection (remainder is the
+ * reason). Otherwise: exact match first; then a WHOLE-WORD match preferring the
+ * LAST-mentioned visualizer (so "not a bar chart, use line" picks `line`, and
+ * short names like `line` don't match inside `timeline`). Unrecognised replies
+ * fall back to the first visualizer rather than failing the run.
  */
 export function parseVisualizerSelection(
   raw: string,
@@ -167,7 +193,17 @@ export function parseVisualizerSelection(
   }
   const exact = visualizers.find(v => v.name.toLowerCase() === lower);
   if (exact) return {chartType: exact.name};
-  const contained = visualizers.find(v => lower.includes(v.name.toLowerCase()));
-  if (contained) return {chartType: contained.name};
+  // Whole-word match, preferring the last-mentioned name (the model's verdict).
+  let best: {name: string; idx: number} | undefined;
+  for (const v of visualizers) {
+    const re = new RegExp(`\\b${escapeRegExp(v.name.toLowerCase())}\\b`, 'g');
+    let lastIdx = -1;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(lower)) !== null) lastIdx = m.index;
+    if (lastIdx >= 0 && (!best || lastIdx > best.idx)) {
+      best = {name: v.name, idx: lastIdx};
+    }
+  }
+  if (best) return {chartType: best.name};
   return {chartType: visualizers[0]?.name ?? DEFAULT_CHART_TYPE};
 }

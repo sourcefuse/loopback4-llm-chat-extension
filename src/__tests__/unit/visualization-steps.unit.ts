@@ -5,9 +5,11 @@ import {getDatasetDataStep} from '../../mastra/workflows/visualization/steps/get
 import {renderVisualizationStep} from '../../mastra/workflows/visualization/steps/render-visualization.step';
 import {selectVisualisationStep} from '../../mastra/workflows/visualization/steps/select-visualisation.step';
 import {
+  buildVisualizerSelectionPrompt,
   DEFAULT_CHART_TYPE,
   fetchDatasetDescriptor,
   fetchDatasetRows,
+  parseVisualizerSelection,
   pickFromBranch,
   pickVisualizer,
 } from '../../mastra/workflows/visualization/steps/shared';
@@ -502,6 +504,64 @@ describe('visualization workflow steps (unit)', () => {
         expect(
           await fetchDatasetRows({getDataFromDataset} as never, 'ds-1'),
         ).to.eql([]);
+      });
+    });
+
+    describe('parseVisualizerSelection (chart-pick robustness)', () => {
+      const viz = [
+        {name: 'bar'},
+        {name: 'line'},
+        {name: 'pie'},
+      ] as IVisualizer[];
+
+      it('matches an exact name reply', () => {
+        expect(parseVisualizerSelection('line', viz)).to.eql({
+          chartType: 'line',
+        });
+      });
+
+      it('picks the LAST-mentioned name in a reasoned reply (not the first)', () => {
+        // The old includes() fallback returned "bar" (first in the array, and
+        // first mentioned). The verdict is "line".
+        expect(
+          parseVisualizerSelection('Not a bar chart — use line.', viz),
+        ).to.eql({chartType: 'line'});
+      });
+
+      it('does not match a name embedded in another word (line ∉ timeline)', () => {
+        expect(
+          parseVisualizerSelection('show the timeline of sales', viz),
+        ).to.eql({chartType: 'bar'}); // falls back to first; no false "line"
+      });
+
+      it('treats a "none: reason" reply as a rejection', () => {
+        const r = parseVisualizerSelection('none: single scalar value', viz);
+        expect(r).to.have.property('rejected', true);
+      });
+
+      it('falls back to the first visualizer on an unrecognised reply', () => {
+        expect(parseVisualizerSelection('rainbow', viz)).to.eql({
+          chartType: 'bar',
+        });
+      });
+    });
+
+    describe('buildVisualizerSelectionPrompt (data context)', () => {
+      const viz = [{name: 'bar', description: 'bars'}] as IVisualizer[];
+
+      it('includes the SQL + description data block when provided', () => {
+        const p = buildVisualizerSelectionPrompt('chart it', viz, {
+          sql: 'SELECT month, total FROM sales',
+          description: 'monthly totals',
+        });
+        expect(p).to.match(/<data>/);
+        expect(p).to.match(/SELECT month, total FROM sales/);
+        expect(p).to.match(/monthly totals/);
+      });
+
+      it('omits the data block when no data context is given', () => {
+        const p = buildVisualizerSelectionPrompt('chart it', viz);
+        expect(p).to.not.match(/<data>/);
       });
     });
   });
