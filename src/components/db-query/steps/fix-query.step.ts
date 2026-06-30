@@ -64,9 +64,8 @@ export class FixQueryStep implements IWorkflowStep {
 
     const prompt = data.prompt ?? '';
     const tables = data.tables ?? [];
-    const schemaStore = this.schemaStore;
+    const {schemaStore, dbConnector} = this;
     const columns = getTablesWithColumns(schemaStore, tables);
-    const dbConnector = this.dbConnector;
 
     const attempt = await runSqlAttempt({
       chatLlm: this.smartModel ?? this.chatModel,

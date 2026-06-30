@@ -69,6 +69,28 @@ Return ONLY the explicit constraints as plain-text bullets, or an empty response
 }
 
 /**
+ * Cached/template branch arms carry an existing dataset id straight through (no
+ * SQL generation). Extracted from `execute` to keep it under the cyclomatic
+ * complexity cap (S1541).
+ */
+function buildEnvelopeResult(
+  branchResult: Extract<BranchResult, {kind: 'cached' | 'template'}>,
+) {
+  if (!branchResult.datasetId) {
+    return {prompt: '', tables: [], checklist: '', attempts: 0};
+  }
+  return {
+    prompt: '',
+    tables: [],
+    checklist: '',
+    attempts: 0,
+    cached: true,
+    datasetId: idToString(branchResult.datasetId),
+    sql: branchResult.sql ?? '',
+  };
+}
+
+/**
  * First checklist pass (the Mastra-named successor of the LangGraph
  * GenerateChecklistNode). DI-resolved `@step` class.
  */
@@ -93,19 +115,8 @@ export class GenerateChecklistStep implements IWorkflowStep {
     const wrapped = inputData as Record<string, unknown>;
     const branchResult = extractBranchResult(wrapped);
 
-    if (branchResult.kind === 'cached' || branchResult.kind === 'template') {
-      if (!branchResult.datasetId) {
-        return {prompt: '', tables: [], checklist: '', attempts: 0};
-      }
-      return {
-        prompt: '',
-        tables: [],
-        checklist: '',
-        attempts: 0,
-        cached: true,
-        datasetId: idToString(branchResult.datasetId),
-        sql: branchResult.sql ?? '',
-      };
+    if (branchResult.kind !== 'continue') {
+      return buildEnvelopeResult(branchResult);
     }
 
     // kind === 'continue'

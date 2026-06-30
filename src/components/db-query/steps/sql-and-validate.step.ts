@@ -131,6 +131,29 @@ export class SqlAndValidateStep implements IWorkflowStep {
     private readonly smartModel?: LanguageModel,
   ) {}
 
+  /**
+   * Resolve the per-attempt model tiers + description toggle. Extracted from
+   * `execute` to keep it under the cyclomatic complexity cap (S1541).
+   */
+  private resolveAttemptModels(tableCount: number, priorAttempts: number) {
+    const cheap = this.cheapModel ?? this.chatModel;
+    const chatLlm = pickGenLlm({
+      config: this.config,
+      tableCount,
+      priorAttempts,
+      cheap,
+      smart: this.smartModel ?? this.chatModel,
+      chat: this.chatModel,
+    });
+    const wantsDescription =
+      this.config?.nodes?.sqlGenerationNode?.generateDescription !== false;
+    return {
+      cheap,
+      chatLlm,
+      descriptionLlm: wantsDescription ? cheap : undefined,
+    };
+  }
+
   async execute({inputData, requestContext, tracingContext}: WorkflowStepCtx) {
     const data = inputData as {
       prompt?: string;
@@ -162,22 +185,13 @@ export class SqlAndValidateStep implements IWorkflowStep {
     const prompt = data.prompt ?? '';
     const tables = data.tables ?? [];
     const priorAttempts = data.attempts ?? 0;
-    const cheap = this.cheapModel ?? this.chatModel;
-
-    // Streaming description (v2 generate-description) — default ON; opt out per
-    // consumer with `nodes.sqlGenerationNode.generateDescription = false`.
-    const generateDescription =
-      this.config?.nodes?.sqlGenerationNode?.generateDescription !== false;
+    const {cheap, chatLlm, descriptionLlm} = this.resolveAttemptModels(
+      tables.length,
+      priorAttempts,
+    );
 
     const attempt = await runSqlAttempt({
-      chatLlm: pickGenLlm({
-        config: this.config,
-        tableCount: tables.length,
-        priorAttempts,
-        cheap,
-        smart: this.smartModel ?? this.chatModel,
-        chat: this.chatModel,
-      }),
+      chatLlm,
       cheapLlm: cheap,
       allTables: getAllSchemaTables(this.schemaStore),
       tracing: tracingContext,
@@ -194,7 +208,7 @@ export class SqlAndValidateStep implements IWorkflowStep {
       buildPrompt: buildGenerateSqlPrompt,
       buildDescription: (_sql, p) => `Generated SQL for: ${p}`,
       lastAttempt: priorAttempts + 1 >= MAX_VALIDATION_ATTEMPTS,
-      descriptionLlm: generateDescription ? cheap : undefined,
+      descriptionLlm,
       rc: requestContext,
       permissionHelper: this.permissionHelper,
       ...sqlStatusEmitters(requestContext),
