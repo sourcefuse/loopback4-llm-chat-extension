@@ -210,3 +210,91 @@ describe('GenerationController — table selection (real LLM)', () => {
     });
   }
 });
+
+// ──────────────────────────────────────────────────────────────────
+// Follow-up routing (real LLM). Regression guard for the persisted-readout
+// bug: turn 1 generates a dataset; turn 2 (SAME session) asks a question ABOUT
+// that dataset. The agent MUST route to ask-about-dataset (it holds the SQL),
+// not answer from history and guess. Before the readout was neutralised, the
+// persisted "do not call any tool again" imperative suppressed the tool call.
+// ──────────────────────────────────────────────────────────────────
+describe('GenerationController — follow-up routing (real LLM)', () => {
+  let app: TestApp;
+  let client: Client;
+
+  before('checkIfCanRun', function () {
+    if (process.env.RUN_WITH_LLM !== 'true') {
+      // eslint-disable-next-line @typescript-eslint/no-invalid-this
+      this.skip();
+    }
+  });
+
+  before('setupApplication', async () => {
+    ({app, client} = await setupApplication({}));
+    app
+      .bind(AiIntegrationBindings.Transport)
+      .toClass(HttpTransport)
+      .inScope(BindingScope.REQUEST);
+    app.bind(DbQueryAIExtensionBindings.GlobalContext).to([]);
+    await seedEmployees(app);
+    await seedCurrencies(app);
+    await seedExchangeRates(app);
+    await setupChats(app);
+    await setupMessages(app);
+    app
+      .bind(AuthenticationBindings.CURRENT_USER)
+      .to(stubUser([...TABLE_PERMS, PermissionKey.AskAI]));
+  });
+
+  after(async () => {
+    if (app) await app.stop();
+  });
+
+  async function reply(
+    token: string,
+    prompt: string,
+    sessionId?: string,
+  ): Promise<LLMStreamEvent[]> {
+    let req = client
+      .post('/reply')
+      .set('authorization', `Bearer ${token}`)
+      .field('prompt', prompt);
+    if (sessionId) req = req.field('sessionId', sessionId);
+    const response = await req.expect(200);
+    return response.body as LLMStreamEvent[];
+  }
+
+  function calledTool(events: LLMStreamEvent[], tool: string): boolean {
+    return events.some(
+      e => e.type === LLMStreamEventType.Tool && e.data.tool === tool,
+    );
+  }
+
+  function sessionIdOf(events: LLMStreamEvent[]): string {
+    const init = events.find(e => e.type === LLMStreamEventType.Init);
+    return (init?.data as {sessionId?: string})?.sessionId as string;
+  }
+
+  it('routes a follow-up question about the prior dataset to ask-about-dataset', async () => {
+    const token = buildToken([...TABLE_PERMS, PermissionKey.AskAI]);
+
+    // Turn 1 — new conversation (no sessionId): backend creates the thread and
+    // emits its id on the Init event. Generates a date-filtered dataset.
+    const turn1 = await reply(
+      token,
+      'Show all the resources that joined in the last month',
+    );
+    expect(calledTool(turn1, 'get-data-as-dataset')).to.be.true();
+    const sessionId = sessionIdOf(turn1);
+    expect(sessionId).to.be.String();
+
+    // Turn 2 — same session: ask ABOUT that dataset. Must call
+    // ask-about-dataset (it can read the SQL) rather than guessing.
+    const turn2 = await reply(
+      token,
+      'on which column did you apply the joined-date condition?',
+      sessionId,
+    );
+    expect(calledTool(turn2, 'ask-about-dataset')).to.be.true();
+  });
+});
