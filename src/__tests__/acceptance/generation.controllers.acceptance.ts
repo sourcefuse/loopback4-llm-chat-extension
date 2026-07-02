@@ -279,20 +279,19 @@ describe('GenerationController — follow-up routing (real LLM)', () => {
     const token = buildToken([...TABLE_PERMS, PermissionKey.AskAI]);
 
     // Turn 1 — new conversation (no sessionId): backend creates the thread and
-    // emits its id on the Init event. Generates a date-filtered dataset.
-    const turn1 = await reply(
-      token,
-      'Show all the resources that joined in the last month',
-    );
+    // emits its id on the Init event. Generates a YEAR-filtered dataset.
+    const turn1 = await reply(token, 'resources who joined in 2024');
     expect(calledTool(turn1, 'get-data-as-dataset')).to.be.true();
     const sessionId = sessionIdOf(turn1);
     expect(sessionId).to.be.String();
 
-    // Turn 2 — same session: ask ABOUT that dataset. Must call
-    // ask-about-dataset (it can read the SQL) rather than guessing.
+    // Turn 2 — same session, PREMISE-MISMATCH phrasing (asks about a "month"
+    // condition when a year filter was applied — the exact Bizbook case that
+    // made the model deflect with "I don't have visibility"). Must still call
+    // ask-about-dataset (which reads the real SQL), not guess or clarify.
     const turn2 = await reply(
       token,
-      'on which column did you apply the joined-date condition?',
+      'on which column did you apply the month condition?',
       sessionId,
     );
     expect(calledTool(turn2, 'ask-about-dataset')).to.be.true();

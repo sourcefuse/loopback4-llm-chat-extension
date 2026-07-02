@@ -39,7 +39,7 @@ export class AskAboutDatasetTool implements IGraphTool {
     return createTool({
       id: this.key,
       description:
-        'Tool for answering questions about an existing dataset, note that it can only answer questions about the dataset definition, not the data it contains. Call this only if you have a valid dataset ID available.',
+        "Answer a follow-up question about a dataset you already generated in this conversation (you have its id) — INCLUDING which columns, filters, date/month conditions, sort orders, or joins were applied and how the data was selected. It reads the dataset's stored query, so it knows the real answer — use it instead of saying you lack visibility or guessing. Requires a valid dataset ID.",
       inputSchema: z.object({
         datasetId: z
           .string()
@@ -56,8 +56,8 @@ export class AskAboutDatasetTool implements IGraphTool {
           ...this.schemaHelper.getTablesContext(compressedSchema),
         ].join('\n');
         const prompt = [
-          "You are an AI assistant that answers questions about a query, without revealing any technical details, you need to answer the question the user's question.",
-          "Make sure you don't reveal the original query to the user, just answer the question based on the query.",
+          'You explain an existing dataset to the user in plain language, based on the query that produced it. You MAY tell them which columns, filters, date/month conditions, sort orders, or joins were applied — that is the point of this tool.',
+          'Do NOT paste the raw SQL text or expose internal IDs; describe what it does in plain terms.',
           `Here is the query that the question was for - ${query}`,
           `and here is the schema the query was generated for - ${JSON.stringify(compressedSchema)}`,
           `and here is the context that was provided for the query - ${context}`,
