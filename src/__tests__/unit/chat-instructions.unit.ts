@@ -20,6 +20,18 @@ describe('buildChatInstructions (chat system prompt)', () => {
     }
   });
 
+  it('routes follow-up questions about a prior dataset to ask-about-dataset', () => {
+    // Regression guard: without an explicit directive, the "must use a tool"
+    // rule is scoped to the first message, so on a follow-up the agent answers
+    // from memory and guesses (which column/filter was used) instead of calling
+    // ask-about-dataset. This directive must survive prompt edits.
+    const routing = CHAT_AGENT_DIRECTIVES.find(
+      d => d.includes('ask-about-dataset') && /follow-up/i.test(d),
+    );
+    expect(routing).to.not.be.undefined();
+    expect(routing).to.match(/never answer such a question from memory/i);
+  });
+
   it('injects the current date (v2 init-session parity)', () => {
     const out = buildChatInstructions([], fixedDate);
     expect(out).to.containEql(`Current date is ${fixedDate.toDateString()}`);
