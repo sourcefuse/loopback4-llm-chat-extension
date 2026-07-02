@@ -510,16 +510,22 @@ package root.
 A tool is a [Mastra `createTool`](https://mastra.ai) wrapper that implements
 `IGraphTool` — a `key` plus a `build()` that returns the tool. Optional
 `getValue(result)` / `getMetadata(result)` shape what the agent and the SSE
-stream receive after the tool runs. The component ships a default registry
-(`DefaultToolsProvider`) bound at `MastraInternalBindings.Tools`; override that
-binding to add or replace tools.
+stream receive after the tool runs.
+
+Tools are **discovered automatically by tag** — the default registry
+(`DefaultToolsProvider`, bound at `InternalBindings.Tools`) collects every
+class decorated with `@graphTool()` via `findByTag`. The four built-in tools are
+registered this way, and so is yours: decorate it and bind it as a service — no
+custom registry, no editing a shared list, no need to reference the internal
+Tools binding. Adding a fifth tool later is just decorating it.
 
 ```ts
 // my-add.tool.ts
 import {createTool} from '@mastra/core/tools';
 import {z} from 'zod';
-import {IGraphTool} from 'lb4-llm-chat-component';
+import {graphTool, IGraphTool} from 'lb4-llm-chat-component';
 
+@graphTool() // ← stamps `isTOOL:true`; DefaultToolsProvider auto-discovers it
 export class AddTool implements IGraphTool {
   key = 'add-tool';
 
@@ -540,40 +546,33 @@ export class AddTool implements IGraphTool {
 }
 ```
 
-Register it via a custom `ToolStore` provider. Inject the built-in tools (by
-their LoopBack service keys) if you want to keep them alongside yours:
-
-```ts
-// my-tools.provider.ts
-import {BindingScope, inject, injectable, Provider} from '@loopback/core';
-import {IGraphTool, ToolStore} from 'lb4-llm-chat-component';
-import {AddTool} from './my-add.tool';
-
-@injectable({scope: BindingScope.SINGLETON})
-export class MyToolsProvider implements Provider<ToolStore> {
-  constructor(
-    // built-ins are optional — present only if DbQuery/Visualizer is mounted
-    @inject('services.GetDataAsDatasetTool', {optional: true})
-    private getData?: IGraphTool,
-    @inject('services.ImproveDatasetTool', {optional: true})
-    private improve?: IGraphTool,
-    @inject('services.AskAboutDatasetTool', {optional: true})
-    private ask?: IGraphTool,
-    @inject('services.GenerateVisualizationTool', {optional: true})
-    private viz?: IGraphTool,
-  ) {}
-
-  value(): ToolStore {
-    const list = [this.getData, this.improve, this.ask, this.viz, new AddTool()];
-    return {list: list.filter((t): t is IGraphTool => !!t)};
-  }
-}
-```
+Bind it as a service — that is all. `DefaultToolsProvider` picks it up alongside
+the built-ins automatically:
 
 ```ts
 // application.ts
-import {MastraInternalBindings} from 'lb4-llm-chat-component';
-this.bind(MastraInternalBindings.Tools).toProvider(MyToolsProvider);
+import {createBindingFromClass} from '@loopback/core';
+import {AddTool} from './my-add.tool';
+
+this.add(createBindingFromClass(AddTool));
+```
+
+> **Migrating from a hand-written `ToolStore` provider?** Earlier versions
+> required a custom provider that `@inject`-ed every built-in tool into a static
+> list and rebound `InternalBindings.Tools`. That is no longer needed —
+> delete it, decorate your tool with `@graphTool()`, and bind it as above. The
+> built-ins register themselves, so a static list only risks drifting out of
+> sync.
+
+**Full replacement (advanced).** To take over the registry entirely — e.g. to
+exclude a built-in tool — bind your own `Provider<ToolStore>` at
+`InternalBindings.Tools`. This opts out of tag discovery, so you own the
+complete list:
+
+```ts
+// application.ts
+import {InternalBindings} from 'lb4-llm-chat-component';
+this.bind(InternalBindings.Tools).toProvider(MyToolsProvider);
 ```
 
 ## Agents
@@ -598,19 +597,19 @@ this.bind(AiIntegrationBindings.SystemContext).to([
 ]);
 
 // 3. Tools the agent may call — see the Tools section (override
-//    MastraInternalBindings.Tools).
+//    InternalBindings.Tools).
 ```
 
 To replace the agent (or the whole Mastra instance) outright — e.g. add a
 second agent, change Memory options, or register custom workflows — provide your
-own `Provider<Mastra>` and rebind `MastraInternalBindings.Mastra`. Use the
+own `Provider<Mastra>` and rebind `InternalBindings.Mastra`. Use the
 exported `MastraProvider` as a reference implementation:
 
 ```ts
 import {Provider, BindingScope, injectable} from '@loopback/core';
 import {Mastra} from '@mastra/core';
 import {Agent} from '@mastra/core/agent';
-import {MastraInternalBindings} from 'lb4-llm-chat-component';
+import {InternalBindings} from 'lb4-llm-chat-component';
 
 @injectable({scope: BindingScope.SINGLETON})
 export class MyMastraProvider implements Provider<Mastra> {
@@ -624,7 +623,7 @@ export class MyMastraProvider implements Provider<Mastra> {
     return new Mastra({agents: {supportAgent /*, chatAgent */}});
   }
 }
-// this.bind(MastraInternalBindings.Mastra).toProvider(MyMastraProvider);
+// this.bind(InternalBindings.Mastra).toProvider(MyMastraProvider);
 ```
 
 ## Steps and workflows
@@ -703,7 +702,7 @@ export const myGenerateWorkflow = createWorkflow({
 ```
 
 Register it by building a custom Mastra instance that maps your workflow to the
-`generateQueryWorkflow` key, then rebind `MastraInternalBindings.Mastra` (the
+`generateQueryWorkflow` key, then rebind `InternalBindings.Mastra` (the
 tools resolve the workflow by that key via `mastra.getWorkflow(...)`):
 
 ```ts
@@ -714,14 +713,27 @@ import {myGenerateWorkflow} from './my-generate.workflow';
 
 ## Storage and memory knobs
 
+Threads/messages persist in a zero-config LibSQL file (`file:./mastra.db`) by
+default. To use Postgres instead, register the storage component — no need to
+import the internal Storage binding key:
+
 ```ts
-import {MastraInternalBindings, PostgresMastraStorageProvider} from 'lb4-llm-chat-component';
+import {PostgresStorageComponent} from 'lb4-llm-chat-component';
 
 // persist threads/messages in Postgres instead of the default LibSQL file
-this.bind(MastraInternalBindings.Storage).toProvider(PostgresMastraStorageProvider);
+this.component(PostgresStorageComponent);
 // env: MASTRA_PG_CONNECTION_STRING (or MASTRA_PG_HOST/PORT/DATABASE/USER/PASSWORD),
 //      MASTRA_PG_SCHEMA (default "mastra")
 ```
+
+<details><summary>Manual binding (advanced)</summary>
+
+```ts
+import {InternalBindings, PostgresStorageProvider} from 'lb4-llm-chat-component';
+this.bind(InternalBindings.Storage).toProvider(PostgresStorageProvider);
+```
+
+</details>
 
 Memory env knobs: `MASTRA_DEFAULT_CHAT_MODEL` (required chat model),
 `MASTRA_SEMANTIC_RECALL=true` to enable cross-thread recall (default off; needs

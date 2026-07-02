@@ -12,13 +12,16 @@ const DEFAULT_PG_PORT = 5432;
  * default LibSQL/SQLite file.
  *
  * NOT bound by default — {@link DefaultStorageProvider} (LibSQL) stays
- * the zero-config default. Opt in from the consumer app:
+ * the zero-config default. Preferred opt-in is the component, which keeps the
+ * internal binding key out of consumer code:
  *
  * ```ts
- * import {PostgresStorageProvider, InternalBindings} from
- *   'lb4-llm-chat-component';
- * app.bind(InternalBindings.Storage).toProvider(PostgresStorageProvider);
+ * import {PostgresStorageComponent} from 'lb4-llm-chat-component';
+ * this.component(PostgresStorageComponent);
  * ```
+ *
+ * (Manual binding is still supported:
+ * `app.bind(InternalBindings.Storage).toProvider(PostgresStorageProvider)`.)
  *
  * Configuration is read from env, supporting either form `@mastra/pg` accepts:
  *
