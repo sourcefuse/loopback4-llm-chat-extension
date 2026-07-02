@@ -714,19 +714,31 @@ import {myGenerateWorkflow} from './my-generate.workflow';
 ## Storage and memory knobs
 
 Threads/messages persist in a zero-config LibSQL file (`file:./mastra.db`) by
-default. To use Postgres instead, register the storage component — no need to
-import the internal Storage binding key:
+default. To use Postgres instead, set the `storage` field on the same
+`AiIntegrationBindings.Config` binding you already use for `writerDS`/`readerDS`
+— no separate component, no internal binding key:
 
 ```ts
-import {PostgresStorageComponent} from 'lb4-llm-chat-component';
+import {AiIntegrationBindings} from 'lb4-llm-chat-component';
 
-// persist threads/messages in Postgres instead of the default LibSQL file
-this.component(PostgresStorageComponent);
-// env: MASTRA_PG_CONNECTION_STRING (or MASTRA_PG_HOST/PORT/DATABASE/USER/PASSWORD),
-//      MASTRA_PG_SCHEMA (default "mastra")
+this.bind(AiIntegrationBindings.Config).to({
+  ...existingConfig,
+  storage: {
+    type: 'postgres',
+    connectionString: process.env.MASTRA_PG_CONNECTION_STRING,
+    // schema (default "mastra") and ssl are optional
+  },
+});
 ```
 
-<details><summary>Manual binding (advanced)</summary>
+Env-only setups keep working: a bare `MASTRA_PG_CONNECTION_STRING` (with no
+`storage.type`) also selects Postgres, and `MASTRA_STORAGE_URL` overrides the
+LibSQL file path.
+
+<details><summary>Manual binding (advanced — discrete host fields)</summary>
+
+To use the discrete `MASTRA_PG_HOST`/`PORT`/`DATABASE`/`USER`/`PASSWORD` fields
+instead of a connection string, bind the standalone provider yourself:
 
 ```ts
 import {AiIntegrationBindings, PostgresStorageProvider} from 'lb4-llm-chat-component';

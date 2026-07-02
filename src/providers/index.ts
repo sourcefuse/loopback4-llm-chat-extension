@@ -1,8 +1,8 @@
 export * from './cache';
 export * from './vector-stores';
-// Opt-in Postgres-backed Mastra storage (issue #17). Preferred consumer API is
-// the component — `this.component(PostgresStorageComponent)` — which avoids
-// importing the internal Storage binding key. The provider is still exported
-// for consumers that wire bindings manually. Default LibSQL stays zero-config.
+// Postgres-backed Mastra storage (issue #17). Preferred selection is the
+// `storage` field on `AiIntegrationBindings.Config` (see DefaultStorageProvider)
+// — no internal binding needed. This standalone provider stays exported for the
+// advanced case of binding AiIntegrationBindings.Storage manually (e.g. discrete
+// MASTRA_PG_HOST/PORT/... host fields). Default LibSQL stays zero-config.
 export * from './mastra/pg-storage.provider';
-export * from './mastra/pg-storage.component';

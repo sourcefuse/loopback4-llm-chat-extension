@@ -6,6 +6,25 @@ export enum SupportedDBs {
   SQLite = 'SQLite',
 }
 
+/**
+ * Selects the Mastra storage backend (threads/messages persistence). Configured
+ * inline on {@link AIIntegrationConfig} — the same way `writerDS`/`readerDS` are
+ * — rather than through a separate component or the internal Storage binding.
+ * Defaults to LibSQL/SQLite when omitted, so zero-config stays the default.
+ */
+export type MastraStorageConfig = {
+  // 'libsql' (default) writes a local SQLite file; 'postgres' persists in
+  // Postgres via @mastra/pg.
+  type?: 'libsql' | 'postgres';
+  // libsql: file/url (falls back to MASTRA_STORAGE_URL, then `file:./mastra.db`).
+  // postgres: connection string (falls back to MASTRA_PG_CONNECTION_STRING).
+  connectionString?: string;
+  // postgres only — schema for the mastra_* tables (default `mastra`).
+  schema?: string;
+  // postgres only — enable TLS.
+  ssl?: boolean;
+};
+
 export type AIIntegrationConfig = {
   useCustomSequence?: boolean;
   mountCore?: boolean;
@@ -14,6 +33,8 @@ export type AIIntegrationConfig = {
   maxTokenCount?: number;
   writerDS?: string;
   readerDS?: string;
+  // Mastra storage backend (threads/messages). Omit for zero-config LibSQL.
+  storage?: MastraStorageConfig;
   tokenCounterConfig?: {
     chatLimit?: number;
     tokenLimit?: number;

@@ -11,17 +11,18 @@ const DEFAULT_PG_PORT = 5432;
  * messages and (when enabled) working memory in Postgres instead of the
  * default LibSQL/SQLite file.
  *
- * NOT bound by default — {@link DefaultStorageProvider} (LibSQL) stays
- * the zero-config default. Preferred opt-in is the component, which keeps the
- * internal binding key out of consumer code:
+ * Prefer configuring storage via `AiIntegrationBindings.Config.storage`
+ * (`{type: 'postgres', connectionString}`) — {@link DefaultStorageProvider}
+ * reads it and builds the Postgres store for you, no internal binding needed.
+ *
+ * This standalone provider is for the advanced case where you bind the Storage
+ * key yourself — e.g. to use the discrete `MASTRA_PG_HOST`/`PORT`/… host fields
+ * instead of a connection string:
  *
  * ```ts
- * import {PostgresStorageComponent} from 'lb4-llm-chat-component';
- * this.component(PostgresStorageComponent);
+ * import {PostgresStorageProvider, AiIntegrationBindings} from 'lb4-llm-chat-component';
+ * app.bind(AiIntegrationBindings.Storage).toProvider(PostgresStorageProvider);
  * ```
- *
- * (Manual binding is still supported:
- * `app.bind(AiIntegrationBindings.Storage).toProvider(PostgresStorageProvider)`.)
  *
  * Configuration is read from env, supporting either form `@mastra/pg` accepts:
  *
