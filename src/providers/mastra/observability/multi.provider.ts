@@ -1,5 +1,14 @@
-import {BindingScope, injectable, Provider} from '@loopback/core';
+import {
+  Application,
+  BindingScope,
+  Component,
+  CoreBindings,
+  inject,
+  injectable,
+  Provider,
+} from '@loopback/core';
 import {Observability} from '@mastra/observability';
+import {InternalBindings} from '../../../runtime/internal-bindings';
 import {
   buildLangfuseExporter,
   buildLangSmithExporter,
@@ -34,5 +43,33 @@ export class MultiObservability implements Provider<Observability> {
       );
     }
     return makeObservability(exporters);
+  }
+}
+
+/**
+ * Opt-in multi-backend Mastra observability.
+ *
+ * Registering this component points `InternalBindings.Observability` at
+ * {@link MultiObservability}, so the consumer never has to import the internal
+ * binding key to enable tracing — the same way any other feature component is
+ * mounted:
+ *
+ * ```ts
+ * import {MultiObservabilityComponent} from 'lb4-llm-chat-component/mastra-observability';
+ * this.component(MultiObservabilityComponent);
+ * ```
+ *
+ * Exporters are auto-selected from whichever env keys are present (Langfuse
+ * and/or LangSmith); {@link MultiObservability.value} throws if none are set.
+ * The provider is still exported for consumers that wire the binding manually.
+ */
+export class MultiObservabilityComponent implements Component {
+  constructor(
+    @inject(CoreBindings.APPLICATION_INSTANCE)
+    private readonly application: Application,
+  ) {
+    this.application
+      .bind(InternalBindings.Observability)
+      .toProvider(MultiObservability);
   }
 }

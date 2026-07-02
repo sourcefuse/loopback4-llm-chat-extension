@@ -282,9 +282,11 @@ describe('mastra tool wrappers (unit)', () => {
   // ──────────────────────────────────────────────────────────────
 
   describe('GenerateVisualizationTool', () => {
-    it('emits a Tool event carrying visualization + config + existingDatasetId for the UI chart renderer', async () => {
+    it('emits a Tool event carrying visualization + config + datasetId (NOT existingDatasetId) so a live chart auto-renders', async () => {
       // The UI binds `visualization` to the chart-type enum and `config`
-      // to the chart settings — both must be on `data.data`.
+      // to the chart settings — both must be on `data.data`. `existingDatasetId`
+      // is the history/re-run marker (the "Load Dataset" button), so it must be
+      // ABSENT on a live turn or the UI won't auto-render the chart.
       const {mastra} = makeMastraWith('visualizationWorkflow', {
         status: 'success',
         result: {
@@ -312,7 +314,7 @@ describe('mastra tool wrappers (unit)', () => {
             visualization: string;
             config: unknown;
             datasetId: string;
-            existingDatasetId: string;
+            existingDatasetId?: string;
             sql: string;
             description: string;
           };
@@ -325,7 +327,7 @@ describe('mastra tool wrappers (unit)', () => {
         options: {x: 'name'},
       });
       expect(toolEvt.data.data.datasetId).to.equal('ds-1');
-      expect(toolEvt.data.data.existingDatasetId).to.equal('ds-1');
+      expect(toolEvt.data.data.existingDatasetId).to.be.undefined();
       expect(toolEvt.data.data.sql).to.equal('SELECT 1');
       expect(toolEvt.data.data.description).to.equal('sales');
 

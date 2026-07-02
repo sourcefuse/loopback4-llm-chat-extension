@@ -152,6 +152,14 @@ It does not return anything, instead it fires an event internally that renders t
    * Completed ToolStatus. The UI's renderVizFromToolEvent reads
    * `data.visualization` as the chart TYPE and `data.config` as the
    * chart settings (see sandbox app.js renderChart signature).
+   *
+   * Deliberately does NOT send `existingDatasetId`: that field is the
+   * history / re-run marker the UI keys the manual "Load Dataset" button off
+   * (README: `metadata.existingDatasetId` + toolName + args → re-run). On a
+   * live turn the chart must auto-render, so we send only `datasetId` (for the
+   * UI to fetch rows) + `visualization` + `config` — symmetric with the table
+   * tool's live event. History replay re-adds `existingDatasetId` in the
+   * controller (`toolPartToMessage`), so the button still appears there.
    */
   private emitVisualizationResult(
     writer: ((e: LLMStreamEvent) => void) | undefined,
@@ -173,7 +181,6 @@ It does not return anything, instead it fires an event internally that renders t
           visualization: workflowResult.visualization ?? '',
           config: workflowResult.chartConfig ?? {},
           datasetId: workflowResult.datasetId ?? '',
-          existingDatasetId: workflowResult.datasetId ?? '',
           sql: workflowResult.sql ?? '',
           description: workflowResult.description ?? '',
         },
