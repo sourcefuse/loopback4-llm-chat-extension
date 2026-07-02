@@ -13,6 +13,7 @@ import {
   Model,
   Repository,
 } from '@loopback/repository';
+import {TenantUtilitiesComponent} from '@sourceloop/core';
 import {RestApplication} from '@loopback/rest';
 import {DataSetController} from './controller';
 import {DbQueryAIExtensionBindings} from './keys';
@@ -32,6 +33,7 @@ export class DatasetServiceComponent implements Component {
       .bind(DbQueryAIExtensionBindings.DatasetStore)
       .toAlias(`repositories.${DataSetRepository.name}`)
       .inScope(BindingScope.TRANSIENT);
+    this.application.component(TenantUtilitiesComponent);
 
     this.models = [DataSet, DatasetAction];
     this.controllers = [DataSetController];

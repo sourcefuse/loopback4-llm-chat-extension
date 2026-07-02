@@ -8,6 +8,7 @@ import {HttpErrors} from '@loopback/rest';
 import {
   DefaultTransactionalUserModifyRepository,
   IAuthUserWithPermissions,
+  tenantGuard,
 } from '@sourceloop/core';
 import {AuthenticationBindings} from 'loopback4-authentication';
 import {WriterDB} from '../../../keys';
@@ -17,6 +18,7 @@ import {DataSet, DatasetAction} from '../models';
 import {IDatasetAction, IDataSetStore, IDbConnector} from '../types';
 import {DatasetActionRepository} from './dataset-action.repository';
 
+@tenantGuard()
 export class DataSetRepository
   extends DefaultTransactionalUserModifyRepository<
     DataSet,

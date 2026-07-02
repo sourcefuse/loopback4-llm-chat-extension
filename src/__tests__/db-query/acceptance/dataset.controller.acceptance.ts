@@ -413,6 +413,7 @@ describe('DatasetController', () => {
     ctx.bind(AuthenticationBindings.CURRENT_USER).to({
       id: 'test-user',
       userTenantId: 'default-user-id',
+      tenantId: 'default',
     } as unknown as IAuthUserWithPermissions);
     const dsrepo = await ctx.get<DataSetRepository>(
       `repositories.${DataSetRepository.name}`,
