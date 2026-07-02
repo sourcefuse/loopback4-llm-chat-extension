@@ -2,7 +2,7 @@ import {inject} from '@loopback/core';
 import type {LanguageModel} from 'ai';
 import {step} from '../../../decorators';
 import type {IWorkflowStep, WorkflowStepCtx} from '../../../graphs/types';
-import {InternalBindings} from '../../../runtime/internal-bindings';
+import {AiIntegrationBindings} from '../../../keys';
 import {DbQueryAIExtensionBindings} from '../keys';
 import type {SchemaStore} from '../services/schema.store';
 import type {DbQueryConfig, IDbConnector} from '../types';
@@ -29,9 +29,9 @@ export class GetColumnsStep implements IWorkflowStep {
     private readonly dbConnector?: IDbConnector,
     @inject(DbQueryAIExtensionBindings.Config, {optional: true})
     private readonly config?: DbQueryConfig,
-    @inject(InternalBindings.ChatModel, {optional: true})
+    @inject(AiIntegrationBindings.ChatModel, {optional: true})
     private readonly chatModel?: LanguageModel,
-    @inject(InternalBindings.CheapModel, {optional: true})
+    @inject(AiIntegrationBindings.CheapModel, {optional: true})
     private readonly cheapModel?: LanguageModel,
   ) {}
 

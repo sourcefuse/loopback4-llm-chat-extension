@@ -3,7 +3,7 @@ import type {TracingContext} from '@mastra/core/observability';
 import type {LanguageModel} from 'ai';
 import {step} from '../../../decorators';
 import type {IWorkflowStep, WorkflowStepCtx} from '../../../graphs/types';
-import {InternalBindings} from '../../../runtime/internal-bindings';
+import {AiIntegrationBindings} from '../../../keys';
 import {DbQueryAIExtensionBindings} from '../keys';
 import type {DataSetHelper} from '../services';
 import type {IDataSetStore} from '../types';
@@ -166,9 +166,9 @@ export class CheckCacheStep implements IWorkflowStep<
     private readonly datasetStore?: IDataSetStore,
     @inject('services.DataSetHelper', {optional: true})
     private readonly dataSetHelper?: DataSetHelper,
-    @inject(InternalBindings.ChatModel, {optional: true})
+    @inject(AiIntegrationBindings.ChatModel, {optional: true})
     private readonly chatModel?: LanguageModel,
-    @inject(InternalBindings.CheapModel, {optional: true})
+    @inject(AiIntegrationBindings.CheapModel, {optional: true})
     private readonly cheapModel?: LanguageModel,
   ) {}
 

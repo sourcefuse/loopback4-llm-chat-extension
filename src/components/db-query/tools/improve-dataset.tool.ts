@@ -11,7 +11,7 @@ import {
   pickBranchOutput,
   readString,
 } from '../../../graphs/tool-event.util';
-import {InternalBindings} from '../../../runtime/internal-bindings';
+import {AiIntegrationBindings} from '../../../keys';
 import {graphTool} from '../../../decorators';
 import {buildDatasetReadout} from '../utils';
 
@@ -23,7 +23,7 @@ import {buildDatasetReadout} from '../utils';
 export class ImproveDatasetTool implements IGraphTool {
   key = 'improve-dataset';
   constructor(
-    @inject(InternalBindings.Mastra) private readonly mastra: Mastra,
+    @inject(AiIntegrationBindings.Mastra) private readonly mastra: Mastra,
   ) {}
 
   build(): Tool {

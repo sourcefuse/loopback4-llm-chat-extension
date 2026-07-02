@@ -8,7 +8,7 @@ import {
   Provider,
 } from '@loopback/core';
 import {Observability} from '@mastra/observability';
-import {InternalBindings} from '../../../runtime/internal-bindings';
+import {AiIntegrationBindings} from '../../../keys';
 import {
   buildLangfuseExporter,
   buildLangSmithExporter,
@@ -19,7 +19,7 @@ import {
  * Mastra Observability wired with EVERY exporter whose env keys are
  * present — Langfuse (LANGFUSE_PUBLIC_KEY + LANGFUSE_SECRET_KEY) and/or
  * LangSmith (LANGSMITH_API_KEY / LANGCHAIN_API_KEY). Consumer binds this
- * against `InternalBindings.Observability` to ship the same
+ * against `AiIntegrationBindings.Observability` to ship the same
  * agent / workflow / tool spans to multiple backends at once.
  *
  * Mastra fans a single config's span stream out to all exporters in the
@@ -49,7 +49,7 @@ export class MultiObservability implements Provider<Observability> {
 /**
  * Opt-in multi-backend Mastra observability.
  *
- * Registering this component points `InternalBindings.Observability` at
+ * Registering this component points `AiIntegrationBindings.Observability` at
  * {@link MultiObservability}, so the consumer never has to import the internal
  * binding key to enable tracing — the same way any other feature component is
  * mounted:
@@ -69,7 +69,7 @@ export class MultiObservabilityComponent implements Component {
     private readonly application: Application,
   ) {
     this.application
-      .bind(InternalBindings.Observability)
+      .bind(AiIntegrationBindings.Observability)
       .toProvider(MultiObservability);
   }
 }

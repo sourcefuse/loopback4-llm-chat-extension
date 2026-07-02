@@ -2,7 +2,7 @@ import {inject} from '@loopback/core';
 import type {LanguageModel} from 'ai';
 import {step} from '../../../decorators';
 import type {IWorkflowStep, WorkflowStepCtx} from '../../../graphs/types';
-import {InternalBindings} from '../../../runtime/internal-bindings';
+import {AiIntegrationBindings} from '../../../keys';
 import {DbQueryAIExtensionBindings} from '../../db-query/keys';
 import {
   emitToolStatus,
@@ -62,9 +62,9 @@ export class SelectVisualisationStep implements IWorkflowStep<SelectIn> {
     private readonly visualizers: IVisualizer[] = [],
     @inject(DbQueryAIExtensionBindings.DatasetStore, {optional: true})
     private readonly datasetStore?: IDataSetStore,
-    @inject(InternalBindings.ChatModel, {optional: true})
+    @inject(AiIntegrationBindings.ChatModel, {optional: true})
     private readonly chatModel?: LanguageModel,
-    @inject(InternalBindings.CheapModel, {optional: true})
+    @inject(AiIntegrationBindings.CheapModel, {optional: true})
     private readonly cheapModel?: LanguageModel,
   ) {}
 

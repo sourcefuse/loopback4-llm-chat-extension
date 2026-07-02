@@ -9,7 +9,7 @@ import {
   STRATEGY,
 } from 'loopback4-authentication';
 import {authorize} from 'loopback4-authorization';
-import {InternalBindings} from '../runtime/internal-bindings';
+import {AiIntegrationBindings} from '../keys';
 import {deriveResourceId} from '../runtime/resource-id.util';
 import {PermissionKey} from '../permissions';
 
@@ -26,9 +26,9 @@ import {PermissionKey} from '../permissions';
  */
 export class ChatController {
   constructor(
-    @inject(InternalBindings.Mastra)
+    @inject(AiIntegrationBindings.Mastra)
     private readonly mastra: Mastra,
-    @inject(InternalBindings.ResourceId, {optional: true})
+    @inject(AiIntegrationBindings.ResourceId, {optional: true})
     private readonly boundResourceId?: string,
     @inject(AuthenticationBindings.CURRENT_USER, {optional: true})
     private readonly currentUser?: IAuthUserWithPermissions,

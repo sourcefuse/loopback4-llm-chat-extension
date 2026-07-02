@@ -12,7 +12,6 @@ import {AiIntegrationBindings} from '../../keys';
 import {TokenLimiter} from '@mastra/core/processors';
 import {buildChatInstructions} from '../../runtime/chat-agent-instructions';
 import {DEFAULT_MAX_TOKEN_COUNT} from '../../constant';
-import {InternalBindings} from '../../runtime/internal-bindings';
 import {generateQueryWorkflow} from '../../components/db-query/workflows/generate.workflow';
 import {improveQueryWorkflow} from '../../components/db-query/workflows/improve.workflow';
 import {visualizationWorkflow} from '../../components/visualization/workflows/visualization.workflow';
@@ -33,7 +32,7 @@ import {visualizationWorkflow} from '../../components/visualization/workflows/vi
 @injectable({scope: BindingScope.SINGLETON})
 export class MastraProvider implements Provider<Mastra> {
   constructor(
-    @inject(InternalBindings.Storage)
+    @inject(AiIntegrationBindings.Storage)
     private storage: MastraCompositeStore,
     @inject(AiIntegrationBindings.VectorStore, {optional: true})
     private vector?: MastraVector,
@@ -41,7 +40,7 @@ export class MastraProvider implements Provider<Mastra> {
     private embedder?: MastraEmbeddingModel<string>,
     @inject(AiIntegrationBindings.SystemContext, {optional: true})
     private systemContext?: string[],
-    @inject(InternalBindings.Observability, {optional: true})
+    @inject(AiIntegrationBindings.Observability, {optional: true})
     private observability?: Observability,
     // v2 host-facing seam: a consumer that binds AiIntegrationBindings.ObfHandler
     // (the mastra equivalent of v2's langfuse ObfHandler) gets it folded into

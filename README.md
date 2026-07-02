@@ -513,7 +513,7 @@ A tool is a [Mastra `createTool`](https://mastra.ai) wrapper that implements
 stream receive after the tool runs.
 
 Tools are **discovered automatically by tag** — the default registry
-(`DefaultToolsProvider`, bound at `InternalBindings.Tools`) collects every
+(`DefaultToolsProvider`, bound at `AiIntegrationBindings.Tools`) collects every
 class decorated with `@graphTool()` via `findByTag`. The four built-in tools are
 registered this way, and so is yours: decorate it and bind it as a service — no
 custom registry, no editing a shared list, no need to reference the internal
@@ -559,20 +559,20 @@ this.add(createBindingFromClass(AddTool));
 
 > **Migrating from a hand-written `ToolStore` provider?** Earlier versions
 > required a custom provider that `@inject`-ed every built-in tool into a static
-> list and rebound `InternalBindings.Tools`. That is no longer needed —
+> list and rebound `AiIntegrationBindings.Tools`. That is no longer needed —
 > delete it, decorate your tool with `@graphTool()`, and bind it as above. The
 > built-ins register themselves, so a static list only risks drifting out of
 > sync.
 
 **Full replacement (advanced).** To take over the registry entirely — e.g. to
 exclude a built-in tool — bind your own `Provider<ToolStore>` at
-`InternalBindings.Tools`. This opts out of tag discovery, so you own the
+`AiIntegrationBindings.Tools`. This opts out of tag discovery, so you own the
 complete list:
 
 ```ts
 // application.ts
-import {InternalBindings} from 'lb4-llm-chat-component';
-this.bind(InternalBindings.Tools).toProvider(MyToolsProvider);
+import {AiIntegrationBindings} from 'lb4-llm-chat-component';
+this.bind(AiIntegrationBindings.Tools).toProvider(MyToolsProvider);
 ```
 
 ## Agents
@@ -597,19 +597,19 @@ this.bind(AiIntegrationBindings.SystemContext).to([
 ]);
 
 // 3. Tools the agent may call — see the Tools section (override
-//    InternalBindings.Tools).
+//    AiIntegrationBindings.Tools).
 ```
 
 To replace the agent (or the whole Mastra instance) outright — e.g. add a
 second agent, change Memory options, or register custom workflows — provide your
-own `Provider<Mastra>` and rebind `InternalBindings.Mastra`. Use the
+own `Provider<Mastra>` and rebind `AiIntegrationBindings.Mastra`. Use the
 exported `MastraProvider` as a reference implementation:
 
 ```ts
 import {Provider, BindingScope, injectable} from '@loopback/core';
 import {Mastra} from '@mastra/core';
 import {Agent} from '@mastra/core/agent';
-import {InternalBindings} from 'lb4-llm-chat-component';
+import {AiIntegrationBindings} from 'lb4-llm-chat-component';
 
 @injectable({scope: BindingScope.SINGLETON})
 export class MyMastraProvider implements Provider<Mastra> {
@@ -623,7 +623,7 @@ export class MyMastraProvider implements Provider<Mastra> {
     return new Mastra({agents: {supportAgent /*, chatAgent */}});
   }
 }
-// this.bind(InternalBindings.Mastra).toProvider(MyMastraProvider);
+// this.bind(AiIntegrationBindings.Mastra).toProvider(MyMastraProvider);
 ```
 
 ## Steps and workflows
@@ -702,7 +702,7 @@ export const myGenerateWorkflow = createWorkflow({
 ```
 
 Register it by building a custom Mastra instance that maps your workflow to the
-`generateQueryWorkflow` key, then rebind `InternalBindings.Mastra` (the
+`generateQueryWorkflow` key, then rebind `AiIntegrationBindings.Mastra` (the
 tools resolve the workflow by that key via `mastra.getWorkflow(...)`):
 
 ```ts
@@ -729,8 +729,8 @@ this.component(PostgresStorageComponent);
 <details><summary>Manual binding (advanced)</summary>
 
 ```ts
-import {InternalBindings, PostgresStorageProvider} from 'lb4-llm-chat-component';
-this.bind(InternalBindings.Storage).toProvider(PostgresStorageProvider);
+import {AiIntegrationBindings, PostgresStorageProvider} from 'lb4-llm-chat-component';
+this.bind(AiIntegrationBindings.Storage).toProvider(PostgresStorageProvider);
 ```
 
 </details>

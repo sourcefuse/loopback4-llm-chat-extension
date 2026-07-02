@@ -2,7 +2,7 @@
 /**
  * Forward-only, idempotent backfill of the legacy `chats` / `messages`
  * tables into the Mastra storage adapter bound at
- * `InternalBindings.Storage`.
+ * `AiIntegrationBindings.Storage`.
  *
  * Usage from a consumer app:
  * APP_MODULE=./dist/application npx backfill-mastra-threads --dry-run
@@ -18,7 +18,7 @@
  * Refs: the migration plan.
  */
 import type {Application as CoreApplication} from '@loopback/core';
-import {InternalBindings} from '../runtime/internal-bindings';
+import {AiIntegrationBindings} from '../keys';
 import {Chat} from '../models/chat.model';
 import {Message} from '../models/message.model';
 import {MessageMetadataType} from '../graphs/message-metadata.type';
@@ -158,7 +158,7 @@ async function countSavedMessages(
 
 async function resolveMemory(app: BootableApplication): Promise<MemoryLike> {
   const mastra = (await app.get(
-    InternalBindings.Mastra,
+    AiIntegrationBindings.Mastra,
   )) as import('@mastra/core').Mastra;
   const memory = await mastra.getAgent('chatAgent')?.getMemory();
   if (!memory) {

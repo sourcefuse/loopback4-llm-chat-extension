@@ -4,7 +4,7 @@ import {createTool} from '@mastra/core/tools';
 import type {Tool} from '@mastra/core/tools';
 import {z} from 'zod';
 import {IGraphTool} from '../../../graphs/types';
-import {InternalBindings} from '../../../runtime/internal-bindings';
+import {AiIntegrationBindings} from '../../../keys';
 import {graphTool} from '../../../decorators';
 import {DbQueryAIExtensionBindings} from '../keys';
 import {DbSchemaHelperService} from '../services';
@@ -23,7 +23,7 @@ import type {IDataSetStore} from '../types';
 export class AskAboutDatasetTool implements IGraphTool {
   key = 'ask-about-dataset';
   constructor(
-    @inject(InternalBindings.Mastra)
+    @inject(AiIntegrationBindings.Mastra)
     private readonly mastra: Mastra,
     @inject(DbQueryAIExtensionBindings.DatasetStore)
     private readonly store: IDataSetStore,

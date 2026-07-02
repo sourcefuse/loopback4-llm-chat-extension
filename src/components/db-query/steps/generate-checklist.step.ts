@@ -3,7 +3,7 @@ import type {TracingContext} from '@mastra/core/observability';
 import type {LanguageModel} from 'ai';
 import {step} from '../../../decorators';
 import type {IWorkflowStep, WorkflowStepCtx} from '../../../graphs/types';
-import {InternalBindings} from '../../../runtime/internal-bindings';
+import {AiIntegrationBindings} from '../../../keys';
 import {DbQueryAIExtensionBindings} from '../keys';
 import type {DbSchemaHelperService} from '../services';
 import type {SchemaStore} from '../services/schema.store';
@@ -105,9 +105,9 @@ export class GenerateChecklistStep implements IWorkflowStep {
     private readonly schemaStore?: SchemaStore,
     @inject('services.DbSchemaHelperService', {optional: true})
     private readonly schemaHelper?: DbSchemaHelperService,
-    @inject(InternalBindings.ChatModel, {optional: true})
+    @inject(AiIntegrationBindings.ChatModel, {optional: true})
     private readonly chatModel?: LanguageModel,
-    @inject(InternalBindings.CheapModel, {optional: true})
+    @inject(AiIntegrationBindings.CheapModel, {optional: true})
     private readonly cheapModel?: LanguageModel,
   ) {}
 

@@ -1,6 +1,10 @@
+import type {Mastra as MastraType} from '@mastra/core';
+import type {MastraCompositeStore} from '@mastra/core/storage';
 import type {MastraVector} from '@mastra/core/vector';
 import type {Observability} from '@mastra/observability';
+import type {LanguageModel} from 'ai';
 import {BindingKey} from '@loopback/context';
+import type {ToolStore} from './graphs/types';
 import {ITransport} from './transports/types';
 import {
   AIIntegrationConfig,
@@ -75,11 +79,48 @@ export namespace AiIntegrationBindings {
   export const FileMessageBuilder = BindingKey.create<FileMessageBuilderType>(
     'services.ai-reporting.file-message-builder',
   );
-  // NOTE: Runtime infra bindings (Mastra, Storage, Tools,
-  // Observability, RunRegistry, ResourceId) live in InternalBindings
-  // (src/mastra/internal-bindings.ts) — they are not part of the
-  // host-facing API surface. Host model bindings stay here as the canonical
-  // ChatLLM / FileLLM / CheapLLM / SmartLLM / SmartNonThinkingLLM tiers.
+
+  // ── Runtime infra bindings ────────────────────────────────────────────
+  // Now that the extension is Mastra-only there is a single bindings
+  // namespace: these live alongside the host model tiers above instead of a
+  // separate internal namespace. A host may override any of them (e.g. bind
+  // Storage to the Postgres provider, or RunRegistry to a Redis-backed one).
+  export const Mastra = BindingKey.create<MastraType>(
+    'services.ai-reporting.mastra',
+  );
+  export const Storage = BindingKey.create<MastraCompositeStore>(
+    'services.ai-reporting.mastraStorage',
+  );
+  export const Tools = BindingKey.create<ToolStore>(
+    'services.ai-reporting.mastraTools',
+  );
+  export const Observability = BindingKey.create<Observability>(
+    'services.ai-reporting.mastraObservability',
+  );
+  export const RunRegistry = BindingKey.create<IRunRegistry>(
+    'services.ai-reporting.runRegistry',
+  );
+  export const ResourceId = BindingKey.create<string>(
+    'services.ai-reporting.resourceId',
+  );
+
+  // Per-request RESOLVED AI-SDK model tiers. WorkflowRunner binds these into
+  // the request context each run (after async `resolveModelConfig`), so step
+  // classes can `@inject` a ready-to-call model instead of reading the config
+  // from RequestContext. Optional — unbound tiers fall back to ChatModel in the
+  // step (mirroring the old getCheapLlm/getSmartLlm rc-accessor fallbacks).
+  export const ChatModel = BindingKey.create<LanguageModel>(
+    'services.ai-reporting.runtime.chatModel',
+  );
+  export const CheapModel = BindingKey.create<LanguageModel>(
+    'services.ai-reporting.runtime.cheapModel',
+  );
+  export const SmartModel = BindingKey.create<LanguageModel>(
+    'services.ai-reporting.runtime.smartModel',
+  );
+  export const SmartNonThinkingModel = BindingKey.create<LanguageModel>(
+    'services.ai-reporting.runtime.smartNonThinkingModel',
+  );
 }
 export const WriterDB = 'writerdb';
 export const ReaderDB = 'readerdb';

@@ -6,7 +6,7 @@ import {
 } from '@loopback/core';
 import {AuthenticationBindings} from 'loopback4-authentication';
 import {STEP_DEFAULT, STEP_NAME} from '../../constant';
-import {InternalBindings} from '../../runtime/internal-bindings';
+import {AiIntegrationBindings} from '../../keys';
 import {DbQueryAIExtensionBindings} from '../../components/db-query/keys';
 import {VISUALIZATION_KEY} from '../../components/visualization/keys';
 import {DB_QUERY_STEP_CLASSES} from '../../components/db-query/steps';
@@ -76,11 +76,11 @@ export function makeContainerStepResolver(deps: StepDeps = {}): {
   bindIf(DbQueryAIExtensionBindings.Config.key, deps.config);
   bindIf(DbQueryAIExtensionBindings.GlobalContext.key, deps.globalContext);
   bindIf(AuthenticationBindings.CURRENT_USER, deps.authUser);
-  bindIf(InternalBindings.ChatModel.key, deps.chatModel);
-  bindIf(InternalBindings.CheapModel.key, deps.cheapModel);
-  bindIf(InternalBindings.SmartModel.key, deps.smartModel);
+  bindIf(AiIntegrationBindings.ChatModel.key, deps.chatModel);
+  bindIf(AiIntegrationBindings.CheapModel.key, deps.cheapModel);
+  bindIf(AiIntegrationBindings.SmartModel.key, deps.smartModel);
   bindIf(
-    InternalBindings.SmartNonThinkingModel.key,
+    AiIntegrationBindings.SmartNonThinkingModel.key,
     deps.smartNonThinkingModel,
   );
   for (const vis of deps.visualizers ?? []) {

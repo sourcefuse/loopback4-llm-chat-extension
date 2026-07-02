@@ -2,7 +2,7 @@ import {inject} from '@loopback/core';
 import type {LanguageModel} from 'ai';
 import {step} from '../../../decorators';
 import type {IWorkflowStep, WorkflowStepCtx} from '../../../graphs/types';
-import {InternalBindings} from '../../../runtime/internal-bindings';
+import {AiIntegrationBindings} from '../../../keys';
 import {DbQueryAIExtensionBindings} from '../keys';
 import type {DbSchemaHelperService} from '../services';
 import type {SchemaStore} from '../services/schema.store';
@@ -38,11 +38,11 @@ export class VerifyChecklistStep implements IWorkflowStep<
     private readonly schemaStore?: SchemaStore,
     @inject('services.DbSchemaHelperService', {optional: true})
     private readonly schemaHelper?: DbSchemaHelperService,
-    @inject(InternalBindings.ChatModel, {optional: true})
+    @inject(AiIntegrationBindings.ChatModel, {optional: true})
     private readonly chatModel?: LanguageModel,
-    @inject(InternalBindings.SmartModel, {optional: true})
+    @inject(AiIntegrationBindings.SmartModel, {optional: true})
     private readonly smartModel?: LanguageModel,
-    @inject(InternalBindings.SmartNonThinkingModel, {optional: true})
+    @inject(AiIntegrationBindings.SmartNonThinkingModel, {optional: true})
     private readonly smartNonThinkingModel?: LanguageModel,
   ) {}
 

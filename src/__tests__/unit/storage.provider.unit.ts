@@ -5,7 +5,7 @@ import {DefaultStorageProvider} from '../../providers/mastra/storage.provider';
 /**
  * Zero-config LibSQL default storage. Counterpart to the opt-in
  * `PostgresStorageProvider` — this is what every consumer gets out of the
- * box when they don't override `InternalBindings.Storage`. The fail-closed
+ * box when they don't override `AiIntegrationBindings.Storage`. The fail-closed
  * checks live in pg-storage.provider.unit.ts; here we lock the
  * "boots cleanly with no env" promise + env-override wiring.
  */

@@ -7,7 +7,7 @@ const DEFAULT_PG_PORT = 5432;
 /**
  * Postgres-backed Mastra storage provider (issue #17). Ships `@mastra/pg`'s
  * `PostgresStore` — which extends `MastraCompositeStore` — so it is a drop-in
- * for the `InternalBindings.Storage` binding, persisting threads,
+ * for the `AiIntegrationBindings.Storage` binding, persisting threads,
  * messages and (when enabled) working memory in Postgres instead of the
  * default LibSQL/SQLite file.
  *
@@ -21,7 +21,7 @@ const DEFAULT_PG_PORT = 5432;
  * ```
  *
  * (Manual binding is still supported:
- * `app.bind(InternalBindings.Storage).toProvider(PostgresStorageProvider)`.)
+ * `app.bind(AiIntegrationBindings.Storage).toProvider(PostgresStorageProvider)`.)
  *
  * Configuration is read from env, supporting either form `@mastra/pg` accepts:
  *

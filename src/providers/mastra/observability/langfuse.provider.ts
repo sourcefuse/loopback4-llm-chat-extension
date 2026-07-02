@@ -4,7 +4,7 @@ import {buildLangfuseExporter, makeObservability} from './util';
 
 /**
  * Mastra Observability wired with the Langfuse exporter. Consumer binds
- * this against `InternalBindings.Observability` to ship every
+ * this against `AiIntegrationBindings.Observability` to ship every
  * agent / workflow / tool span to Langfuse Cloud (or a self-hosted
  * deployment) for trace inspection, prompt evals and scoring.
  *

@@ -52,7 +52,6 @@ import {PgVectorStore} from './sub-modules/db/postgresql';
 import {DefaultStorageProvider} from './providers/mastra/storage.provider';
 import {MastraProvider} from './providers/mastra/mastra.provider';
 import {DefaultToolsProvider} from './providers/mastra/tools.provider';
-import {InternalBindings} from './runtime/internal-bindings';
 import {InProcessRunRegistry} from './runtime/bridge/run-registry';
 import {WorkflowRunner} from './runtime/bridge/workflow-runner';
 import {RuntimeLifecycleObserver} from './observers/mastra-lifecycle.observer';
@@ -93,16 +92,16 @@ export class AiIntegrationsComponent implements Component {
       // Mastra v3 singletons — consumers can override MastraStorage with
       // PostgresStore/MongoDBStore/etc. The defaults work zero-config.
       createBindingFromClass(DefaultStorageProvider, {
-        key: InternalBindings.Storage.key,
+        key: AiIntegrationBindings.Storage.key,
       }).inScope(BindingScope.SINGLETON),
       createBindingFromClass(MastraProvider, {
-        key: InternalBindings.Mastra.key,
+        key: AiIntegrationBindings.Mastra.key,
       }).inScope(BindingScope.SINGLETON),
       createBindingFromClass(InProcessRunRegistry, {
-        key: InternalBindings.RunRegistry.key,
+        key: AiIntegrationBindings.RunRegistry.key,
       }).inScope(BindingScope.SINGLETON),
       createBindingFromClass(DefaultToolsProvider, {
-        key: InternalBindings.Tools.key,
+        key: AiIntegrationBindings.Tools.key,
       }).inScope(BindingScope.SINGLETON),
     ];
 

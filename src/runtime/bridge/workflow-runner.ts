@@ -16,7 +16,6 @@ import {generateText, type LanguageModel} from 'ai';
 import {AiIntegrationBindings, IRunRegistry} from '../../keys';
 import type {FileMessageBuilder} from '../../types';
 import {CHAT_TITLE_MAX_LENGTH, STEP_DEFAULT, STEP_NAME} from '../../constant';
-import {InternalBindings} from '../internal-bindings';
 import {buildChatInstructions} from '../chat-agent-instructions';
 import {deriveResourceId, resolvePrincipalId} from '../resource-id.util';
 import {upsertChatTokenLedger} from '../chat-token-ledger';
@@ -256,17 +255,17 @@ export class WorkflowRunner {
 
   constructor(
     @inject.context() private lb4Ctx: Context,
-    @inject(InternalBindings.Mastra) private mastra: Mastra,
+    @inject(AiIntegrationBindings.Mastra) private mastra: Mastra,
     @inject(AiIntegrationBindings.ChatLLM, {optional: true})
     private chatLlm?: MastraModelConfig,
-    @inject(InternalBindings.RunRegistry)
+    @inject(AiIntegrationBindings.RunRegistry)
     private runRegistry?: IRunRegistry,
-    @inject(InternalBindings.ResourceId, {optional: true})
+    @inject(AiIntegrationBindings.ResourceId, {optional: true})
     private resourceIdValue?: string,
     @inject(AiIntegrationBindings.SystemContext, {optional: true})
     private systemContext?: string[],
     @service(UsageAccumulator) private usage?: UsageAccumulator,
-    @inject(InternalBindings.Tools, {optional: true})
+    @inject(AiIntegrationBindings.Tools, {optional: true})
     private mastraTools?: ToolStore,
     @inject(AiIntegrationBindings.FileLLM, {optional: true})
     private fileLlm?: MastraModelConfig,
@@ -895,16 +894,16 @@ export class WorkflowRunner {
 
   /**
    * Bind the per-request resolved model tiers into the request context so step
-   * classes can `@inject(InternalBindings.CheapModel)` etc. Only binds tiers
+   * classes can `@inject(AiIntegrationBindings.CheapModel)` etc. Only binds tiers
    * that resolved to a model; unbound tiers stay absent so a step's optional
    * injection is undefined and it falls back to the chat model.
    */
   private bindRuntimeModels(shape: MastraRcShape): void {
-    const tiers: Array<[typeof InternalBindings.ChatModel, unknown]> = [
-      [InternalBindings.ChatModel, shape.chatLlm],
-      [InternalBindings.CheapModel, shape.cheapLlm],
-      [InternalBindings.SmartModel, shape.smartLlm],
-      [InternalBindings.SmartNonThinkingModel, shape.smartNonThinkingLlm],
+    const tiers: Array<[typeof AiIntegrationBindings.ChatModel, unknown]> = [
+      [AiIntegrationBindings.ChatModel, shape.chatLlm],
+      [AiIntegrationBindings.CheapModel, shape.cheapLlm],
+      [AiIntegrationBindings.SmartModel, shape.smartLlm],
+      [AiIntegrationBindings.SmartNonThinkingModel, shape.smartNonThinkingLlm],
     ];
     for (const [key, model] of tiers) {
       if (model !== undefined) this.lb4Ctx.bind(key).to(model as never);
@@ -914,7 +913,7 @@ export class WorkflowRunner {
   /**
    * Tenant-scoped requester identity used to (a) stamp newly-created
    * threads and (b) authorize resume of existing ones. Prefers an
-   * explicitly bound `InternalBindings.ResourceId`; otherwise derives
+   * explicitly bound `AiIntegrationBindings.ResourceId`; otherwise derives
    * `${tenantId}:${principalId}` from the authenticated user. Returns
    * undefined when neither is resolvable so callers can refuse rather than
    * resume into the wrong scope.
@@ -969,7 +968,7 @@ export class WorkflowRunner {
         error:
           'Unable to authorize thread resume: requester resource identity ' +
           'is unavailable. Ensure an authenticated user with tenantId + id is present, ' +
-          'or bind InternalBindings.ResourceId.',
+          'or bind AiIntegrationBindings.ResourceId.',
       };
     }
     if (thread.resourceId !== requesterResourceId) {

@@ -1,11 +1,11 @@
 import {Component, CoreBindings, inject, Application} from '@loopback/core';
-import {InternalBindings} from '../../runtime/internal-bindings';
+import {AiIntegrationBindings} from '../../keys';
 import {PostgresStorageProvider} from './pg-storage.provider';
 
 /**
  * Opt-in Postgres-backed Mastra storage (issue #17).
  *
- * Registering this component points `InternalBindings.Storage` at
+ * Registering this component points `AiIntegrationBindings.Storage` at
  * {@link PostgresStorageProvider}, so the consumer never has to import the
  * internal binding key to switch storage backends — the same way a consumer
  * mounts any other feature component:
@@ -25,7 +25,7 @@ export class PostgresStorageComponent implements Component {
     private readonly application: Application,
   ) {
     this.application
-      .bind(InternalBindings.Storage)
+      .bind(AiIntegrationBindings.Storage)
       .toProvider(PostgresStorageProvider);
   }
 }
