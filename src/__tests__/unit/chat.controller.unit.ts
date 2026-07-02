@@ -35,7 +35,7 @@ describe('ChatController (unit)', () => {
             toolName: 'get-data-as-dataset',
             args: {prompt: 'list employees joined in 2024'},
             result:
-              'Dataset generated and has been rendered for the user (dataset ID 279). The task is COMPLETE.',
+              'Dataset generated and has been rendered for the user (dataset ID 279). Tell the user it is done in one short sentence.',
           },
         },
         {type: 'text', text: 'Here is the list. Let me know if you need more.'},

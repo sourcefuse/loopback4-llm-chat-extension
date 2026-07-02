@@ -38,7 +38,16 @@ export async function buildDatasetReadout(args: {
   if (!datasetId) {
     return `Could not ${verb === 'generated' ? 'generate' : 'update'} the dataset for that request.`;
   }
-  const base = `Dataset ${verb} and has been rendered for the user (dataset ID ${datasetId}). The task is COMPLETE. Do NOT call this or any other tool again for this request — reply to the user with ONE short sentence confirming it is done.`;
+  // Neutral, fact-only readout (parity with the LangGraph get-data result).
+  // The datasetId is included so a LATER turn can pass it to ask-about-dataset
+  // for a follow-up question. Deliberately no "do not call any tool again"
+  // imperative here: this string is persisted into the Memory thread, and a
+  // standing prohibition bleeds into the next turn and suppresses the
+  // ask-about-dataset call (the model answers from history and guesses).
+  // Within-turn re-looping is already bounded structurally by the agent's
+  // maxSteps cap + the per-turn "call one tool once, then reply" instruction,
+  // neither of which persists across turns.
+  const base = `Dataset ${verb} and has been rendered for the user (dataset ID ${datasetId}). Tell the user it is done in one short sentence.`;
   if (!config?.readAccessForAI || !store) {
     return base;
   }
