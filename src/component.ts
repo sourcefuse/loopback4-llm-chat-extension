@@ -55,10 +55,6 @@ import {DefaultToolsProvider} from './providers/mastra/tools.provider';
 import {InProcessRunRegistry} from './runtime/bridge/run-registry';
 import {WorkflowRunner} from './runtime/bridge/workflow-runner';
 import {RuntimeLifecycleObserver} from './observers/mastra-lifecycle.observer';
-import {GetDataAsDatasetTool} from './components/db-query/tools/get-data-as-dataset.tool';
-import {ImproveDatasetTool} from './components/db-query/tools/improve-dataset.tool';
-import {AskAboutDatasetTool} from './components/db-query/tools/ask-about-dataset.tool';
-import {GenerateVisualizationTool} from './components/visualization/tools/generate-visualization.tool';
 
 const debug = require('debug')('ai-integration:log-events:component');
 
@@ -117,13 +113,9 @@ export class AiIntegrationsComponent implements Component {
       // mastra v3 services
       UsageAccumulator,
       WorkflowRunner,
-      // mastra-flavored tool wrappers — each calls
-      // mastra.getWorkflow(...).createRun().start() (ask-about-dataset
-      // runs an inline one-shot Mastra Agent instead of a workflow).
-      GetDataAsDatasetTool,
-      ImproveDatasetTool,
-      AskAboutDatasetTool,
-      GenerateVisualizationTool,
+      // Tools are registered by their own components (DbQueryComponent /
+      // VisualizerComponent), not here — so each rides with its module and is
+      // independently selectable/overridable. Discovered by tag (@graphTool).
     ];
 
     this.lifeCycleObservers = [RuntimeLifecycleObserver];

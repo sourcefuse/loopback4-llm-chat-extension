@@ -27,6 +27,11 @@ import {SchemaStore} from './services/schema.store';
 import {TableSearchService} from './services/search/table-search.service';
 import {PgWithRlsConnector} from './connectors/pg';
 import {DB_QUERY_STEP_CLASSES} from './steps';
+import {
+  AskAboutDatasetTool,
+  GetDataAsDatasetTool,
+  ImproveDatasetTool,
+} from './tools';
 
 export class DbQueryComponent implements Component {
   services: ServiceOrProviderClass[] | undefined;
@@ -64,6 +69,12 @@ export class DbQueryComponent implements Component {
       SemanticCacheService,
       TableSearchService,
       TemplateHelper,
+      // db-query tools — registered here (not in the root component) so mounting
+      // DbQueryComponent brings its own tools and each is independently
+      // selectable/overridable. Discovered by tag (@graphTool).
+      GetDataAsDatasetTool,
+      ImproveDatasetTool,
+      AskAboutDatasetTool,
     ];
     this.components = [DatasetServiceComponent];
   }

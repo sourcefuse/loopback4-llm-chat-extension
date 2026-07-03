@@ -12,6 +12,7 @@ import {AnyObject} from '@loopback/repository';
 import {STEP_DEFAULT} from '../../constant';
 import {PieVisualizer, BarVisualizer, LineVisualizer} from './visualizers';
 import {VISUALIZATION_STEP_CLASSES} from './steps';
+import {GenerateVisualizationTool} from './tools';
 
 export class VisualizerComponent implements Component {
   services: ServiceOrProviderClass[] | undefined;
@@ -38,6 +39,9 @@ export class VisualizerComponent implements Component {
       PieVisualizer,
       BarVisualizer,
       LineVisualizer,
+      // visualization tool — registered here (not the root component) so it
+      // rides with VisualizerComponent. Discovered by tag (@graphTool).
+      GenerateVisualizationTool,
     ];
     this.components = [];
   }
