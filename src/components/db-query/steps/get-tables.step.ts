@@ -4,7 +4,7 @@ import {step} from '../../../decorators';
 import type {IWorkflowStep, WorkflowStepCtx} from '../../../graphs/types';
 import type {PermissionHelper} from '../services';
 import type {SchemaStore} from '../services/schema.store';
-import {emitToolStatus, filterTablesByPermission} from './_helpers';
+import {emitToolStatus} from './_helpers';
 import {STEP_GET_TABLES} from './constants';
 
 /** Output contract — mirrors the shell's `outputSchema`. */
@@ -42,10 +42,10 @@ export class GetTablesStep implements IWorkflowStep<
 
     try {
       const schema = this.schemaStore.get();
-      const tables = filterTablesByPermission(
-        Object.keys(schema.tables),
-        this.permissionHelper,
-      );
+      const allTables = Object.keys(schema.tables);
+      // Fail-open when no PermissionHelper is bound (partial-config deployments).
+      const tables =
+        this.permissionHelper?.filterAuthorizedTables(allTables) ?? allTables;
       return {tables};
     } catch {
       return {tables: []};

@@ -13,6 +13,20 @@ export class PermissionHelper {
     private readonly user: IAuthUserWithPermissions,
   ) {}
 
+  /**
+   * Drop tables the user lacks read permission for (v2 `_filterByPermissions`).
+   * Shared by getTablesStep (initial selection) and the table_not_found reselect
+   * so a widened table set can never reintroduce an unauthorized table. Strips
+   * the `schema.` prefix before the lookup.
+   */
+  filterAuthorizedTables(tables: string[]): string[] {
+    return tables.filter(
+      t =>
+        this.findMissingPermissions([t.toLowerCase().slice(t.indexOf('.') + 1)])
+          .length === 0,
+    );
+  }
+
   findMissingPermissions(tables: string[]) {
     const userPermissionsSet = (this.user.permissions || []).reduce(
       (acc, permission) => {

@@ -10,7 +10,6 @@ import {
   idToString,
   isCachedDatasetUsable,
   loadCachedSampleQuery,
-  filterTablesByPermission,
   pickRelevantTables,
   resolvePersistDeps,
   resolveTemplateById,
@@ -20,6 +19,7 @@ import {
   stripSqlFences,
 } from '../../../components/db-query/steps/_helpers';
 import {SqlValidatorService} from '../../../components/db-query/services/sql-validator.service';
+import {PermissionHelper} from '../../../components/db-query/services/permission-helper.service';
 import {DatasetActionType} from '../../../components/db-query/constant';
 import {
   checkCacheStep,
@@ -688,15 +688,18 @@ describe('db-query generate helpers (unit)', () => {
     });
   });
 
-  describe('filterTablesByPermission (get-tables + reselect guard)', () => {
+  describe('PermissionHelper.filterAuthorizedTables (get-tables + reselect guard)', () => {
+    // Exercise the real method against a stub `findMissingPermissions` via the
+    // prototype (avoids constructing PermissionHelper's config/user injections).
+    const filterAuthorized = PermissionHelper.prototype.filterAuthorizedTables;
     const helper = {
       findMissingPermissions: (t: string[]) =>
         t[0] === 'salaries' ? ['view_salaries'] : [],
-    } as never;
+    };
 
     it('drops tables the user lacks permission for', () => {
       expect(
-        filterTablesByPermission(['employees', 'salaries'], helper),
+        filterAuthorized.call(helper as never, ['employees', 'salaries']),
       ).to.eql(['employees']);
     });
 
@@ -707,16 +710,16 @@ describe('db-query generate helpers (unit)', () => {
           seen.push(t);
           return [];
         },
-      } as never;
-      filterTablesByPermission(['main.employees'], spy);
+      };
+      filterAuthorized.call(spy as never, ['main.employees']);
       expect(seen).to.eql([['employees']]);
     });
 
-    it('fails open when no PermissionHelper is bound', () => {
-      expect(filterTablesByPermission(['a', 'b'], undefined)).to.eql([
-        'a',
-        'b',
-      ]);
+    it('fails open at the call site when no PermissionHelper is bound', () => {
+      // Callers use `permissionHelper?.filterAuthorizedTables(x) ?? x`.
+      const applyFilter = (ph: PermissionHelper | undefined, t: string[]) =>
+        ph?.filterAuthorizedTables(t) ?? t;
+      expect(applyFilter(undefined, ['a', 'b'])).to.eql(['a', 'b']);
     });
   });
 

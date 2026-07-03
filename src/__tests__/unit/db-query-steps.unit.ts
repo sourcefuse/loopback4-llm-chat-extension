@@ -19,6 +19,12 @@ import {
 import type {MastraRcShape} from '../../components/db-query/steps/_helpers';
 import {LLMStreamEventType} from '../../graphs/event.types';
 import type {LLMStreamEvent} from '../../graphs/event.types';
+import {PermissionHelper} from '../../components/db-query/services/permission-helper.service';
+
+// Borrow the real filter so a `{findMissingPermissions}` stub behaves like a
+// bound PermissionHelper (getTablesStep calls `.filterAuthorizedTables`, which
+// delegates to the stubbed `findMissingPermissions`).
+const {filterAuthorizedTables} = PermissionHelper.prototype;
 
 /**
  * Step-level coverage for the canonical db-query workflow. Each step is a
@@ -526,7 +532,10 @@ describe('db-query workflow steps (unit)', () => {
       const out = await runGetTables(
         makeRc({
           schemaStore: {get} as never,
-          permissionHelper: {findMissingPermissions} as never,
+          permissionHelper: {
+            findMissingPermissions,
+            filterAuthorizedTables,
+          } as never,
         }),
       );
 
@@ -542,7 +551,10 @@ describe('db-query workflow steps (unit)', () => {
       const out = await runGetTables(
         makeRc({
           schemaStore: {get} as never,
-          permissionHelper: {findMissingPermissions} as never,
+          permissionHelper: {
+            findMissingPermissions,
+            filterAuthorizedTables,
+          } as never,
         }),
       );
 

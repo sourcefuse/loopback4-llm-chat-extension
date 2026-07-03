@@ -244,25 +244,6 @@ export function getPermissionHelper(
 }
 
 /**
- * Drop tables the user lacks read permission for (v2 `_filterByPermissions`).
- * Shared by getTablesStep (initial selection) and the table_not_found reselect
- * so a widened table set can never reintroduce an unauthorized table. Strips
- * the `schema.` prefix before the lookup. Fail-open when no helper is bound.
- */
-export function filterTablesByPermission(
-  tables: string[],
-  permissionHelper: PermissionHelper | undefined,
-): string[] {
-  if (!permissionHelper) return tables;
-  return tables.filter(
-    t =>
-      permissionHelper.findMissingPermissions([
-        t.toLowerCase().slice(t.indexOf('.') + 1),
-      ]).length === 0,
-  );
-}
-
-/**
  * Resolve an AI SDK call-time `temperature` from env, mirroring main's
  * per-provider knobs:
  *   - `CLAUDE_TEMPERATURE`     (Anthropic)
@@ -881,15 +862,15 @@ async function expandTablesOnTableError(args: {
     return undefined;
   }
   const allowed = new Set(allTables);
-  const merged = filterTablesByPermission(
-    [
-      ...new Set([
-        ...args.currentTables,
-        ...errorTables.filter(t => allowed.has(t)),
-      ]),
-    ],
-    args.permissionHelper,
-  );
+  const candidate = [
+    ...new Set([
+      ...args.currentTables,
+      ...errorTables.filter(t => allowed.has(t)),
+    ]),
+  ];
+  // Fail-open when no PermissionHelper is bound (partial-config deployments).
+  const merged =
+    args.permissionHelper?.filterAuthorizedTables(candidate) ?? candidate;
   if (merged.length <= args.currentTables.length) return undefined;
   logStepDetail('sql-validation', `Reselected tables: ${merged.join(', ')}`);
   args.onReselectTables?.(merged);
