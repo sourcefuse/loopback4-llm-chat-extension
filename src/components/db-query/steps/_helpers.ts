@@ -805,21 +805,12 @@ export async function runSqlAttempt(args: {
       `Query validation failed (${verdict.kind}): ${verdict.feedback ?? ''}`,
     );
   }
-  const tables =
-    !verdict.passed && verdict.kind === 'syntactic'
-      ? await expandTablesOnTableError({
-          chatLlm: args.cheapLlm ?? args.chatLlm,
-          error: verdict.feedback ?? '',
-          sql: stage.sql,
-          currentTables: args.tables,
-          allTables: args.allTables,
-          tracing: args.tracing,
-          permissionHelper:
-            args.permissionHelper ?? getPermissionHelper(args.rc),
-          onReselectTables: args.onReselectTables,
-          sqlValidator,
-        })
-      : undefined;
+  const tables = await resolveReselectedTables(
+    args,
+    verdict,
+    stage.sql,
+    sqlValidator,
+  );
   return {
     sql: stage.sql,
     passed: verdict.passed,
@@ -829,6 +820,45 @@ export async function runSqlAttempt(args: {
     description: verdict.description ?? stage.description,
     tables,
   };
+}
+
+/**
+ * On a syntactic failure, ask {@link expandTablesOnTableError} for a widened
+ * table set (a `table_not_found` reselect). Extracted from runSqlAttempt so
+ * that function stays under the cyclomatic-complexity cap (S1541); returns
+ * undefined (no change) for a pass or a non-syntactic failure.
+ */
+async function resolveReselectedTables(
+  args: {
+    cheapLlm?: LanguageModel;
+    chatLlm: LanguageModel | undefined;
+    tables: string[];
+    allTables?: string[];
+    tracing?: TracingContext;
+    permissionHelper?: PermissionHelper;
+    rc?: MastraRc;
+    onReselectTables?: (mergedTables: string[]) => void;
+  },
+  verdict: {
+    passed: boolean;
+    kind?: 'syntactic' | 'semantic';
+    feedback?: string;
+  },
+  sql: string,
+  sqlValidator: SqlValidatorService,
+): Promise<string[] | undefined> {
+  if (verdict.passed || verdict.kind !== 'syntactic') return undefined;
+  return expandTablesOnTableError({
+    chatLlm: args.cheapLlm ?? args.chatLlm,
+    error: verdict.feedback ?? '',
+    sql,
+    currentTables: args.tables,
+    allTables: args.allTables,
+    tracing: args.tracing,
+    permissionHelper: args.permissionHelper ?? getPermissionHelper(args.rc),
+    onReselectTables: args.onReselectTables,
+    sqlValidator,
+  });
 }
 
 /**
