@@ -166,28 +166,6 @@ export function getSmartNonThinkingLlm(
 // isCachedDatasetUsable / loadCachedSampleQuery moved onto DataSetHelper
 // (isCachedDatasetUsable / loadSampleQuery) — dataset-read + dislike logic.
 // CheckCacheStep calls them via the injected DataSetHelper.
-/**
- * Pick the SQL-generation tier (restores v2 SqlGenerationNode cost
- * optimisation, which v3 dropped — every gen ran on the smart tier). Cheap
- * tier is good enough and ~halves cost/latency when:
- *   - this is a validation-fix RETRY (the query is close, only small edits),
- *   - or it's a single-table query (no joins to reason about) — unless the
- *     consumer forces smart via
- *     `nodes.sqlGenerationNode.useSmartLLMForSingleTableQueries`.
- * Multi-table first attempts use the smart tier.
- */
-export function shouldUseCheapForSqlGen(
-  config: DbQueryConfig | undefined,
-  tableCount: number,
-  priorAttempts: number,
-): boolean {
-  // any prior attempt means this is a validation-fix retry
-  if (priorAttempts > 0) return true;
-  const forceSmartSingle =
-    config?.nodes?.sqlGenerationNode?.useSmartLLMForSingleTableQueries === true;
-  return tableCount <= 1 && !forceSmartSingle;
-}
-
 export function getDbQueryConfig(rc?: MastraRc): DbQueryConfig | undefined {
   return rc?.get('config');
 }
@@ -1012,11 +990,6 @@ columns even if not directly mentioned. Return ONLY valid JSON.`;
   }
 }
 
-/**
- * Full list of table names in the loaded schema; `[]` when the SchemaStore
- * is unbound or the schema isn't loaded yet. Used to scope the
- * `table_not_found` reclassification to tables that actually exist.
- */
 // getAllSchemaTables / getTablesWithColumns / getSchemaForPrompt moved onto
 // SchemaStore (allTableNames / tablesWithColumns / schemaForPrompt) — the
 // schema-read owner. Steps call them via the injected SchemaStore.

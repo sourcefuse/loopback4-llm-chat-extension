@@ -10,10 +10,10 @@ import {
   pickRelevantTables,
   resolvePersistDeps,
   runSqlAttempt,
-  shouldUseCheapForSqlGen,
   stripJsonFences,
   stripSqlFences,
 } from '../../../components/db-query/steps/_helpers';
+import {shouldUseCheapForSqlGen} from '../../../components/db-query/steps/sql-and-validate.step';
 import {SqlValidatorService} from '../../../components/db-query/services/sql-validator.service';
 import {PermissionHelper} from '../../../components/db-query/services/permission-helper.service';
 import {TemplateHelper} from '../../../components/db-query/services/template-helper.service';
