@@ -49,7 +49,6 @@ import type {
 } from '../services';
 import type {SchemaStore} from '../services/schema.store';
 import {SqlValidatorService} from '../services/sql-validator.service';
-import {DatasetActionType} from '../constant';
 import type {
   DbQueryConfig,
   IDataSetStore,
@@ -164,54 +163,9 @@ export function getSmartNonThinkingLlm(
   return rc?.get('smartNonThinkingLlm') ?? rc?.get('chatLlm');
 }
 
-/**
- * A cached dataset may be reused only if it still exists AND no user has
- * disliked it (restores v2 CheckCacheNode behaviour). A disliked dataset is
- * a signal the cached query was wrong, so we must regenerate rather than
- * re-serve it. Missing/erroring lookups also fail closed (treat as unusable)
- * so the cache step degrades to a miss instead of returning a dead id.
- */
-export async function isCachedDatasetUsable(
-  store: IDataSetStore,
-  datasetId: string,
-): Promise<boolean> {
-  try {
-    const dataset = await store.findById(datasetId, {
-      include: [{relation: 'actions'}],
-    });
-    if (!dataset) return false;
-    return !dataset.actions?.some(a => a.action === DatasetActionType.Disliked);
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Load a "Similar" cache hit's query to seed SQL generation as a worked
- * example (restores v2 sampleSql/sampleSqlPrompt). Returns undefined — so the
- * caller silently falls back to generating from scratch — when the store is
- * unbound, the dataset is missing/empty, or it was disliked (a disliked query
- * is a poor example to imitate).
- */
-export async function loadCachedSampleQuery(
-  store: IDataSetStore | undefined,
-  datasetId: string,
-  samplePrompt: string,
-): Promise<{sampleSql: string; samplePrompt: string} | undefined> {
-  if (!store) return undefined;
-  try {
-    const dataset = await store.findById(datasetId, {
-      include: [{relation: 'actions'}],
-    });
-    if (!dataset?.query) return undefined;
-    if (dataset.actions?.some(a => a.action === DatasetActionType.Disliked)) {
-      return undefined;
-    }
-    return {sampleSql: dataset.query, samplePrompt};
-  } catch {
-    return undefined;
-  }
-}
+// isCachedDatasetUsable / loadCachedSampleQuery moved onto DataSetHelper
+// (isCachedDatasetUsable / loadSampleQuery) — dataset-read + dislike logic.
+// CheckCacheStep calls them via the injected DataSetHelper.
 /**
  * Pick the SQL-generation tier (restores v2 SqlGenerationNode cost
  * optimisation, which v3 dropped — every gen ran on the smart tier). Cheap

@@ -6,20 +6,12 @@ import type {IWorkflowStep, WorkflowStepCtx} from '../../../graphs/types';
 import {AiIntegrationBindings} from '../../../keys';
 import {DbQueryAIExtensionBindings} from '../keys';
 import type {DataSetHelper} from '../services';
-import type {IDataSetStore} from '../types';
-import {
-  emitToolStatus,
-  idToString,
-  isCachedDatasetUsable,
-  loadCachedSampleQuery,
-  tracedGenerateText,
-} from './_helpers';
+import {emitToolStatus, idToString, tracedGenerateText} from './_helpers';
 import {STEP_CHECK_CACHE} from './constants';
 
 type Rc = Parameters<typeof emitToolStatus>[0];
 type CacheDoc = {pageContent: string; metadata: {id?: string}};
 type CacheCollaborators = {
-  datasetStore?: IDataSetStore;
   dataSetHelper?: DataSetHelper;
 };
 type QueryCache = {
@@ -70,8 +62,7 @@ async function resolveSimilar(
   );
   const doc = docAt(docs, match);
   if (!doc?.metadata?.id) return MISS;
-  const sample = await loadCachedSampleQuery(
-    collaborators.datasetStore,
+  const sample = await collaborators.dataSetHelper?.loadSampleQuery(
     idToString(doc.metadata.id),
     doc.pageContent,
   );
@@ -108,16 +99,14 @@ async function resolveAsIs(
       );
       return MISS;
     }
-  }
-
-  const store = collaborators.datasetStore;
-  if (store && !(await isCachedDatasetUsable(store, datasetId))) {
-    emitToolStatus(
-      rc,
-      STEP_CHECK_CACHE,
-      'Cached result was disliked — generating a fresh query',
-    );
-    return MISS;
+    if (!(await dataSetHelper.isCachedDatasetUsable(datasetId))) {
+      emitToolStatus(
+        rc,
+        STEP_CHECK_CACHE,
+        'Cached result was disliked — generating a fresh query',
+      );
+      return MISS;
+    }
   }
   return {cacheHit: true, datasetId};
 }
@@ -162,8 +151,6 @@ export class CheckCacheStep implements IWorkflowStep<
   constructor(
     @inject(DbQueryAIExtensionBindings.QueryCache, {optional: true})
     private readonly queryCache?: QueryCache,
-    @inject(DbQueryAIExtensionBindings.DatasetStore, {optional: true})
-    private readonly datasetStore?: IDataSetStore,
     @inject('services.DataSetHelper', {optional: true})
     private readonly dataSetHelper?: DataSetHelper,
     @inject(AiIntegrationBindings.ChatModel, {optional: true})
@@ -197,10 +184,7 @@ export class CheckCacheStep implements IWorkflowStep<
       chatLlm,
       requestContext,
       tracingContext,
-      {
-        datasetStore: this.datasetStore,
-        dataSetHelper: this.dataSetHelper,
-      },
+      {dataSetHelper: this.dataSetHelper},
     );
   }
 }

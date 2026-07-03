@@ -12,6 +12,7 @@ import {VISUALIZATION_KEY} from '../../components/visualization/keys';
 import {DB_QUERY_STEP_CLASSES} from '../../components/db-query/steps';
 import {VISUALIZATION_STEP_CLASSES} from '../../components/visualization/steps';
 import {SchemaStore} from '../../components/db-query/services/schema.store';
+import {DataSetHelper} from '../../components/db-query/services/dataset-helper.service';
 import type {IWorkflowStep, StepResolver} from '../../graphs/types';
 
 /**
@@ -83,7 +84,20 @@ export function makeContainerStepResolver(deps: StepDeps = {}): {
       }),
   );
   bindIf('services.DbSchemaHelperService', deps.schemaHelper);
-  bindIf('services.DataSetHelper', deps.dataSetHelper);
+  // If a test provides only a datasetStore (no dataSetHelper), synthesize a
+  // DataSetHelper backed by it: the cache-step reads isCachedDatasetUsable /
+  // loadSampleQuery moved onto DataSetHelper (they use `this.store`), so graft
+  // the real methods + a permissive checkPermissions so the stub behaves like
+  // a bound helper.
+  const dataSetHelper =
+    deps.dataSetHelper ??
+    (deps.datasetStore && {
+      store: deps.datasetStore,
+      checkPermissions: async () => [],
+      isCachedDatasetUsable: DataSetHelper.prototype.isCachedDatasetUsable,
+      loadSampleQuery: DataSetHelper.prototype.loadSampleQuery,
+    });
+  bindIf('services.DataSetHelper', dataSetHelper);
   bindIf('services.TemplateHelper', deps.templateHelper);
   bindIf('services.PermissionHelper', deps.permissionHelper);
   bindIf(DbQueryAIExtensionBindings.DatasetStore.key, deps.datasetStore);

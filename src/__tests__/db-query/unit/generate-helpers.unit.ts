@@ -7,8 +7,6 @@ import {
   buildImproveSqlPrompt,
   generateSqlOnce,
   idToString,
-  isCachedDatasetUsable,
-  loadCachedSampleQuery,
   pickRelevantTables,
   resolvePersistDeps,
   runSqlAttempt,
@@ -20,6 +18,7 @@ import {SqlValidatorService} from '../../../components/db-query/services/sql-val
 import {PermissionHelper} from '../../../components/db-query/services/permission-helper.service';
 import {TemplateHelper} from '../../../components/db-query/services/template-helper.service';
 import {SchemaStore} from '../../../components/db-query/services/schema.store';
+import {DataSetHelper} from '../../../components/db-query/services/dataset-helper.service';
 import {DatasetActionType} from '../../../components/db-query/constant';
 import {
   checkCacheStep,
@@ -632,65 +631,71 @@ describe('db-query generate helpers (unit)', () => {
     });
   });
 
-  describe('isCachedDatasetUsable (dislike filtering)', () => {
-    const ds = (actions?: {action: DatasetActionType}[]) =>
+  describe('DataSetHelper.isCachedDatasetUsable (dislike filtering)', () => {
+    // Exercise the real method against a `{store}` context via the prototype.
+    const isUsable = DataSetHelper.prototype.isCachedDatasetUsable;
+    const ctx = (actions?: {action: DatasetActionType}[]) =>
       ({
-        findById: async () => ({id: 'd1', query: 'SELECT 1', actions}),
+        store: {
+          findById: async () => ({id: 'd1', query: 'SELECT 1', actions}),
+        },
       }) as never;
 
     it('usable when the dataset has no actions', async () => {
-      expect(await isCachedDatasetUsable(ds(), 'd1')).to.be.true();
+      expect(await isUsable.call(ctx(), 'd1')).to.be.true();
     });
     it('usable when only liked', async () => {
-      const r = await isCachedDatasetUsable(
-        ds([{action: DatasetActionType.Liked}]),
+      const r = await isUsable.call(
+        ctx([{action: DatasetActionType.Liked}]),
         'd1',
       );
       expect(r).to.be.true();
     });
     it('NOT usable when disliked (must regenerate)', async () => {
-      const r = await isCachedDatasetUsable(
-        ds([{action: DatasetActionType.Disliked}]),
+      const r = await isUsable.call(
+        ctx([{action: DatasetActionType.Disliked}]),
         'd1',
       );
       expect(r).to.be.false();
     });
     it('NOT usable when the dataset lookup throws (missing)', async () => {
-      const store = {
-        findById: async () => {
-          throw new Error('not found');
+      const context = {
+        store: {
+          findById: async () => {
+            throw new Error('not found');
+          },
         },
       } as never;
-      expect(await isCachedDatasetUsable(store, 'd1')).to.be.false();
+      expect(await isUsable.call(context, 'd1')).to.be.false();
     });
   });
 
-  describe('loadCachedSampleQuery (Similar-cache example seed)', () => {
+  describe('DataSetHelper.loadSampleQuery (Similar-cache example seed)', () => {
+    const loadSample = DataSetHelper.prototype.loadSampleQuery;
+    const ctx = (query: string, actions: unknown[] = []) =>
+      ({
+        store: {findById: async () => ({id: 'd1', query, actions})},
+      }) as never;
+
     it('returns the query + prompt for a usable dataset', async () => {
-      const store = {
-        findById: async () => ({id: 'd1', query: 'SELECT 1', actions: []}),
-      } as never;
-      const r = await loadCachedSampleQuery(store, 'd1', 'how many');
+      const r = await loadSample.call(ctx('SELECT 1'), 'd1', 'how many');
       expect(r).to.eql({sampleSql: 'SELECT 1', samplePrompt: 'how many'});
     });
     it('returns undefined for a disliked dataset (poor example)', async () => {
-      const store = {
-        findById: async () => ({
-          id: 'd1',
-          query: 'SELECT 1',
-          actions: [{action: DatasetActionType.Disliked}],
-        }),
-      } as never;
-      expect(await loadCachedSampleQuery(store, 'd1', 'q')).to.be.undefined();
+      const r = await loadSample.call(
+        ctx('SELECT 1', [{action: DatasetActionType.Disliked}]),
+        'd1',
+        'q',
+      );
+      expect(r).to.be.undefined();
     });
-    it('returns undefined when the store is unbound or the query is empty', async () => {
-      expect(
-        await loadCachedSampleQuery(undefined, 'd1', 'q'),
-      ).to.be.undefined();
-      const store = {
-        findById: async () => ({id: 'd1', query: '', actions: []}),
-      } as never;
-      expect(await loadCachedSampleQuery(store, 'd1', 'q')).to.be.undefined();
+    it('returns undefined when the query is empty', async () => {
+      expect(await loadSample.call(ctx(''), 'd1', 'q')).to.be.undefined();
+    });
+    it('returns undefined at the call site when no DataSetHelper is bound', () => {
+      const seed = (h: DataSetHelper | undefined) =>
+        h?.loadSampleQuery('d1', 'q');
+      expect(seed(undefined)).to.be.undefined();
     });
   });
 
