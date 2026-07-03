@@ -96,11 +96,6 @@ export interface MastraRcShape {
   agentModel?: MastraModelConfig;
   agentTools?: Record<string, Tool>;
   agentInstructions?: string;
-  // Per-request domain rules (v2 `{checks}`) injected into the SQL
-  // generation prompt — e.g. "exchange rate joins must use the active
-  // rate (end_date IS NULL)", "use partial case-insensitive name match".
-  // Without these the SQL generator produces literal/over-strict SQL.
-  globalContext?: string[];
   dbConnector?: IDbConnector;
   authUser?: IAuthUserWithPermissions;
   datasetStore?: IDataSetStore;
@@ -167,17 +162,6 @@ export function getSmartNonThinkingLlm(
   rc?: MastraRc,
 ): LanguageModel | undefined {
   return rc?.get('smartNonThinkingLlm') ?? rc?.get('chatLlm');
-}
-export function getDbConnector(rc?: MastraRc): IDbConnector | undefined {
-  return rc?.get('dbConnector');
-}
-export function getAuthUser(
-  rc?: MastraRc,
-): IAuthUserWithPermissions | undefined {
-  return rc?.get('authUser');
-}
-export function getDatasetStore(rc?: MastraRc): IDataSetStore | undefined {
-  return rc?.get('datasetStore');
 }
 
 /**
@@ -253,25 +237,6 @@ export function shouldUseCheapForSqlGen(
 export function getDbQueryConfig(rc?: MastraRc): DbQueryConfig | undefined {
   return rc?.get('config');
 }
-export function getTemplateStore(
-  rc?: MastraRc,
-): IQueryTemplateStore | undefined {
-  return rc?.get('templateStore');
-}
-export function getSchemaStore(rc?: MastraRc): SchemaStore | undefined {
-  return rc?.get('schemaStore');
-}
-export function getSchemaHelper(
-  rc?: MastraRc,
-): DbSchemaHelperService | undefined {
-  return rc?.get('schemaHelper');
-}
-export function getTemplateHelper(rc?: MastraRc): TemplateHelper | undefined {
-  return rc?.get('templateHelper');
-}
-export function getDataSetHelper(rc?: MastraRc): DataSetHelper | undefined {
-  return rc?.get('dataSetHelper');
-}
 export function getPermissionHelper(
   rc?: MastraRc,
 ): PermissionHelper | undefined {
@@ -295,20 +260,6 @@ export function filterTablesByPermission(
         t.toLowerCase().slice(t.indexOf('.') + 1),
       ]).length === 0,
   );
-}
-export function getQueryCache(rc?: MastraRc): MastraRcShape['queryCache'] {
-  return rc?.get('queryCache');
-}
-export function getTemplateCache(
-  rc?: MastraRc,
-): MastraRcShape['templateCache'] {
-  return rc?.get('templateCache');
-}
-export function getVisualizers(rc?: MastraRc): IVisualizer[] {
-  return rc?.get('visualizers') ?? [];
-}
-export function getGlobalContext(rc?: MastraRc): string[] {
-  return rc?.get('globalContext') ?? [];
 }
 
 /**
