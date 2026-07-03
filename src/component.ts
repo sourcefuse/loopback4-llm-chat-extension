@@ -41,6 +41,7 @@ import {RedisCache, RedisCacheRepository} from './providers/cache/redis';
 import {ChatRepository, MessageRepository} from './repositories';
 import {
   ChatCountStrategy,
+  ChatLedgerService,
   GenerationService,
   TokenCountPerUserStrategy,
   TokenCountStrategy,
@@ -102,6 +103,7 @@ export class AiIntegrationsComponent implements Component {
       GenerationService,
       // mastra v3 services
       UsageAccumulator,
+      ChatLedgerService,
       WorkflowRunner,
       // Tools are registered by their own components (DbQueryComponent /
       // VisualizerComponent), not here — so each rides with its module and is

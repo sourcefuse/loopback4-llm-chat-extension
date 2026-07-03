@@ -1,25 +1,29 @@
 import {expect, sinon} from '@loopback/testlab';
-import {
-  upsertChatTokenLedger,
-  type ChatLedgerRepo,
-} from '../../runtime/chat-token-ledger';
+import {ChatLedgerService} from '../../services/chat-ledger.service';
+import type {ChatRepository} from '../../repositories';
 
 /**
  * The chats ledger is what the token/chat LIMIT STRATEGIES read. The Mastra
  * runtime moved usage to Memory thread metadata, leaving the chats table empty
- * so caps never fired; this restores the per-session row. These lock the
- * upsert: create on first turn, accumulate after, never throw.
+ * so caps never fired; ChatLedgerService restores the per-session row. These
+ * lock the upsert: create on first turn, accumulate after, never throw, and
+ * no-op with no repository bound.
  */
-describe('upsertChatTokenLedger (B1 token-cap ledger)', () => {
+describe('ChatLedgerService (B1 token-cap ledger)', () => {
   const row = {id: 'thread-1', tenantId: 't1', userId: 'ut1', title: 'Hi'};
+  const svc = (repo?: Partial<ChatRepository>) =>
+    new ChatLedgerService(repo as ChatRepository | undefined);
 
   it('creates a row seeded with the turn usage when none exists', async () => {
     const find = sinon.stub().resolves([]);
     const create = sinon.stub().resolves();
     const updateById = sinon.stub().resolves();
-    const repo = {find, create, updateById} as unknown as ChatLedgerRepo;
 
-    await upsertChatTokenLedger(repo, row, 100, 20);
+    await svc({find, create, updateById} as unknown as ChatRepository).upsert(
+      row,
+      100,
+      20,
+    );
 
     sinon.assert.notCalled(updateById);
     sinon.assert.calledOnce(create);
@@ -35,9 +39,12 @@ describe('upsertChatTokenLedger (B1 token-cap ledger)', () => {
     const find = sinon.stub().resolves([{inputTokens: 100, outputTokens: 20}]);
     const create = sinon.stub().resolves();
     const updateById = sinon.stub().resolves();
-    const repo = {find, create, updateById} as unknown as ChatLedgerRepo;
 
-    await upsertChatTokenLedger(repo, row, 5, 3);
+    await svc({find, create, updateById} as unknown as ChatRepository).upsert(
+      row,
+      5,
+      3,
+    );
 
     sinon.assert.notCalled(create);
     sinon.assert.calledOnce(updateById);
@@ -51,9 +58,18 @@ describe('upsertChatTokenLedger (B1 token-cap ledger)', () => {
     const find = sinon.stub().rejects(new Error('db down'));
     const create = sinon.stub().rejects(new Error('db down'));
     const updateById = sinon.stub().resolves();
-    const repo = {find, create, updateById} as unknown as ChatLedgerRepo;
 
-    await upsertChatTokenLedger(repo, row, 1, 1); // must resolve, not reject
+    // must resolve, not reject
+    await svc({find, create, updateById} as unknown as ChatRepository).upsert(
+      row,
+      1,
+      1,
+    );
     sinon.assert.calledOnce(create);
+  });
+
+  it('no-ops when no ChatRepository is bound', async () => {
+    // A consumer without the chats table gets a silent skip, not a crash.
+    await svc(undefined).upsert(row, 1, 1);
   });
 });

@@ -18,8 +18,7 @@ import type {FileMessageBuilder} from '../../types';
 import {CHAT_TITLE_MAX_LENGTH, STEP_DEFAULT, STEP_NAME} from '../../constant';
 import {buildChatInstructions} from '../chat-agent-instructions';
 import {deriveResourceId, resolvePrincipalId} from '../resource-id.util';
-import {upsertChatTokenLedger} from '../chat-token-ledger';
-import type {ChatRepository} from '../../repositories';
+import {ChatLedgerService} from '../../services/chat-ledger.service';
 import {LLMStreamEvent, LLMStreamEventType} from '../../graphs/event.types';
 import {ToolStore, ToolStatus} from '../../graphs/types';
 import type {IWorkflowStep} from '../../graphs/types';
@@ -284,6 +283,9 @@ export class WorkflowRunner {
     // bound model's API; otherwise the generic {type:'file'} default is used.
     @inject(AiIntegrationBindings.FileMessageBuilder, {optional: true})
     private fileMessageBuilder?: FileMessageBuilder,
+    // Injectable token-usage ledger (v2 ChatStore successor); rebindable to
+    // override accounting. Optional so a consumer without it simply skips.
+    @service(ChatLedgerService) private chatLedger?: ChatLedgerService,
   ) {}
 
   async *run(
@@ -737,18 +739,15 @@ export class WorkflowRunner {
     outputTokens: number,
   ): Promise<void> {
     try {
-      const repo = await this.lb4Ctx.get<ChatRepository>(
-        'repositories.ChatRepository',
-        {optional: true},
-      );
+      // Request-scoped identity stays here (the ledger service is app-scoped
+      // and can't inject the current user); the service owns the repo upsert.
       const user = await this.lb4Ctx.get<IAuthUserWithPermissions>(
         AuthenticationBindings.CURRENT_USER,
         {optional: true},
       );
       const principal = resolvePrincipalId(user);
-      if (!repo || !user?.tenantId || !principal) return;
-      await upsertChatTokenLedger(
-        repo,
+      if (!this.chatLedger || !user?.tenantId || !principal) return;
+      await this.chatLedger.upsert(
         {id: threadId, tenantId: user.tenantId, userId: principal, title},
         inputTokens,
         outputTokens,
