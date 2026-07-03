@@ -7,12 +7,7 @@ import {DbQueryAIExtensionBindings} from '../keys';
 import type {DbSchemaHelperService, TemplateHelper} from '../services';
 import type {SchemaStore} from '../services/schema.store';
 import type {IDataSetStore, IQueryTemplateStore} from '../types';
-import {
-  computeSchemaHash,
-  idToString,
-  resolvePersistDeps,
-  resolveTemplateById,
-} from './_helpers';
+import {computeSchemaHash, idToString, resolvePersistDeps} from './_helpers';
 import {STEP_SAVE_FROM_TEMPLATE} from './constants';
 
 type TemplateOut = {kind: 'template'; datasetId: string; sql: string};
@@ -53,9 +48,9 @@ export class SaveDatasetFromTemplateStep implements IWorkflowStep<
     const persist = resolvePersistDeps(this.datasetStore, this.authUser);
     if (!persist) return fallback;
 
-    const resolved = await resolveTemplateById({
+    // Fail to fallback when no TemplateHelper is bound (partial config).
+    const resolved = await this.templateHelper?.resolveById({
       templateStore: this.templateStore,
-      templateHelper: this.templateHelper,
       schemaStore: this.schemaStore,
       templateId: data.templateId,
       prompt: data.prompt,

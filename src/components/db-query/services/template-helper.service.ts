@@ -9,6 +9,8 @@ import {
   QueryTemplateMetadata,
   TemplatePlaceholder,
 } from '../types';
+import type {IQueryTemplateStore} from '../types';
+import type {SchemaStore} from './schema.store';
 
 const MAX_TEMPLATE_RECURSION_DEPTH = 3;
 
@@ -185,6 +187,54 @@ Do not return any other text or explanation, just the XML tags.
       result[p.name] = value?.length ? value : null;
     }
     return result;
+  }
+
+  /**
+   * Fetch a template by id and resolve it against the prompt + current schema.
+   * Returns the resolved SQL, description, and the template's AUTHORITATIVE
+   * table list (so the caller persists dataset.tables the read-ACL can gate on,
+   * not just the get-tables guess). Returns null when the template store is
+   * unbound, the template resolves to empty SQL, or resolution throws.
+   */
+  async resolveById(args: {
+    templateStore: IQueryTemplateStore | undefined;
+    schemaStore: SchemaStore | undefined;
+    templateId: string;
+    prompt: string;
+  }): Promise<{sql: string; description?: string; tables: string[]} | null> {
+    const {templateStore, schemaStore, templateId, prompt} = args;
+    if (!templateStore) return null;
+    try {
+      const template = await templateStore.findById(templateId);
+      const schema = (() => {
+        try {
+          return schemaStore?.get();
+        } catch {
+          return undefined;
+        }
+      })();
+      const resolved = await this.resolveTemplate(
+        template,
+        prompt,
+        schema,
+        async id => {
+          try {
+            return await templateStore.findById(id);
+          } catch {
+            return undefined;
+          }
+        },
+      );
+      return resolved.sql
+        ? {
+            sql: resolved.sql,
+            description: resolved.description,
+            tables: template.tables ?? [],
+          }
+        : null;
+    } catch {
+      return null;
+    }
   }
 
   async resolveTemplate(

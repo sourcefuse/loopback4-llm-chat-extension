@@ -184,11 +184,15 @@ describe('generateQueryWorkflow (DAG branching, unit)', () => {
     // cache judge: NotRelevant so cache misses
     // templates judge: "match 1" so template-id is taken
     stubLlm({'cache-judge': 'NotRelevant', 'template-judge': 'match 1'});
-    sinon.stub(helpers, 'resolveTemplateById').resolves({
-      sql: 'SELECT 1 FROM tmpl',
-      description: 'from template',
-      tables: ['tmpl_table'],
-    });
+    // resolveTemplateById moved onto TemplateHelper.resolveById — the step now
+    // resolves the template through the injected helper.
+    const templateHelper = {
+      resolveById: sinon.stub().resolves({
+        sql: 'SELECT 1 FROM tmpl',
+        description: 'from template',
+        tables: ['tmpl_table'],
+      }),
+    } as never;
     sinon.stub(helpers, 'computeSchemaHash').returns({
       schemaHash: 'abc',
       tablesFromSchema: ['employees'],
@@ -208,6 +212,7 @@ describe('generateQueryWorkflow (DAG branching, unit)', () => {
     const rc = makeRc({
       queryCache,
       templateCache,
+      templateHelper,
       datasetStore: {create, findById} as never,
       authUser: {id: 'u1', tenantId: 't1'} as never,
       schemaStore: {get: () => ({tables: {employees: {}}})} as never,

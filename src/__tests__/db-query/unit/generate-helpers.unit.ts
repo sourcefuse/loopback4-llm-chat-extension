@@ -12,7 +12,6 @@ import {
   loadCachedSampleQuery,
   pickRelevantTables,
   resolvePersistDeps,
-  resolveTemplateById,
   runSqlAttempt,
   shouldUseCheapForSqlGen,
   stripJsonFences,
@@ -20,6 +19,7 @@ import {
 } from '../../../components/db-query/steps/_helpers';
 import {SqlValidatorService} from '../../../components/db-query/services/sql-validator.service';
 import {PermissionHelper} from '../../../components/db-query/services/permission-helper.service';
+import {TemplateHelper} from '../../../components/db-query/services/template-helper.service';
 import {DatasetActionType} from '../../../components/db-query/constant';
 import {
   checkCacheStep,
@@ -723,7 +723,10 @@ describe('db-query generate helpers (unit)', () => {
     });
   });
 
-  describe('resolveTemplateById (template SQL + authoritative tables)', () => {
+  describe('TemplateHelper.resolveById (template SQL + authoritative tables)', () => {
+    // Exercise the real method against a stub `resolveTemplate` via the
+    // prototype (resolveById delegates to `this.resolveTemplate`).
+    const resolveById = TemplateHelper.prototype.resolveById;
     const templateStore = {
       findById: async () => ({
         id: 'tmpl-1',
@@ -733,16 +736,15 @@ describe('db-query generate helpers (unit)', () => {
     } as never;
 
     it('returns the resolved SQL together with the template tables', async () => {
-      const templateHelper = {
+      const helper = {
         resolveTemplate: async () => ({
           sql: 'SELECT * FROM salaries',
           description: 'salary report',
         }),
-      } as never;
+      };
 
-      const r = await resolveTemplateById({
+      const r = await resolveById.call(helper as never, {
         templateStore,
-        templateHelper,
         schemaStore: undefined,
         templateId: 'tmpl-1',
         prompt: 'salaries',
@@ -758,12 +760,11 @@ describe('db-query generate helpers (unit)', () => {
     });
 
     it('returns null when the template resolves to empty SQL', async () => {
-      const templateHelper = {
+      const helper = {
         resolveTemplate: async () => ({sql: '', description: ''}),
-      } as never;
-      const r = await resolveTemplateById({
+      };
+      const r = await resolveById.call(helper as never, {
         templateStore,
-        templateHelper,
         schemaStore: undefined,
         templateId: 'tmpl-1',
         prompt: 'x',
@@ -771,11 +772,13 @@ describe('db-query generate helpers (unit)', () => {
       expect(r).to.be.null();
     });
 
-    it('returns null when stores are unbound', async () => {
+    it('returns null when the template store is unbound', async () => {
+      const helper = {
+        resolveTemplate: async () => ({sql: 'x', description: ''}),
+      };
       expect(
-        await resolveTemplateById({
+        await resolveById.call(helper as never, {
           templateStore: undefined,
-          templateHelper: undefined,
           schemaStore: undefined,
           templateId: 'tmpl-1',
           prompt: 'x',
