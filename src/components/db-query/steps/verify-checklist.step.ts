@@ -1,4 +1,4 @@
-import {inject} from '@loopback/core';
+import {inject, service} from '@loopback/core';
 import type {LanguageModel} from 'ai';
 import {step} from '../../../decorators';
 import type {IWorkflowStep, WorkflowStepCtx} from '../../../graphs/types';
@@ -11,9 +11,8 @@ import {STEP_VERIFY_CHECKLIST} from './constants';
 import {
   CHECKLIST_MIN_TABLES,
   type checklistStateSchema,
-  mergeChecklist,
-  selectDomainRules,
 } from './checklist.shared';
+import {ChecklistHelper} from '../services/checklist-helper.service';
 import type {z} from 'zod';
 
 type ChecklistState = z.infer<typeof checklistStateSchema>;
@@ -30,6 +29,11 @@ export class VerifyChecklistStep implements IWorkflowStep<
   ChecklistState
 > {
   constructor(
+    // ponytail: optional + default instance keeps the step zero-arg
+    // constructible (the step registry's `new () =>` contract); DI injects the
+    // bound (rebindable) service when the component is mounted.
+    @service(ChecklistHelper, {optional: true})
+    private readonly checklistHelper: ChecklistHelper = new ChecklistHelper(),
     @inject(DbQueryAIExtensionBindings.Config, {optional: true})
     private readonly config?: DbQueryConfig,
     @inject(DbQueryAIExtensionBindings.GlobalContext, {optional: true})
@@ -69,7 +73,7 @@ export class VerifyChecklistStep implements IWorkflowStep<
     const verifyLlm =
       this.smartNonThinkingModel ?? this.smartModel ?? this.chatModel;
 
-    const verifiedRules = await selectDomainRules({
+    const verifiedRules = await this.checklistHelper.selectDomainRules({
       globalContext: this.globalContext,
       schemaStore: this.schemaStore,
       schemaHelper: this.schemaHelper,
@@ -83,6 +87,12 @@ export class VerifyChecklistStep implements IWorkflowStep<
 
     if (verifiedRules.length === 0) return data;
 
-    return {...data, checklist: mergeChecklist(data.checklist, verifiedRules)};
+    return {
+      ...data,
+      checklist: this.checklistHelper.mergeChecklist(
+        data.checklist,
+        verifiedRules,
+      ),
+    };
   }
 }

@@ -1,4 +1,4 @@
-import {inject} from '@loopback/core';
+import {inject, service} from '@loopback/core';
 import type {TracingContext} from '@mastra/core/observability';
 import type {LanguageModel} from 'ai';
 import {step} from '../../../decorators';
@@ -16,11 +16,8 @@ import {
   STEP_RETURN_CACHED,
   STEP_SAVE_FROM_TEMPLATE,
 } from './constants';
-import {
-  CHECKLIST_MIN_TABLES,
-  mergeChecklist,
-  selectDomainRules,
-} from './checklist.shared';
+import {CHECKLIST_MIN_TABLES} from './checklist.shared';
+import {ChecklistHelper} from '../services/checklist-helper.service';
 
 function normaliseChecklist(raw: string): string {
   const trimmed = raw.trim();
@@ -97,6 +94,11 @@ function buildEnvelopeResult(
 @step(STEP_GENERATE_CHECKLIST)
 export class GenerateChecklistStep implements IWorkflowStep {
   constructor(
+    // ponytail: optional + default instance keeps the step zero-arg
+    // constructible (the step registry's `new () =>` contract); DI injects the
+    // bound (rebindable) service when the component is mounted.
+    @service(ChecklistHelper, {optional: true})
+    private readonly checklistHelper: ChecklistHelper = new ChecklistHelper(),
     @inject(DbQueryAIExtensionBindings.Config, {optional: true})
     private readonly config?: DbQueryConfig,
     @inject(DbQueryAIExtensionBindings.GlobalContext, {optional: true})
@@ -157,7 +159,7 @@ export class GenerateChecklistStep implements IWorkflowStep {
     //      not just the SQL-gen prompt.
     const [userChecklist, domainRules] = await Promise.all([
       generateChecklistText(cheap, prompt, tables, tracingContext),
-      selectDomainRules({
+      this.checklistHelper.selectDomainRules({
         globalContext: this.globalContext,
         schemaStore: this.schemaStore,
         schemaHelper: this.schemaHelper,
@@ -170,7 +172,10 @@ export class GenerateChecklistStep implements IWorkflowStep {
       }),
     ]);
 
-    const checklist = mergeChecklist(userChecklist, domainRules);
+    const checklist = this.checklistHelper.mergeChecklist(
+      userChecklist,
+      domainRules,
+    );
 
     return {prompt, tables, checklist, attempts: 0, ...sample};
   }

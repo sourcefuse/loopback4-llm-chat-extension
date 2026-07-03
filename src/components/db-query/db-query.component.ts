@@ -22,6 +22,7 @@ import {
   SemanticCacheService,
   TemplateHelper,
 } from './services';
+import {ChecklistHelper} from './services/checklist-helper.service';
 import {PermissionHelper} from './services/permission-helper.service';
 import {SchemaStore} from './services/schema.store';
 import {TableSearchService} from './services/search/table-search.service';
@@ -62,6 +63,7 @@ export class DbQueryComponent implements Component {
     this.services = [
       // db helpers — still consumed by generateQueryWorkflow / improveQueryWorkflow
       // step bodies.
+      ChecklistHelper,
       DbSchemaHelperService,
       PermissionHelper,
       DataSetHelper,
