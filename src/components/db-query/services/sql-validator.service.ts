@@ -166,7 +166,7 @@ No other text.`;
    *
    * v2 then routed `table_not_found` to ReselectTables (re-run GetTables seeded
    * with the error tables = a WIDER candidate set) and `query_error` to FixQuery.
-   * In the Mastra dountil model the caller (`runSqlAttempt`) merges the returned
+   * In the Mastra dountil model the caller (`SqlGenerationHelper.runAttempt`) merges the returned
    * tables into the allowed set for the next iteration — same effect.
    *
    * Fail-safe: returns `{category: 'query_error', errorTables: []}` whenever the

@@ -25,6 +25,7 @@ import {
 import {ChecklistHelper} from './services/checklist-helper.service';
 import {PermissionHelper} from './services/permission-helper.service';
 import {SchemaStore} from './services/schema.store';
+import {SqlGenerationHelper} from './services/sql-generation.service';
 import {SqlValidatorService} from './services/sql-validator.service';
 import {TableSearchService} from './services/search/table-search.service';
 import {PgWithRlsConnector} from './connectors/pg';
@@ -70,6 +71,7 @@ export class DbQueryComponent implements Component {
       DataSetHelper,
       SchemaStore,
       SemanticCacheService,
+      SqlGenerationHelper,
       SqlValidatorService,
       TableSearchService,
       TemplateHelper,

@@ -5,15 +5,14 @@ import type {IDbConnector} from '../../../components/db-query/types';
 import {
   buildGenerateSqlPrompt,
   buildImproveSqlPrompt,
-  generateSqlOnce,
   idToString,
   pickRelevantTables,
   resolvePersistDeps,
-  runSqlAttempt,
   stripJsonFences,
   stripSqlFences,
 } from '../../../components/db-query/steps/_helpers';
 import {shouldUseCheapForSqlGen} from '../../../components/db-query/steps/sql-and-validate.step';
+import {SqlGenerationHelper} from '../../../components/db-query/services/sql-generation.service';
 import {SqlValidatorService} from '../../../components/db-query/services/sql-validator.service';
 import {PermissionHelper} from '../../../components/db-query/services/permission-helper.service';
 import {TemplateHelper} from '../../../components/db-query/services/template-helper.service';
@@ -31,6 +30,10 @@ import {makeContainerStepResolver} from '../../fixtures/step-resolver';
 // The syntactic/semantic/classify validators moved to SqlValidatorService
 // (v2 parity); it is stateless, so one shared instance drives these tests.
 const sqlValidator = new SqlValidatorService();
+// The generate->validate->retry engine moved to SqlGenerationHelper (v2
+// parity, DI/overridable); it is stateless, so one shared instance drives
+// these tests.
+const sqlGen = new SqlGenerationHelper();
 
 /**
  * Minimal RequestContext stand-in: workflow steps only call `.get(key)`. Always
@@ -192,6 +195,16 @@ describe('db-query generate helpers (unit)', () => {
   });
 
   describe('generateSqlOnce', () => {
+    // Private on SqlGenerationHelper post-move — reach it via bracket
+    // notation, same instance the other describe blocks share.
+    const generateSqlOnce = (
+      sqlGen as unknown as {
+        generateSqlOnce: (
+          chatLlm: LanguageModel,
+          promptTemplate: string,
+        ) => Promise<{sql: string; error?: string}>;
+      }
+    ).generateSqlOnce.bind(sqlGen);
     it('returns stripped SQL on success', async () => {
       const res = await generateSqlOnce(
         model('```sql\nSELECT * FROM employees;\n```'),
@@ -279,7 +292,7 @@ describe('db-query generate helpers (unit)', () => {
       validate: sinon.stub().resolves(),
     } as unknown as IDbConnector;
     it('passes when generation + both validators succeed', async () => {
-      const r = await runSqlAttempt({
+      const r = await sqlGen.runAttempt({
         chatLlm: model('SELECT * FROM employees;'),
         dbConnector: okConn,
         prompt: 'all employees',
@@ -291,7 +304,7 @@ describe('db-query generate helpers (unit)', () => {
       expect(r.sql).to.equal('SELECT * FROM employees;');
     });
     it('fails (with feedback) when generation errors', async () => {
-      const r = await runSqlAttempt({
+      const r = await sqlGen.runAttempt({
         chatLlm: throwingModel(),
         dbConnector: okConn,
         prompt: 'x',
@@ -302,7 +315,7 @@ describe('db-query generate helpers (unit)', () => {
       expect(r.feedback).to.match(/LLM down/);
     });
     it('on the last attempt accepts syntactically-valid SQL even if the semantic judge rejects', async () => {
-      const r = await runSqlAttempt({
+      const r = await sqlGen.runAttempt({
         chatLlm: model('<invalid>nitpick</invalid>'), // judge rejects, but gen text is also this — sql is non-empty
         dbConnector: okConn,
         prompt: 'q',
@@ -324,7 +337,7 @@ describe('db-query generate helpers (unit)', () => {
                 events.push(e)
             : undefined,
       } as never;
-      const r = await runSqlAttempt({
+      const r = await sqlGen.runAttempt({
         chatLlm: model('SELECT name FROM employees;'),
         dbConnector: okConn,
         prompt: 'list employees',
@@ -349,7 +362,7 @@ describe('db-query generate helpers (unit)', () => {
             ? (e: {data: {thinkingToken?: string}}) => events.push(e)
             : undefined,
       } as never;
-      const r = await runSqlAttempt({
+      const r = await sqlGen.runAttempt({
         chatLlm: model('SELECT 1;'),
         dbConnector: okConn,
         prompt: 'q',
@@ -440,7 +453,7 @@ describe('db-query generate helpers (unit)', () => {
 
     it('widens the allowed table set when a syntactic failure is table_not_found', async () => {
       let reselected: string[] | undefined;
-      const r = await runSqlAttempt({
+      const r = await sqlGen.runAttempt({
         chatLlm: model('SELECT * FROM departments'),
         // separate model for the classifier call (args.cheapLlm ?? chatLlm)
         cheapLlm: model(
@@ -459,7 +472,7 @@ describe('db-query generate helpers (unit)', () => {
     });
 
     it('does not expand on a query_error verdict', async () => {
-      const r = await runSqlAttempt({
+      const r = await sqlGen.runAttempt({
         chatLlm: model('SELECT ('),
         cheapLlm: model('<category>query_error</category><tables></tables>'),
         allTables: ['employees', 'departments'],
@@ -472,7 +485,7 @@ describe('db-query generate helpers (unit)', () => {
     });
 
     it('ignores classifier tables that are not in the real schema', async () => {
-      const r = await runSqlAttempt({
+      const r = await sqlGen.runAttempt({
         chatLlm: model('SELECT * FROM ghosts'),
         cheapLlm: model(
           '<category>table_not_found</category><tables>ghosts</tables>',
@@ -488,7 +501,7 @@ describe('db-query generate helpers (unit)', () => {
     });
 
     it('does not classify or expand when validation passes', async () => {
-      const r = await runSqlAttempt({
+      const r = await sqlGen.runAttempt({
         chatLlm: model('SELECT * FROM employees'),
         cheapLlm: model(
           '<category>table_not_found</category><tables>x</tables>',
@@ -504,7 +517,7 @@ describe('db-query generate helpers (unit)', () => {
     });
 
     it('skips expansion entirely when allTables is not supplied', async () => {
-      const r = await runSqlAttempt({
+      const r = await sqlGen.runAttempt({
         chatLlm: model('SELECT * FROM departments'),
         cheapLlm: model(
           '<category>table_not_found</category><tables>departments</tables>',

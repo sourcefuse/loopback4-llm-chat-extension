@@ -6,9 +6,9 @@ import {AiIntegrationBindings} from '../../../keys';
 import {DbQueryAIExtensionBindings} from '../keys';
 import type {PermissionHelper} from '../services';
 import type {SchemaStore} from '../services/schema.store';
-import {SqlValidatorService} from '../services/sql-validator.service';
+import {SqlGenerationHelper} from '../services/sql-generation.service';
 import type {IDbConnector} from '../types';
-import {buildImproveSqlPrompt, emitToolStatus, runSqlAttempt} from './_helpers';
+import {buildImproveSqlPrompt, emitToolStatus} from './_helpers';
 import {STEP_FIX_QUERY} from './constants';
 import {loadErrorShortCircuit} from './improve.shared';
 
@@ -34,8 +34,8 @@ export class FixQueryStep implements IWorkflowStep {
     private readonly cheapModel?: LanguageModel,
     @inject(AiIntegrationBindings.SmartModel, {optional: true})
     private readonly smartModel?: LanguageModel,
-    @service(SqlValidatorService, {optional: true})
-    private readonly sqlValidator: SqlValidatorService = new SqlValidatorService(),
+    @service(SqlGenerationHelper, {optional: true})
+    private readonly sqlGen: SqlGenerationHelper = new SqlGenerationHelper(),
   ) {}
 
   /**
@@ -76,7 +76,7 @@ export class FixQueryStep implements IWorkflowStep {
     const {dbConnector} = this;
     const {allTables, columns, schema} = this.resolveSchemaInputs(tables);
 
-    const attempt = await runSqlAttempt({
+    const attempt = await this.sqlGen.runAttempt({
       chatLlm: this.smartModel ?? this.chatModel,
       cheapLlm: this.cheapModel ?? this.chatModel,
       allTables,
@@ -93,7 +93,6 @@ export class FixQueryStep implements IWorkflowStep {
       initialSql: data.originalSql,
       rc: requestContext,
       permissionHelper: this.permissionHelper,
-      sqlValidator: this.sqlValidator,
       onReselectTables: () =>
         emitToolStatus(
           requestContext,

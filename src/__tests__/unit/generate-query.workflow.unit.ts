@@ -28,7 +28,7 @@ describe('generateQueryWorkflow (DAG branching, unit)', () => {
   type GenOut = {datasetId: string; sql: string};
 
   function makeRc(
-    overrides: Partial<MastraRcShape> = {},
+    overrides: Partial<MastraRcShape> & {sqlGenHelper?: unknown} = {},
   ): RequestContext<MastraRcShape> {
     const rc = new RequestContext<MastraRcShape>();
     rc.set('resourceId', overrides.resourceId ?? 't1:u1');
@@ -49,6 +49,7 @@ describe('generateQueryWorkflow (DAG branching, unit)', () => {
       templateHelper: overrides.templateHelper,
       connector: overrides.dbConnector,
       authUser: overrides.authUser,
+      sqlGenHelper: overrides.sqlGenHelper,
     });
     rc.set('resolveStep', resolver);
     return rc;
@@ -124,7 +125,7 @@ describe('generateQueryWorkflow (DAG branching, unit)', () => {
       'generate-checklist': '',
     });
     sinon.stub(helpers, 'pickRelevantTables').resolves({kind: 'unknown'});
-    const runSqlAttempt = sinon.stub(helpers, 'runSqlAttempt').resolves({
+    const runAttempt = sinon.stub().resolves({
       sql: 'SELECT regenerated',
       passed: true,
       description: 'd',
@@ -156,6 +157,7 @@ describe('generateQueryWorkflow (DAG branching, unit)', () => {
         validate: async () => undefined,
         execute: async () => [],
       } as never,
+      sqlGenHelper: {runAttempt},
     });
 
     const run = await generateQueryWorkflow.createRun();
@@ -168,7 +170,7 @@ describe('generateQueryWorkflow (DAG branching, unit)', () => {
     if (result.status !== 'success') return;
     // Regenerated: SQL-gen ran and a NEW dataset was created — the disliked
     // cached row was NOT re-served.
-    sinon.assert.called(runSqlAttempt);
+    sinon.assert.called(runAttempt);
     sinon.assert.calledOnce(create);
     const wrapped = result.result as Record<string, unknown>;
     const out =
@@ -252,7 +254,7 @@ describe('generateQueryWorkflow (DAG branching, unit)', () => {
       'template-judge': 'no_match',
       'generate-checklist': '',
     });
-    const runSqlAttempt = sinon.stub(helpers, 'runSqlAttempt').resolves({
+    const runAttempt = sinon.stub().resolves({
       sql: 'BROKEN',
       passed: false,
       feedback: 'syntactic error',
@@ -274,6 +276,7 @@ describe('generateQueryWorkflow (DAG branching, unit)', () => {
         validate: async () => undefined,
         execute: async () => [],
       } as never,
+      sqlGenHelper: {runAttempt},
     });
 
     const run = await generateQueryWorkflow.createRun();
@@ -293,7 +296,7 @@ describe('generateQueryWorkflow (DAG branching, unit)', () => {
     // The dountil predicate `attempts >= MAX_VALIDATION_ATTEMPTS` caps
     // iterations at exactly MAX_VALIDATION_ATTEMPTS — this is the user-
     // visible "stop wasting model calls" guarantee.
-    expect(runSqlAttempt.callCount).to.equal(MAX_VALIDATION_ATTEMPTS);
+    expect(runAttempt.callCount).to.equal(MAX_VALIDATION_ATTEMPTS);
     sinon.assert.notCalled(datasetCreate);
   });
 
@@ -318,9 +321,7 @@ describe('generateQueryWorkflow (DAG branching, unit)', () => {
       reason: 'No revenue data is stored in these tables.',
     });
     // If this is ever called the gate failed — it must stay untouched.
-    const runSqlAttempt = sinon
-      .stub(helpers, 'runSqlAttempt')
-      .resolves({sql: 'SELECT 1', passed: true});
+    const runAttempt = sinon.stub().resolves({sql: 'SELECT 1', passed: true});
 
     const queryCache = {invoke: sinon.stub().resolves([])};
     const templateCache = {invoke: sinon.stub().resolves([])};
@@ -340,6 +341,7 @@ describe('generateQueryWorkflow (DAG branching, unit)', () => {
         validate: async () => undefined,
         execute: async () => [],
       } as never,
+      sqlGenHelper: {runAttempt},
     });
 
     const run = await generateQueryWorkflow.createRun();
@@ -358,7 +360,7 @@ describe('generateQueryWorkflow (DAG branching, unit)', () => {
     expect(out.datasetId).to.equal('');
     // THE regression guard: an unanswerable question must not cost a
     // single smart-tier SQL generation.
-    sinon.assert.notCalled(runSqlAttempt);
+    sinon.assert.notCalled(runAttempt);
     sinon.assert.notCalled(datasetCreate);
     // …and the user gets the clarification, not a silent empty dataset.
     expect(out.replyToUser).to.equal(
@@ -380,7 +382,7 @@ describe('generateQueryWorkflow (DAG branching, unit)', () => {
     });
     // LLM hiccup / no clear verdict → unknown → fall back to all tables.
     sinon.stub(helpers, 'pickRelevantTables').resolves({kind: 'unknown'});
-    const runSqlAttempt = sinon.stub(helpers, 'runSqlAttempt').resolves({
+    const runAttempt = sinon.stub().resolves({
       sql: 'SELECT 1',
       passed: true,
       description: 'd',
@@ -405,6 +407,7 @@ describe('generateQueryWorkflow (DAG branching, unit)', () => {
         validate: async () => undefined,
         execute: async () => [],
       } as never,
+      sqlGenHelper: {runAttempt},
     });
 
     const run = await generateQueryWorkflow.createRun();
@@ -415,7 +418,7 @@ describe('generateQueryWorkflow (DAG branching, unit)', () => {
 
     expect(result.status).to.equal('success');
     if (result.status !== 'success') return;
-    sinon.assert.called(runSqlAttempt);
+    sinon.assert.called(runAttempt);
     sinon.assert.calledOnce(create);
   });
 });

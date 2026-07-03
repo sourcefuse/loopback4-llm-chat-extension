@@ -2,6 +2,7 @@ import {
   Binding,
   BindingKey,
   Context,
+  CoreTags,
   createBindingFromClass,
 } from '@loopback/core';
 import {AuthenticationBindings} from 'loopback4-authentication';
@@ -13,6 +14,7 @@ import {DB_QUERY_STEP_CLASSES} from '../../components/db-query/steps';
 import {VISUALIZATION_STEP_CLASSES} from '../../components/visualization/steps';
 import {SchemaStore} from '../../components/db-query/services/schema.store';
 import {DataSetHelper} from '../../components/db-query/services/dataset-helper.service';
+import {SqlGenerationHelper} from '../../components/db-query/services/sql-generation.service';
 import type {IWorkflowStep, StepResolver} from '../../graphs/types';
 
 /**
@@ -47,6 +49,27 @@ export interface StepDeps {
   cheapModel?: Stub;
   smartModel?: Stub;
   smartNonThinkingModel?: Stub;
+  sqlGenHelper?: Stub;
+}
+
+// Test schemaStore stubs provide get()/filteredSchema(); graft on the real
+// read methods (allTableNames/tablesWithColumns/schemaForPrompt, which moved
+// from _helpers onto SchemaStore) so steps calling them run against the stub.
+// Extracted from makeContainerStepResolver to keep it under the
+// cyclomatic-complexity cap (S1541).
+function schemaStoreWithRealMethods(schemaStore: Stub): Stub {
+  return (
+    schemaStore &&
+    Object.assign(schemaStore, {
+      allTableNames:
+        schemaStore.allTableNames ?? SchemaStore.prototype.allTableNames,
+      tablesWithColumns:
+        schemaStore.tablesWithColumns ??
+        SchemaStore.prototype.tablesWithColumns,
+      schemaForPrompt:
+        schemaStore.schemaForPrompt ?? SchemaStore.prototype.schemaForPrompt,
+    })
+  );
 }
 
 export function makeContainerStepResolver(deps: StepDeps = {}): {
@@ -66,23 +89,7 @@ export function makeContainerStepResolver(deps: StepDeps = {}): {
     if (value !== undefined) ctx.bind(key).to(value as never);
   };
   bindIf(DbQueryAIExtensionBindings.Connector.key, deps.connector);
-  // Test schemaStore stubs provide get()/filteredSchema(); graft on the real
-  // read methods (allTableNames/tablesWithColumns/schemaForPrompt, which moved
-  // from _helpers onto SchemaStore) so steps calling them run against the stub.
-  bindIf(
-    'services.SchemaStore',
-    deps.schemaStore &&
-      Object.assign(deps.schemaStore, {
-        allTableNames:
-          deps.schemaStore.allTableNames ?? SchemaStore.prototype.allTableNames,
-        tablesWithColumns:
-          deps.schemaStore.tablesWithColumns ??
-          SchemaStore.prototype.tablesWithColumns,
-        schemaForPrompt:
-          deps.schemaStore.schemaForPrompt ??
-          SchemaStore.prototype.schemaForPrompt,
-      }),
-  );
+  bindIf('services.SchemaStore', schemaStoreWithRealMethods(deps.schemaStore));
   bindIf('services.DbSchemaHelperService', deps.schemaHelper);
   // If a test provides only a datasetStore (no dataSetHelper), synthesize a
   // DataSetHelper backed by it: the cache-step reads isCachedDatasetUsable /
@@ -114,6 +121,17 @@ export function makeContainerStepResolver(deps: StepDeps = {}): {
     AiIntegrationBindings.SmartNonThinkingModel.key,
     deps.smartNonThinkingModel,
   );
+  // `@service(SqlGenerationHelper)` resolves via a ContextView filtered by
+  // class/interface — NOT by binding key — so a plain-object stub must carry
+  // the `serviceInterface` tag to be found (a bare `bindIf` key-binding, as
+  // used for the `@inject('services.X')` collaborators above, is invisible
+  // to `@service()` resolution).
+  if (deps.sqlGenHelper !== undefined) {
+    ctx
+      .bind('services.SqlGenerationHelper')
+      .to(deps.sqlGenHelper as never)
+      .tag({[CoreTags.SERVICE_INTERFACE]: SqlGenerationHelper});
+  }
   for (const vis of deps.visualizers ?? []) {
     ctx
       .bind(`visualizers.test.${(vis as {name?: string}).name ?? 'v'}`)

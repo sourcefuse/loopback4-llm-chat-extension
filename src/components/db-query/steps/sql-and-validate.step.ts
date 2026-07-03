@@ -6,13 +6,9 @@ import {AiIntegrationBindings} from '../../../keys';
 import {DbQueryAIExtensionBindings} from '../keys';
 import type {PermissionHelper} from '../services';
 import type {SchemaStore} from '../services/schema.store';
-import {SqlValidatorService} from '../services/sql-validator.service';
+import {SqlGenerationHelper} from '../services/sql-generation.service';
 import type {DbQueryConfig, IDbConnector} from '../types';
-import {
-  buildGenerateSqlPrompt,
-  emitToolStatus,
-  runSqlAttempt,
-} from './_helpers';
+import {buildGenerateSqlPrompt, emitToolStatus} from './_helpers';
 import {MAX_VALIDATION_ATTEMPTS, STEP_SQL_AND_VALIDATE} from './constants';
 
 function cachedSqlPassthrough(data: {
@@ -148,8 +144,8 @@ export class SqlAndValidateStep implements IWorkflowStep {
     private readonly cheapModel?: LanguageModel,
     @inject(AiIntegrationBindings.SmartModel, {optional: true})
     private readonly smartModel?: LanguageModel,
-    @service(SqlValidatorService, {optional: true})
-    private readonly sqlValidator: SqlValidatorService = new SqlValidatorService(),
+    @service(SqlGenerationHelper, {optional: true})
+    private readonly sqlGen: SqlGenerationHelper = new SqlGenerationHelper(),
   ) {}
 
   /**
@@ -225,7 +221,7 @@ export class SqlAndValidateStep implements IWorkflowStep {
     );
     const {allTables, columns, schema} = this.resolveSchemaInputs(tables);
 
-    const attempt = await runSqlAttempt({
+    const attempt = await this.sqlGen.runAttempt({
       chatLlm,
       cheapLlm: cheap,
       allTables,
@@ -246,7 +242,6 @@ export class SqlAndValidateStep implements IWorkflowStep {
       descriptionLlm,
       rc: requestContext,
       permissionHelper: this.permissionHelper,
-      sqlValidator: this.sqlValidator,
       ...sqlStatusEmitters(requestContext),
     });
 
