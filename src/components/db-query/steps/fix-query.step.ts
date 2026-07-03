@@ -38,6 +38,19 @@ export class FixQueryStep implements IWorkflowStep {
     private readonly sqlValidator: SqlValidatorService = new SqlValidatorService(),
   ) {}
 
+  /**
+   * Gather the SQL-gen schema inputs from the injected SchemaStore (fail-open
+   * when unbound). Extracted to keep `execute` under the complexity cap (S1541).
+   */
+  private resolveSchemaInputs(tables: string[]) {
+    const store = this.schemaStore;
+    return {
+      allTables: store?.allTableNames() ?? [],
+      columns: store?.tablesWithColumns(tables) ?? {},
+      schema: store?.schemaForPrompt(this.dbConnector, tables),
+    };
+  }
+
   async execute({inputData, requestContext, tracingContext}: WorkflowStepCtx) {
     emitToolStatus(
       requestContext,
@@ -60,19 +73,19 @@ export class FixQueryStep implements IWorkflowStep {
 
     const prompt = data.prompt ?? '';
     const tables = data.tables ?? [];
-    const {schemaStore, dbConnector} = this;
-    const columns = schemaStore?.tablesWithColumns(tables) ?? {};
+    const {dbConnector} = this;
+    const {allTables, columns, schema} = this.resolveSchemaInputs(tables);
 
     const attempt = await runSqlAttempt({
       chatLlm: this.smartModel ?? this.chatModel,
       cheapLlm: this.cheapModel ?? this.chatModel,
-      allTables: schemaStore?.allTableNames() ?? [],
+      allTables,
       tracing: tracingContext,
       dbConnector,
       prompt,
       tables,
       columns,
-      schema: schemaStore?.schemaForPrompt(dbConnector, tables),
+      schema,
       checks: this.globalContext,
       checklist: data.checklist,
       feedback: data.feedback,

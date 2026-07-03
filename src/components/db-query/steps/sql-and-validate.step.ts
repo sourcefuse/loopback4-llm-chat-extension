@@ -154,6 +154,19 @@ export class SqlAndValidateStep implements IWorkflowStep {
     };
   }
 
+  /**
+   * Gather the SQL-gen schema inputs from the injected SchemaStore (fail-open
+   * when unbound). Extracted to keep `execute` under the complexity cap (S1541).
+   */
+  private resolveSchemaInputs(tables: string[]) {
+    const store = this.schemaStore;
+    return {
+      allTables: store?.allTableNames() ?? [],
+      columns: store?.tablesWithColumns(tables) ?? {},
+      schema: store?.schemaForPrompt(this.dbConnector, tables),
+    };
+  }
+
   async execute({inputData, requestContext, tracingContext}: WorkflowStepCtx) {
     const data = inputData as {
       prompt?: string;
@@ -189,17 +202,18 @@ export class SqlAndValidateStep implements IWorkflowStep {
       tables.length,
       priorAttempts,
     );
+    const {allTables, columns, schema} = this.resolveSchemaInputs(tables);
 
     const attempt = await runSqlAttempt({
       chatLlm,
       cheapLlm: cheap,
-      allTables: this.schemaStore?.allTableNames() ?? [],
+      allTables,
       tracing: tracingContext,
       dbConnector: this.dbConnector,
       prompt,
       tables,
-      columns: this.schemaStore?.tablesWithColumns(tables) ?? {},
-      schema: this.schemaStore?.schemaForPrompt(this.dbConnector, tables),
+      columns,
+      schema,
       checks: this.globalContext,
       checklist: data.checklist,
       feedback: data.feedback,
