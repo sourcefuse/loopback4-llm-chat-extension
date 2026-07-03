@@ -48,7 +48,7 @@ import {
 import {UsageAccumulator} from './services/usage-accumulator.service';
 import {SSETransport} from './transports';
 import {AIIntegrationConfig} from './types';
-import {PgVectorStore} from './sub-modules/db/postgresql';
+import {PgVectorStore, hasPgVectorEnv} from './sub-modules/db/postgresql';
 import {DefaultStorageProvider} from './providers/mastra/storage.provider';
 import {MastraProvider} from './providers/mastra/mastra.provider';
 import {DefaultToolsProvider} from './providers/mastra/tools.provider';
@@ -57,16 +57,6 @@ import {WorkflowRunner} from './runtime/bridge/workflow-runner';
 import {RuntimeLifecycleObserver} from './observers/mastra-lifecycle.observer';
 
 const debug = require('debug')('ai-integration:log-events:component');
-
-function hasPgVectorEnv(): boolean {
-  return Boolean(
-    process.env.DB_HOST &&
-    process.env.DB_PORT &&
-    process.env.DB_USER &&
-    process.env.DB_PASSWORD &&
-    process.env.DB_DATABASE,
-  );
-}
 
 export class AiIntegrationsComponent implements Component {
   constructor(

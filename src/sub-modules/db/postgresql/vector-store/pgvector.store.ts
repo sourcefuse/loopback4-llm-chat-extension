@@ -9,6 +9,21 @@ import {
 import {juggler} from '@loopback/repository';
 import type {MastraVector} from '@mastra/core/vector';
 
+/**
+ * True when the DB_* env vars needed to back {@link PgVectorStore} are all set.
+ * Lives next to the store it guards (not in the root component) so the pgvector
+ * env contract stays in one place.
+ */
+export function hasPgVectorEnv(): boolean {
+  return Boolean(
+    process.env.DB_HOST &&
+    process.env.DB_PORT &&
+    process.env.DB_USER &&
+    process.env.DB_PASSWORD &&
+    process.env.DB_DATABASE,
+  );
+}
+
 @injectable({scope: BindingScope.SINGLETON})
 export class PgVectorStore implements Provider<MastraVector> {
   constructor(
