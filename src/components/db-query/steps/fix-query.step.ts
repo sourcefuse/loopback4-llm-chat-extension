@@ -1,4 +1,4 @@
-import {inject} from '@loopback/core';
+import {inject, service} from '@loopback/core';
 import type {LanguageModel} from 'ai';
 import {step} from '../../../decorators';
 import type {IWorkflowStep, WorkflowStepCtx} from '../../../graphs/types';
@@ -6,6 +6,7 @@ import {AiIntegrationBindings} from '../../../keys';
 import {DbQueryAIExtensionBindings} from '../keys';
 import type {PermissionHelper} from '../services';
 import type {SchemaStore} from '../services/schema.store';
+import {SqlValidatorService} from '../services/sql-validator.service';
 import type {IDbConnector} from '../types';
 import {
   buildImproveSqlPrompt,
@@ -40,6 +41,8 @@ export class FixQueryStep implements IWorkflowStep {
     private readonly cheapModel?: LanguageModel,
     @inject(AiIntegrationBindings.SmartModel, {optional: true})
     private readonly smartModel?: LanguageModel,
+    @service(SqlValidatorService, {optional: true})
+    private readonly sqlValidator: SqlValidatorService = new SqlValidatorService(),
   ) {}
 
   async execute({inputData, requestContext, tracingContext}: WorkflowStepCtx) {
@@ -84,6 +87,7 @@ export class FixQueryStep implements IWorkflowStep {
       initialSql: data.originalSql,
       rc: requestContext,
       permissionHelper: this.permissionHelper,
+      sqlValidator: this.sqlValidator,
       onReselectTables: () =>
         emitToolStatus(
           requestContext,

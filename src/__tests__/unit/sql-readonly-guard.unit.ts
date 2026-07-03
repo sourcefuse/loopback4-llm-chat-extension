@@ -1,8 +1,9 @@
 import {expect} from '@loopback/testlab';
-import {
-  detectDmlStatement,
-  validateSqlSyntactic,
-} from '../../components/db-query/steps/_helpers';
+import {SqlValidatorService} from '../../components/db-query/services/sql-validator.service';
+
+const validator = new SqlValidatorService();
+const detectDmlStatement = (sql: string) => validator.detectDml(sql);
+const validateSqlSyntactic = validator.validateSyntactic.bind(validator);
 
 // Defence-in-depth: LLM-generated SQL must be read-only before it is
 // validated / persisted / executed. The connector wraps execution in

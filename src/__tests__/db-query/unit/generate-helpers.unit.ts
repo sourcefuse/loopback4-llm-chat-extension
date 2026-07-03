@@ -5,7 +5,6 @@ import type {IDbConnector} from '../../../components/db-query/types';
 import {
   buildGenerateSqlPrompt,
   buildImproveSqlPrompt,
-  classifySqlError,
   generateSqlOnce,
   getAllSchemaTables,
   idToString,
@@ -19,9 +18,8 @@ import {
   shouldUseCheapForSqlGen,
   stripJsonFences,
   stripSqlFences,
-  validateSqlSemantic,
-  validateSqlSyntactic,
 } from '../../../components/db-query/steps/_helpers';
+import {SqlValidatorService} from '../../../components/db-query/services/sql-validator.service';
 import {DatasetActionType} from '../../../components/db-query/constant';
 import {
   checkCacheStep,
@@ -30,6 +28,10 @@ import {
 import {STEP_GET_COLUMNS} from '../../../components/db-query/steps/constants';
 import {GetTablesStep} from '../../../components/db-query/steps/get-tables.step';
 import {makeContainerStepResolver} from '../../fixtures/step-resolver';
+
+// The syntactic/semantic/classify validators moved to SqlValidatorService
+// (v2 parity); it is stateless, so one shared instance drives these tests.
+const sqlValidator = new SqlValidatorService();
 
 /**
  * Minimal RequestContext stand-in: workflow steps only call `.get(key)`. Always
@@ -211,7 +213,7 @@ describe('db-query generate helpers (unit)', () => {
       const conn = {
         validate: sinon.stub().resolves(),
       } as unknown as IDbConnector;
-      expect(await validateSqlSyntactic('SELECT 1', conn)).to.eql({
+      expect(await sqlValidator.validateSyntactic('SELECT 1', conn)).to.eql({
         passed: true,
       });
     });
@@ -219,12 +221,14 @@ describe('db-query generate helpers (unit)', () => {
       const conn = {
         validate: sinon.stub().rejects(new Error('near ")": syntax error')),
       } as unknown as IDbConnector;
-      const r = await validateSqlSyntactic('SELECT (', conn);
+      const r = await sqlValidator.validateSyntactic('SELECT (', conn);
       expect(r.passed).to.be.false();
       expect(r.feedback).to.match(/syntax error/);
     });
     it('is a no-op pass when no connector is bound', async () => {
-      expect(await validateSqlSyntactic('SELECT 1', undefined)).to.eql({
+      expect(
+        await sqlValidator.validateSyntactic('SELECT 1', undefined),
+      ).to.eql({
         passed: true,
       });
     });
@@ -233,14 +237,14 @@ describe('db-query generate helpers (unit)', () => {
   describe('validateSqlSemantic', () => {
     const base = {sql: 'SELECT 1', prompt: 'q', checklist: '- a'};
     it('passes on a <valid/> verdict', async () => {
-      const r = await validateSqlSemantic({
+      const r = await sqlValidator.validateSemantic({
         ...base,
         chatLlm: model('<valid/>'),
       });
       expect(r.passed).to.be.true();
     });
     it('fails on an <invalid> verdict and surfaces the reason', async () => {
-      const r = await validateSqlSemantic({
+      const r = await sqlValidator.validateSemantic({
         ...base,
         chatLlm: model('<invalid>missing the active-rate filter</invalid>'),
       });
@@ -248,14 +252,14 @@ describe('db-query generate helpers (unit)', () => {
       expect(r.feedback).to.match(/active-rate filter/);
     });
     it('defaults to PASS when the judge returns neither tag (lenient)', async () => {
-      const r = await validateSqlSemantic({
+      const r = await sqlValidator.validateSemantic({
         ...base,
         chatLlm: model('looks fine to me'),
       });
       expect(r.passed).to.be.true();
     });
     it('passes (skips) when no checklist is supplied', async () => {
-      const r = await validateSqlSemantic({
+      const r = await sqlValidator.validateSemantic({
         sql: 'SELECT 1',
         prompt: 'q',
         chatLlm: model('<invalid>x</invalid>'),
@@ -263,7 +267,10 @@ describe('db-query generate helpers (unit)', () => {
       expect(r.passed).to.be.true();
     });
     it('passes when the judge errors (advisory only)', async () => {
-      const r = await validateSqlSemantic({...base, chatLlm: throwingModel()});
+      const r = await sqlValidator.validateSemantic({
+        ...base,
+        chatLlm: throwingModel(),
+      });
       expect(r.passed).to.be.true();
     });
   });
@@ -363,7 +370,7 @@ describe('db-query generate helpers (unit)', () => {
   describe('classifySqlError (v2 SyntacticValidatorNode reclassification)', () => {
     const allTables = ['employees', 'departments', 'currencies'];
     it('parses a table_not_found verdict and its related tables', async () => {
-      const r = await classifySqlError({
+      const r = await sqlValidator.classifyError({
         chatLlm: model(
           '<category>table_not_found</category><tables>departments, employees</tables>',
         ),
@@ -375,7 +382,7 @@ describe('db-query generate helpers (unit)', () => {
       expect(r.errorTables).to.eql(['departments', 'employees']);
     });
     it('treats any non-table verdict as query_error', async () => {
-      const r = await classifySqlError({
+      const r = await sqlValidator.classifyError({
         chatLlm: model('<category>query_error</category><tables></tables>'),
         error: 'syntax error near )',
         sql: 'SELECT (',
@@ -385,7 +392,7 @@ describe('db-query generate helpers (unit)', () => {
       expect(r.errorTables).to.eql([]);
     });
     it('defaults to query_error/[] when the verdict is unparseable', async () => {
-      const r = await classifySqlError({
+      const r = await sqlValidator.classifyError({
         chatLlm: model('I have no idea'),
         error: 'boom',
         sql: 'SELECT 1',
@@ -394,7 +401,7 @@ describe('db-query generate helpers (unit)', () => {
       expect(r).to.eql({category: 'query_error', errorTables: []});
     });
     it('defaults to query_error/[] when no LLM is bound', async () => {
-      const r = await classifySqlError({
+      const r = await sqlValidator.classifyError({
         chatLlm: undefined,
         error: 'boom',
         sql: 'SELECT 1',
@@ -403,7 +410,7 @@ describe('db-query generate helpers (unit)', () => {
       expect(r).to.eql({category: 'query_error', errorTables: []});
     });
     it('defaults to query_error/[] when the schema table list is empty', async () => {
-      const r = await classifySqlError({
+      const r = await sqlValidator.classifyError({
         chatLlm: model(
           '<category>table_not_found</category><tables>x</tables>',
         ),
@@ -414,7 +421,7 @@ describe('db-query generate helpers (unit)', () => {
       expect(r).to.eql({category: 'query_error', errorTables: []});
     });
     it('defaults to query_error/[] when the classifier model throws', async () => {
-      const r = await classifySqlError({
+      const r = await sqlValidator.classifyError({
         chatLlm: throwingModel(),
         error: 'boom',
         sql: 'SELECT 1',

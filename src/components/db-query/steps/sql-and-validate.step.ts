@@ -1,4 +1,4 @@
-import {inject} from '@loopback/core';
+import {inject, service} from '@loopback/core';
 import type {LanguageModel} from 'ai';
 import {step} from '../../../decorators';
 import type {IWorkflowStep, WorkflowStepCtx} from '../../../graphs/types';
@@ -6,6 +6,7 @@ import {AiIntegrationBindings} from '../../../keys';
 import {DbQueryAIExtensionBindings} from '../keys';
 import type {PermissionHelper} from '../services';
 import type {SchemaStore} from '../services/schema.store';
+import {SqlValidatorService} from '../services/sql-validator.service';
 import type {DbQueryConfig, IDbConnector} from '../types';
 import {
   buildGenerateSqlPrompt,
@@ -129,6 +130,8 @@ export class SqlAndValidateStep implements IWorkflowStep {
     private readonly cheapModel?: LanguageModel,
     @inject(AiIntegrationBindings.SmartModel, {optional: true})
     private readonly smartModel?: LanguageModel,
+    @service(SqlValidatorService, {optional: true})
+    private readonly sqlValidator: SqlValidatorService = new SqlValidatorService(),
   ) {}
 
   /**
@@ -211,6 +214,7 @@ export class SqlAndValidateStep implements IWorkflowStep {
       descriptionLlm,
       rc: requestContext,
       permissionHelper: this.permissionHelper,
+      sqlValidator: this.sqlValidator,
       ...sqlStatusEmitters(requestContext),
     });
 
