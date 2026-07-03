@@ -11,9 +11,6 @@ import type {DbQueryConfig, IDbConnector} from '../types';
 import {
   buildGenerateSqlPrompt,
   emitToolStatus,
-  getAllSchemaTables,
-  getSchemaForPrompt,
-  getTablesWithColumns,
   runSqlAttempt,
   shouldUseCheapForSqlGen,
 } from './_helpers';
@@ -196,13 +193,13 @@ export class SqlAndValidateStep implements IWorkflowStep {
     const attempt = await runSqlAttempt({
       chatLlm,
       cheapLlm: cheap,
-      allTables: getAllSchemaTables(this.schemaStore),
+      allTables: this.schemaStore?.allTableNames() ?? [],
       tracing: tracingContext,
       dbConnector: this.dbConnector,
       prompt,
       tables,
-      columns: getTablesWithColumns(this.schemaStore, tables),
-      schema: getSchemaForPrompt(this.schemaStore, this.dbConnector, tables),
+      columns: this.schemaStore?.tablesWithColumns(tables) ?? {},
+      schema: this.schemaStore?.schemaForPrompt(this.dbConnector, tables),
       checks: this.globalContext,
       checklist: data.checklist,
       feedback: data.feedback,

@@ -11,6 +11,7 @@ import {DbQueryAIExtensionBindings} from '../../components/db-query/keys';
 import {VISUALIZATION_KEY} from '../../components/visualization/keys';
 import {DB_QUERY_STEP_CLASSES} from '../../components/db-query/steps';
 import {VISUALIZATION_STEP_CLASSES} from '../../components/visualization/steps';
+import {SchemaStore} from '../../components/db-query/services/schema.store';
 import type {IWorkflowStep, StepResolver} from '../../graphs/types';
 
 /**
@@ -64,7 +65,23 @@ export function makeContainerStepResolver(deps: StepDeps = {}): {
     if (value !== undefined) ctx.bind(key).to(value as never);
   };
   bindIf(DbQueryAIExtensionBindings.Connector.key, deps.connector);
-  bindIf('services.SchemaStore', deps.schemaStore);
+  // Test schemaStore stubs provide get()/filteredSchema(); graft on the real
+  // read methods (allTableNames/tablesWithColumns/schemaForPrompt, which moved
+  // from _helpers onto SchemaStore) so steps calling them run against the stub.
+  bindIf(
+    'services.SchemaStore',
+    deps.schemaStore &&
+      Object.assign(deps.schemaStore, {
+        allTableNames:
+          deps.schemaStore.allTableNames ?? SchemaStore.prototype.allTableNames,
+        tablesWithColumns:
+          deps.schemaStore.tablesWithColumns ??
+          SchemaStore.prototype.tablesWithColumns,
+        schemaForPrompt:
+          deps.schemaStore.schemaForPrompt ??
+          SchemaStore.prototype.schemaForPrompt,
+      }),
+  );
   bindIf('services.DbSchemaHelperService', deps.schemaHelper);
   bindIf('services.DataSetHelper', deps.dataSetHelper);
   bindIf('services.TemplateHelper', deps.templateHelper);

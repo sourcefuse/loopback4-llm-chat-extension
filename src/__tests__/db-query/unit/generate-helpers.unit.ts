@@ -6,7 +6,6 @@ import {
   buildGenerateSqlPrompt,
   buildImproveSqlPrompt,
   generateSqlOnce,
-  getAllSchemaTables,
   idToString,
   isCachedDatasetUsable,
   loadCachedSampleQuery,
@@ -20,6 +19,7 @@ import {
 import {SqlValidatorService} from '../../../components/db-query/services/sql-validator.service';
 import {PermissionHelper} from '../../../components/db-query/services/permission-helper.service';
 import {TemplateHelper} from '../../../components/db-query/services/template-helper.service';
+import {SchemaStore} from '../../../components/db-query/services/schema.store';
 import {DatasetActionType} from '../../../components/db-query/constant';
 import {
   checkCacheStep,
@@ -519,23 +519,29 @@ describe('db-query generate helpers (unit)', () => {
     });
   });
 
-  describe('getAllSchemaTables', () => {
+  describe('SchemaStore.allTableNames', () => {
+    // Exercise the real method against a stub `get` via the prototype.
+    const allTableNames = SchemaStore.prototype.allTableNames;
     it('returns the schema table names', () => {
       const store = {
         get: () => ({tables: {employees: {}, departments: {}}}),
-      } as never;
-      expect(getAllSchemaTables(store)).to.eql(['employees', 'departments']);
+      };
+      expect(allTableNames.call(store as never)).to.eql([
+        'employees',
+        'departments',
+      ]);
     });
-    it('returns [] when the SchemaStore is unbound', () => {
-      expect(getAllSchemaTables(undefined)).to.eql([]);
+    it('returns [] at the call site when the SchemaStore is unbound', () => {
+      const namesOf = (s: SchemaStore | undefined) => s?.allTableNames() ?? [];
+      expect(namesOf(undefined)).to.eql([]);
     });
     it('returns [] when the schema is not yet loaded', () => {
       const store = {
         get: () => {
           throw new Error('not loaded');
         },
-      } as never;
-      expect(getAllSchemaTables(store)).to.eql([]);
+      };
+      expect(allTableNames.call(store as never)).to.eql([]);
     });
   });
 

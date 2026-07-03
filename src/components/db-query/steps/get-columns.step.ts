@@ -6,13 +6,7 @@ import {AiIntegrationBindings} from '../../../keys';
 import {DbQueryAIExtensionBindings} from '../keys';
 import type {SchemaStore} from '../services/schema.store';
 import type {DbQueryConfig, IDbConnector} from '../types';
-import {
-  emitToolStatus,
-  getSchemaForPrompt,
-  getTablesWithColumns,
-  logStepDetail,
-  pickRelevantTables,
-} from './_helpers';
+import {emitToolStatus, logStepDetail, pickRelevantTables} from './_helpers';
 import {STEP_GET_COLUMNS} from './constants';
 
 /**
@@ -59,13 +53,13 @@ export class GetColumnsStep implements IWorkflowStep {
       return {kind: 'continue' as const, prompt, tables, templateId, ...sample};
     }
 
-    const tablesWithColumns = getTablesWithColumns(this.schemaStore, tables);
+    const tablesWithColumns = this.schemaStore?.tablesWithColumns(tables) ?? {};
     const picked = await pickRelevantTables({
       chatLlm,
       tracing: tracingContext,
       prompt,
       tablesWithColumns,
-      schema: getSchemaForPrompt(this.schemaStore, this.dbConnector, tables),
+      schema: this.schemaStore?.schemaForPrompt(this.dbConnector, tables),
       upstreamTables: tables,
     });
 

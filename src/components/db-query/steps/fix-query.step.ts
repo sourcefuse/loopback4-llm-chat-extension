@@ -8,14 +8,7 @@ import type {PermissionHelper} from '../services';
 import type {SchemaStore} from '../services/schema.store';
 import {SqlValidatorService} from '../services/sql-validator.service';
 import type {IDbConnector} from '../types';
-import {
-  buildImproveSqlPrompt,
-  emitToolStatus,
-  getAllSchemaTables,
-  getSchemaForPrompt,
-  getTablesWithColumns,
-  runSqlAttempt,
-} from './_helpers';
+import {buildImproveSqlPrompt, emitToolStatus, runSqlAttempt} from './_helpers';
 import {STEP_FIX_QUERY} from './constants';
 import {loadErrorShortCircuit} from './improve.shared';
 
@@ -68,18 +61,18 @@ export class FixQueryStep implements IWorkflowStep {
     const prompt = data.prompt ?? '';
     const tables = data.tables ?? [];
     const {schemaStore, dbConnector} = this;
-    const columns = getTablesWithColumns(schemaStore, tables);
+    const columns = schemaStore?.tablesWithColumns(tables) ?? {};
 
     const attempt = await runSqlAttempt({
       chatLlm: this.smartModel ?? this.chatModel,
       cheapLlm: this.cheapModel ?? this.chatModel,
-      allTables: getAllSchemaTables(schemaStore),
+      allTables: schemaStore?.allTableNames() ?? [],
       tracing: tracingContext,
       dbConnector,
       prompt,
       tables,
       columns,
-      schema: getSchemaForPrompt(schemaStore, dbConnector, tables),
+      schema: schemaStore?.schemaForPrompt(dbConnector, tables),
       checks: this.globalContext,
       checklist: data.checklist,
       feedback: data.feedback,
