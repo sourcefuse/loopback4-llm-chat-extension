@@ -9,11 +9,11 @@ import {
   logStepDetail,
   stripSqlFences,
   tracedGenerateText,
-} from '../steps/_helpers';
-import type {MastraRc, SqlAttemptResult} from '../steps/_helpers';
-import {LABEL_SQL_GENERATION} from '../steps/constants';
-import {formatChecks} from '../steps/prompts';
-import type {SqlGenInput} from '../steps/prompts';
+} from '../_helpers';
+import type {MastraRc, SqlAttemptResult} from '../_helpers';
+import {LABEL_SQL_GENERATION} from '../constants';
+import {formatChecks} from '../prompts';
+import type {SqlGenInput} from '../prompts';
 import type {IDbConnector} from '../types';
 import type {PermissionHelper} from './permission-helper.service';
 import {SqlValidatorService} from './sql-validator.service';
@@ -23,7 +23,7 @@ type SqlGenStage = {sql: string; description?: string; error?: string};
 /**
  * The SQL generate -> validate -> retry engine, restored as an injectable,
  * overridable service (moved out of the free-function `_helpers` file so it
- * is DI/overridable and shared by SqlAndValidateStep and FixQueryStep — see
+ * is DI/overridable and shared by SqlAndValidateNode and FixQueryNode — see
  * `runAttempt`, both steps' single call site).
  *
  * Stateless: TRANSIENT scope, all inputs are passed per-call.

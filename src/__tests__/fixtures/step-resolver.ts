@@ -6,31 +6,33 @@ import {
   createBindingFromClass,
 } from '@loopback/core';
 import {AuthenticationBindings} from 'loopback4-authentication';
-import {STEP_DEFAULT, STEP_NAME} from '../../constant';
+import {GRAPH_NODE_NAME} from '../../constant';
 import {AiIntegrationBindings} from '../../keys';
 import {DbQueryAIExtensionBindings} from '../../components/db-query/keys';
 import {VISUALIZATION_KEY} from '../../components/visualization/keys';
-import {DB_QUERY_STEP_CLASSES} from '../../components/db-query/steps';
-import {VISUALIZATION_STEP_CLASSES} from '../../components/visualization/steps';
+import {
+  DB_QUERY_NODE_CLASSES,
+  VISUALIZATION_NODE_CLASSES,
+} from './node-registry';
 import {SchemaStore} from '../../components/db-query/services/schema.store';
 import {DataSetHelper} from '../../components/db-query/services/dataset-helper.service';
 import {SqlGenerationHelper} from '../../components/db-query/services/sql-generation.service';
-import type {IWorkflowStep, StepResolver} from '../../graphs/types';
+import type {IGraphNode, NodeResolver} from '../../graphs/types';
 
 /**
- * Build a CONTAINER-backed {@link StepResolver} for workflow tests, mirroring
- * WorkflowRunner.resolveWorkflowStep. Steps are now DI classes whose
+ * Build a CONTAINER-backed {@link NodeResolver} for workflow tests, mirroring
+ * WorkflowRunner.resolveGraphNode. Steps are now DI classes whose
  * collaborators are constructor-injected, so a test must bind the stub
  * collaborators into a real LB4 Context (not stuff them into the RequestContext)
  * and resolve steps from it. Pass the stubs you need; everything is optional so
  * a step that doesn't use a given collaborator just gets `undefined`.
  *
- * Returns the resolver to set as `resolveStep` on the test RequestContext, plus
+ * Returns the resolver to set as `resolveNode` on the test RequestContext, plus
  * the Context (so a test can bind extra keys if needed).
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Stub = any;
-export interface StepDeps {
+export interface NodeDeps {
   connector?: Stub;
   schemaStore?: Stub;
   schemaHelper?: Stub;
@@ -55,7 +57,7 @@ export interface StepDeps {
 // Test schemaStore stubs provide get()/filteredSchema(); graft on the real
 // read methods (allTableNames/tablesWithColumns/schemaForPrompt, which moved
 // from _helpers onto SchemaStore) so steps calling them run against the stub.
-// Extracted from makeContainerStepResolver to keep it under the
+// Extracted from makeContainerNodeResolver to keep it under the
 // cyclomatic-complexity cap (S1541).
 function schemaStoreWithRealMethods(schemaStore: Stub): Stub {
   return (
@@ -72,17 +74,17 @@ function schemaStoreWithRealMethods(schemaStore: Stub): Stub {
   );
 }
 
-export function makeContainerStepResolver(deps: StepDeps = {}): {
-  resolver: StepResolver;
+export function makeContainerNodeResolver(deps: NodeDeps = {}): {
+  resolver: NodeResolver;
   ctx: Context;
 } {
   const ctx = new Context('test-steps');
 
   for (const stepClass of [
-    ...DB_QUERY_STEP_CLASSES,
-    ...VISUALIZATION_STEP_CLASSES,
+    ...DB_QUERY_NODE_CLASSES,
+    ...VISUALIZATION_NODE_CLASSES,
   ]) {
-    ctx.add(createBindingFromClass(stepClass).tag({[STEP_DEFAULT]: true}));
+    ctx.add(createBindingFromClass(stepClass));
   }
 
   const bindIf = (key: string | BindingKey<unknown>, value: unknown) => {
@@ -139,11 +141,9 @@ export function makeContainerStepResolver(deps: StepDeps = {}): {
       .tag({[VISUALIZATION_KEY]: true});
   }
 
-  const resolver: StepResolver = async (key: string) => {
-    const bindings = ctx.findByTag({[STEP_NAME]: key}) as Binding[];
-    const overrides = bindings.filter(b => !b.tagMap[STEP_DEFAULT]);
-    const chosen = overrides.length > 0 ? overrides : bindings;
-    return ctx.get<IWorkflowStep>(chosen[0].key);
+  const resolver: NodeResolver = async (key: string) => {
+    const bindings = ctx.findByTag({[GRAPH_NODE_NAME]: key}) as Binding[];
+    return ctx.get<IGraphNode>(bindings[0].key);
   };
   return {resolver, ctx};
 }

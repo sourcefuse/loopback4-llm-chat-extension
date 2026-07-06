@@ -1,5 +1,32 @@
 import type {EmbeddingModel, LanguageModel} from 'ai';
 import {AnyObject} from '@loopback/repository';
+import type {IGraphTool} from './graphs/types';
+
+/**
+ * Registry shape consumed by WorkflowRunner, holding IGraphTool instances.
+ *
+ * `map` is keyed by each tool's `key` so consumers (and the runner) can look a
+ * tool up by name without scanning `list`. It is OPTIONAL so providers that
+ * build only `{list}` keep compiling; the bundled ToolsProvider populates it,
+ * and `toolMap()` derives it from `list` when absent.
+ */
+export type ToolStore = {
+  list: IGraphTool[];
+  map?: Record<string, IGraphTool>;
+};
+
+/**
+ * Resolve a tool registry's `key → tool` map, deriving it from `list` when a
+ * provider didn't supply one.
+ */
+export function toolMap(store: ToolStore): Record<string, IGraphTool> {
+  if (store.map) return store.map;
+  const map: Record<string, IGraphTool> = {};
+  for (const tool of store.list) {
+    if (tool?.key) map[tool.key] = tool;
+  }
+  return map;
+}
 
 export enum SupportedDBs {
   PostgreSQL = 'PostgreSQL',

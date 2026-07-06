@@ -1,5 +1,33 @@
 import {AnyObject} from '@loopback/repository';
 
+// ---------------------------------------------------------------------------
+// Visualization workflow node I/O types — kept here (not inline in the
+// `nodes/*.node.ts` files) to match the LangGraph structure.
+// ---------------------------------------------------------------------------
+
+/** SelectVisualizationNode input. */
+export type SelectIn = {datasetId: string; userQuery: string; type?: string};
+/** CallQueryGenerationNode input. */
+export type CallQueryIn = {
+  datasetId: string;
+  needsQuery: boolean;
+  chartType: string;
+  userQuery: string;
+  rejected?: boolean;
+  reason?: string;
+};
+/** RenderVisualizationNode input. */
+export type RenderIn = {
+  datasetId: string;
+  rows: unknown[];
+  chartType: string;
+  userQuery: string;
+  sql?: string;
+  description?: string;
+  rejected?: boolean;
+  reason?: string;
+};
+
 /**
  * Plain interface describing what a visualizer needs to render a chart.
  * Lifted out of the deleted state.ts (formerly a LangGraph Annotation)

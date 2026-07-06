@@ -4,7 +4,7 @@ import type {MastraVector} from '@mastra/core/vector';
 import type {Observability} from '@mastra/observability';
 import type {LanguageModel} from 'ai';
 import {BindingKey} from '@loopback/context';
-import type {ToolStore} from './graphs/types';
+import type {ToolStore} from './types';
 import {ITransport} from './transports/types';
 import {
   AIIntegrationConfig,
@@ -92,7 +92,7 @@ export namespace AiIntegrationBindings {
     'services.ai-reporting.mastraStorage',
   );
   export const Tools = BindingKey.create<ToolStore>(
-    'services.ai-reporting.mastraTools',
+    'services.ai-reporting.tool-store',
   );
   export const Observability = BindingKey.create<Observability>(
     'services.ai-reporting.mastraObservability',

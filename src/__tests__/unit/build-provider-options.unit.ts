@@ -2,7 +2,7 @@ import {expect} from '@loopback/testlab';
 import {
   buildProviderOptions,
   resolveEnvTemperature,
-} from '../../components/db-query/steps/_helpers';
+} from '../../components/db-query/_helpers';
 
 describe('buildProviderOptions (CLAUDE_THINKING wiring)', () => {
   const ORIGINAL_THINKING = process.env.CLAUDE_THINKING;

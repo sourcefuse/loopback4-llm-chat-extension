@@ -15,13 +15,14 @@ import {resolveModelConfig, type MastraModelConfig} from '@mastra/core/llm';
 import {generateText, type LanguageModel} from 'ai';
 import {AiIntegrationBindings, IRunRegistry} from '../../keys';
 import type {FileMessageBuilder} from '../../types';
-import {CHAT_TITLE_MAX_LENGTH, STEP_DEFAULT, STEP_NAME} from '../../constant';
+import {CHAT_TITLE_MAX_LENGTH, GRAPH_NODE_NAME} from '../../constant';
 import {buildChatInstructions} from '../chat-agent-instructions';
 import {deriveResourceId, resolvePrincipalId} from '../resource-id.util';
 import {ChatLedgerService} from '../../services/chat-ledger.service';
 import {LLMStreamEvent, LLMStreamEventType} from '../../graphs/event.types';
-import {ToolStore, ToolStatus} from '../../graphs/types';
-import type {IWorkflowStep} from '../../graphs/types';
+import {ToolStatus} from '../../graphs/types';
+import type {ToolStore} from '../../types';
+import type {IGraphNode} from '../../graphs/types';
 import type {Tool} from '@mastra/core/tools';
 import {UsageAccumulator} from '../../services/usage-accumulator.service';
 import {AsyncEventQueue} from './async-event-queue';
@@ -46,8 +47,8 @@ import type {IAuthUserWithPermissions} from '@sourceloop/core';
 import {
   buildProviderOptions,
   resolveEnvTemperature,
-} from '../../components/db-query/steps/_helpers';
-import type {MastraRcShape} from '../../components/db-query/steps/_helpers';
+} from '../../components/db-query/_helpers';
+import type {MastraRcShape} from '../../components/db-query/_helpers';
 import {sanitizeFilenameForAwsConverse} from '../../sub-modules/providers/aws/utils';
 
 // Cap the chat agent's tool-calling loop. One data/chart/dataset request
@@ -854,38 +855,30 @@ export class WorkflowRunner {
       templateCache,
       visualizers,
       // Per-request step resolver. Closes over the request-scoped LB4 context
-      // so a committed step shell resolves its `@step(key)` implementation with
+      // so a committed step shell resolves its `@graphNode(key)` implementation with
       // request-scoped collaborators. Mirrors BaseGraph._getNodeFn.
-      resolveStep: (key: string) => this.resolveWorkflowStep(key),
+      resolveNode: (key: string) => this.resolveGraphNode(key),
     };
   }
 
   /**
-   * Resolve a `@step(key)`-tagged class from the request-scoped LB4 context.
+   * Resolve a `@graphNode(key)`-tagged class from the request-scoped LB4 context.
    * Faithful port of the LangGraph `BaseGraph._getNodeFn`: exactly one binding
-   * must carry the key, so a host override REPLACES the library step (rebinds
-   * the same key) rather than stacking a duplicate.
+   * must carry the key. A host overrides a bundled node by rebinding the same
+   * key (replacing the library's node); more than one binding is an error.
    */
-  private async resolveWorkflowStep(key: string): Promise<IWorkflowStep> {
-    const bindings = this.lb4Ctx.findByTag({[STEP_NAME]: key});
+  private async resolveGraphNode(key: string): Promise<IGraphNode> {
+    const bindings = this.lb4Ctx.findByTag({[GRAPH_NODE_NAME]: key});
     if (bindings.length === 0) {
       throw new Error(
-        `Workflow step "${key}" not found. Bind a @step('${key}') class as a ` +
-          `service (the bundled DbQueryComponent registers the defaults).`,
+        `Node with key "${key}" not found. Bind a @graphNode('${key}') class ` +
+          `as a service (the bundled DbQueryComponent registers the defaults).`,
       );
     }
-    // A host override is a second `@step(key)` binding WITHOUT the bundled
-    // `stepDefault` marker. Prefer it so a consumer wins without unbinding the
-    // library default; only error if the override itself is ambiguous (>1).
-    const overrides = bindings.filter(b => !b.tagMap[STEP_DEFAULT]);
-    const chosen = overrides.length > 0 ? overrides : bindings;
-    if (chosen.length > 1) {
-      throw new Error(
-        `Multiple workflow steps bound for "${key}". Register at most one ` +
-          `override (@step('${key}')) — the bundled default is replaced automatically.`,
-      );
+    if (bindings.length > 1) {
+      throw new Error(`Multiple nodes found with key "${key}"`);
     }
-    return this.lb4Ctx.get<IWorkflowStep>(chosen[0].key);
+    return this.lb4Ctx.get<IGraphNode>(bindings[0].key);
   }
 
   /**

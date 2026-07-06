@@ -52,7 +52,7 @@ import {AIIntegrationConfig} from './types';
 import {PgVectorStore, hasPgVectorEnv} from './sub-modules/db/postgresql';
 import {DefaultStorageProvider} from './providers/mastra/storage.provider';
 import {MastraProvider} from './providers/mastra/mastra.provider';
-import {DefaultToolsProvider} from './providers/mastra/tools.provider';
+import {ToolsProvider} from './providers/mastra/tools.provider';
 import {InProcessRunRegistry} from './runtime/bridge/run-registry';
 import {WorkflowRunner} from './runtime/bridge/workflow-runner';
 import {RuntimeLifecycleObserver} from './observers/mastra-lifecycle.observer';
@@ -87,7 +87,7 @@ export class AiIntegrationsComponent implements Component {
       createBindingFromClass(InProcessRunRegistry, {
         key: AiIntegrationBindings.RunRegistry.key,
       }).inScope(BindingScope.SINGLETON),
-      createBindingFromClass(DefaultToolsProvider, {
+      createBindingFromClass(ToolsProvider, {
         key: AiIntegrationBindings.Tools.key,
       }).inScope(BindingScope.SINGLETON),
     ];

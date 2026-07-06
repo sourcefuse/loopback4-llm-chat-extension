@@ -1,14 +1,8 @@
 import {createWorkflow} from '@mastra/core/workflows';
 import {z} from 'zod';
-import {makeStepShell} from '../../../runtime/_step-shell';
-import {
-  STEP_CALL_QUERY_GENERATION,
-  STEP_GET_DATASET_DATA,
-  STEP_RENDER_VISUALIZATION,
-  STEP_SELECT_VISUALISATION,
-  visualizationInputSchema,
-  visualizationOutputSchema,
-} from '../steps/shared';
+import {makeNodeShell} from '../../../runtime/_node-shell';
+import {visualizationInputSchema, visualizationOutputSchema} from '../shared';
+import {VisualizationGraphNodes} from '../nodes.enum';
 
 const selectionOutputSchema = z.object({
   datasetId: z.string(),
@@ -19,10 +13,10 @@ const selectionOutputSchema = z.object({
   reason: z.string().optional(),
 });
 
-// Step shells — delegate to the `@step(key)` classes in ../steps (see
+// Step shells — delegate to the `@graphNode(key)` classes in ../steps (see
 // generate.workflow.ts for the shell/DI pattern).
-export const selectVisualisationStep = makeStepShell({
-  id: STEP_SELECT_VISUALISATION,
+export const selectVisualisationNode = makeNodeShell({
+  id: VisualizationGraphNodes.SelectVisualisation,
   inputSchema: z.object({
     datasetId: z.string(),
     userQuery: z.string(),
@@ -30,13 +24,13 @@ export const selectVisualisationStep = makeStepShell({
   }),
   outputSchema: selectionOutputSchema,
 });
-export const callQueryGenerationStep = makeStepShell({
-  id: STEP_CALL_QUERY_GENERATION,
+export const callQueryGenerationNode = makeNodeShell({
+  id: VisualizationGraphNodes.CallQueryGeneration,
   inputSchema: selectionOutputSchema,
   outputSchema: selectionOutputSchema,
 });
-export const getDatasetDataStep = makeStepShell({
-  id: STEP_GET_DATASET_DATA,
+export const getDatasetDataNode = makeNodeShell({
+  id: VisualizationGraphNodes.GetDatasetData,
   inputSchema: z.any(),
   outputSchema: z.object({
     datasetId: z.string(),
@@ -49,8 +43,8 @@ export const getDatasetDataStep = makeStepShell({
     reason: z.string().optional(),
   }),
 });
-export const renderVisualizationStep = makeStepShell({
-  id: STEP_RENDER_VISUALIZATION,
+export const renderVisualizationNode = makeNodeShell({
+  id: VisualizationGraphNodes.RenderVisualization,
   inputSchema: z.object({
     datasetId: z.string(),
     rows: z.array(z.unknown()),
@@ -69,8 +63,8 @@ export const visualizationWorkflow = createWorkflow({
   inputSchema: visualizationInputSchema,
   outputSchema: visualizationOutputSchema,
 })
-  .then(selectVisualisationStep)
-  .then(callQueryGenerationStep)
-  .then(getDatasetDataStep)
-  .then(renderVisualizationStep)
+  .then(selectVisualisationNode)
+  .then(callQueryGenerationNode)
+  .then(getDatasetDataNode)
+  .then(renderVisualizationNode)
   .commit();

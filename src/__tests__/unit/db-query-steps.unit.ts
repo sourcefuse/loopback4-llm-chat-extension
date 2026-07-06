@@ -2,27 +2,23 @@ import {expect, sinon} from '@loopback/testlab';
 import {RequestContext} from '@mastra/core/request-context';
 import type {Tool} from '@mastra/core/tools';
 import {DatasetActionType} from '../../components/db-query/constant';
-import {checkCacheStep} from '../../components/db-query/workflows/generate.workflow';
-import {checkTemplatesStep} from '../../components/db-query/workflows/generate.workflow';
-import {failedStep} from '../../components/db-query/workflows/generate.workflow';
-import {getTablesStep} from '../../components/db-query/workflows/generate.workflow';
-import {makeContainerStepResolver} from '../fixtures/step-resolver';
-import {postCacheAndTablesStep} from '../../components/db-query/workflows/generate.workflow';
-import {returnCachedStep} from '../../components/db-query/workflows/generate.workflow';
-import {saveDatasetStep} from '../../components/db-query/workflows/generate.workflow';
-import {
-  STEP_CHECK_CACHE,
-  STEP_CHECK_TEMPLATES,
-  STEP_GET_TABLES,
-  classifyPostCacheStatus,
-} from '../../components/db-query/steps/constants';
-import type {MastraRcShape} from '../../components/db-query/steps/_helpers';
+import {checkCacheNode} from '../../components/db-query/workflows/generate.workflow';
+import {checkTemplatesNode} from '../../components/db-query/workflows/generate.workflow';
+import {failedNode} from '../../components/db-query/workflows/generate.workflow';
+import {getTablesNode} from '../../components/db-query/workflows/generate.workflow';
+import {makeContainerNodeResolver} from '../fixtures/step-resolver';
+import {postCacheAndTablesNode} from '../../components/db-query/workflows/generate.workflow';
+import {returnCachedNode} from '../../components/db-query/workflows/generate.workflow';
+import {saveDatasetNode} from '../../components/db-query/workflows/generate.workflow';
+import {classifyPostCacheStatus} from '../../components/db-query/constants';
+import {DbQueryNodes} from '../../components/db-query/nodes.enum';
+import type {MastraRcShape} from '../../components/db-query/_helpers';
 import {LLMStreamEventType} from '../../graphs/event.types';
 import type {LLMStreamEvent} from '../../graphs/event.types';
 import {PermissionHelper} from '../../components/db-query/services/permission-helper.service';
 
 // Borrow the real filter so a `{findMissingPermissions}` stub behaves like a
-// bound PermissionHelper (getTablesStep calls `.filterAuthorizedTables`, which
+// bound PermissionHelper (getTablesNode calls `.filterAuthorizedTables`, which
 // delegates to the stubbed `findMissingPermissions`).
 const {filterAuthorizedTables} = PermissionHelper.prototype;
 
@@ -47,9 +43,9 @@ describe('db-query workflow steps (unit)', () => {
     rc.set('eventWriter', overrides.eventWriter ?? (() => undefined));
     // Steps now read collaborators + resolved LLM tiers via constructor DI, so
     // route the test's stubs through the container resolver (not rc). The shell
-    // still reads `resolveStep` + `eventWriter` from this rc, exactly as
+    // still reads `resolveNode` + `eventWriter` from this rc, exactly as
     // WorkflowRunner wires it in production.
-    const {resolver} = makeContainerStepResolver({
+    const {resolver} = makeContainerNodeResolver({
       schemaStore: overrides.schemaStore,
       schemaHelper: overrides.schemaHelper,
       dataSetHelper: overrides.dataSetHelper,
@@ -64,7 +60,7 @@ describe('db-query workflow steps (unit)', () => {
       smartModel: overrides.smartLlm,
       smartNonThinkingModel: overrides.smartNonThinkingLlm,
     });
-    rc.set('resolveStep', resolver);
+    rc.set('resolveNode', resolver);
     return rc;
   }
 
@@ -91,7 +87,7 @@ describe('db-query workflow steps (unit)', () => {
   // check-cache step
   // ──────────────────────────────────────────────────────────
 
-  describe('checkCacheStep', () => {
+  describe('checkCacheNode', () => {
     type Out = {
       cacheHit: boolean;
       datasetId?: string;
@@ -106,8 +102,8 @@ describe('db-query workflow steps (unit)', () => {
       const ctx = {
         inputData,
         requestContext: rc,
-      } as ExecuteArg<typeof checkCacheStep>;
-      return checkCacheStep.execute(ctx) as Promise<Out>;
+      } as ExecuteArg<typeof checkCacheNode>;
+      return checkCacheNode.execute(ctx) as Promise<Out>;
     }
 
     it('cache miss when prompt is empty (skip without invoking the cache)', async () => {
@@ -161,7 +157,7 @@ describe('db-query workflow steps (unit)', () => {
       // For the unit-level assertion, run with a stub LLM that the
       // helper layer will short-circuit on (forceThinkingOff path).
       // Instead, isolate by stubbing the helper directly:
-      const helpers = await import('../../components/db-query/steps/_helpers');
+      const helpers = await import('../../components/db-query/_helpers');
       sinon
         .stub(helpers, 'tracedGenerateText')
         .resolves({text: 'AsIs 1'} as Awaited<
@@ -184,7 +180,7 @@ describe('db-query workflow steps (unit)', () => {
       const invoke = sinon
         .stub()
         .resolves([{pageContent: 'salaries', metadata: {id: 'ds-9'}}]);
-      const helpers = await import('../../components/db-query/steps/_helpers');
+      const helpers = await import('../../components/db-query/_helpers');
       sinon
         .stub(helpers, 'tracedGenerateText')
         .resolves({text: 'AsIs 1'} as Awaited<
@@ -211,7 +207,7 @@ describe('db-query workflow steps (unit)', () => {
       const invoke = sinon
         .stub()
         .resolves([{pageContent: 'p', metadata: {id: 'ds-1'}}]);
-      const helpers = await import('../../components/db-query/steps/_helpers');
+      const helpers = await import('../../components/db-query/_helpers');
       sinon
         .stub(helpers, 'tracedGenerateText')
         .resolves({text: 'AsIs 9'} as Awaited<
@@ -232,7 +228,7 @@ describe('db-query workflow steps (unit)', () => {
       const invoke = sinon
         .stub()
         .resolves([{pageContent: 'p', metadata: {id: 'ds-1'}}]);
-      const helpers = await import('../../components/db-query/steps/_helpers');
+      const helpers = await import('../../components/db-query/_helpers');
       sinon
         .stub(helpers, 'tracedGenerateText')
         .resolves({text: 'AsIs abc'} as Awaited<
@@ -253,7 +249,7 @@ describe('db-query workflow steps (unit)', () => {
       const invoke = sinon
         .stub()
         .resolves([{pageContent: 'list staff', metadata: {id: 'ds-1'}}]);
-      const helpers = await import('../../components/db-query/steps/_helpers');
+      const helpers = await import('../../components/db-query/_helpers');
       sinon
         .stub(helpers, 'tracedGenerateText')
         .resolves({text: 'Similar 1'} as Awaited<
@@ -284,7 +280,7 @@ describe('db-query workflow steps (unit)', () => {
       const invoke = sinon
         .stub()
         .resolves([{pageContent: 'p', metadata: {id: 'ds-1'}}]);
-      const helpers = await import('../../components/db-query/steps/_helpers');
+      const helpers = await import('../../components/db-query/_helpers');
       sinon
         .stub(helpers, 'tracedGenerateText')
         .resolves({text: 'Similar 1'} as Awaited<
@@ -312,7 +308,7 @@ describe('db-query workflow steps (unit)', () => {
       const invoke = sinon
         .stub()
         .resolves([{pageContent: 'p', metadata: {id: 'ds-1'}}]);
-      const helpers = await import('../../components/db-query/steps/_helpers');
+      const helpers = await import('../../components/db-query/_helpers');
       sinon.stub(helpers, 'tracedGenerateText').rejects(new Error('llm down'));
 
       const out = await runCheckCache(
@@ -331,7 +327,7 @@ describe('db-query workflow steps (unit)', () => {
   // check-templates step
   // ──────────────────────────────────────────────────────────
 
-  describe('checkTemplatesStep', () => {
+  describe('checkTemplatesNode', () => {
     type Out = {matched: boolean; templateId?: string};
 
     async function runCheckTemplates(
@@ -341,8 +337,8 @@ describe('db-query workflow steps (unit)', () => {
       const ctx = {
         inputData,
         requestContext: rc,
-      } as ExecuteArg<typeof checkTemplatesStep>;
-      return checkTemplatesStep.execute(ctx) as Promise<Out>;
+      } as ExecuteArg<typeof checkTemplatesNode>;
+      return checkTemplatesNode.execute(ctx) as Promise<Out>;
     }
 
     it('no match when prompt is empty', async () => {
@@ -366,7 +362,7 @@ describe('db-query workflow steps (unit)', () => {
       const invoke = sinon
         .stub()
         .resolves([{pageContent: 'tmpl', metadata: {id: 'tmpl-9'}}]);
-      const helpers = await import('../../components/db-query/steps/_helpers');
+      const helpers = await import('../../components/db-query/_helpers');
       sinon
         .stub(helpers, 'tracedGenerateText')
         .resolves({text: 'match 1'} as Awaited<
@@ -388,7 +384,7 @@ describe('db-query workflow steps (unit)', () => {
       const invoke = sinon
         .stub()
         .resolves([{pageContent: 't', metadata: {id: 'tmpl-1'}}]);
-      const helpers = await import('../../components/db-query/steps/_helpers');
+      const helpers = await import('../../components/db-query/_helpers');
       sinon.stub(helpers, 'tracedGenerateText').rejects(new Error('llm down'));
 
       const out = await runCheckTemplates(
@@ -408,7 +404,7 @@ describe('db-query workflow steps (unit)', () => {
       const invoke = sinon
         .stub()
         .resolves([{pageContent: 'tmpl', metadata: {id: 'tmpl-9'}}]);
-      const helpers = await import('../../components/db-query/steps/_helpers');
+      const helpers = await import('../../components/db-query/_helpers');
       sinon
         .stub(helpers, 'tracedGenerateText')
         .resolves({text: 'match 1'} as Awaited<
@@ -435,7 +431,7 @@ describe('db-query workflow steps (unit)', () => {
       const invoke = sinon
         .stub()
         .resolves([{pageContent: 'tmpl', metadata: {id: 'tmpl-9'}}]);
-      const helpers = await import('../../components/db-query/steps/_helpers');
+      const helpers = await import('../../components/db-query/_helpers');
       sinon
         .stub(helpers, 'tracedGenerateText')
         .resolves({text: 'match 1'} as Awaited<
@@ -462,19 +458,19 @@ describe('db-query workflow steps (unit)', () => {
   // get-tables step
   // ──────────────────────────────────────────────────────────
 
-  // get-tables is the DI-backed GetTablesStep class, exercised here through its
-  // workflow shell (`getTablesStep`). makeRc publishes the static resolver, so
+  // get-tables is the DI-backed GetTablesNode class, exercised here through its
+  // workflow shell (`getTablesNode`). makeRc publishes the static resolver, so
   // the shell delegates to the class which reads SchemaStore / PermissionHelper
   // from this same rc — identical wiring to WorkflowRunner.
-  describe('getTablesStep', () => {
+  describe('getTablesNode', () => {
     async function runGetTables(
       rc?: RequestContext<MastraRcShape>,
     ): Promise<{tables: string[]}> {
       const ctx = {
         inputData: {prompt: 'x'},
         requestContext: rc,
-      } as ExecuteArg<typeof getTablesStep>;
-      return getTablesStep.execute(ctx) as Promise<{tables: string[]}>;
+      } as ExecuteArg<typeof getTablesNode>;
+      return getTablesNode.execute(ctx) as Promise<{tables: string[]}>;
     }
 
     it('returns the full schema table set when SchemaStore is bound', async () => {
@@ -568,7 +564,7 @@ describe('db-query workflow steps (unit)', () => {
   // post-cache-and-tables (fan-in classifier)
   // ──────────────────────────────────────────────────────────
 
-  describe('postCacheAndTablesStep', () => {
+  describe('postCacheAndTablesNode', () => {
     type Out = {
       fromCache: boolean;
       fromTemplate: boolean;
@@ -587,16 +583,17 @@ describe('db-query workflow steps (unit)', () => {
       input?: {prompt?: string};
     }): Promise<Out> {
       const stepResults: Record<string, unknown> = {};
-      if (args.cache) stepResults[STEP_CHECK_CACHE] = args.cache;
-      if (args.tables) stepResults[STEP_GET_TABLES] = args.tables;
-      if (args.templates) stepResults[STEP_CHECK_TEMPLATES] = args.templates;
+      if (args.cache) stepResults[DbQueryNodes.CheckCache] = args.cache;
+      if (args.tables) stepResults[DbQueryNodes.GetTables] = args.tables;
+      if (args.templates)
+        stepResults[DbQueryNodes.CheckTemplates] = args.templates;
       const ctx = {
         inputData: args.input ?? {},
         requestContext: makeRc(),
         getStepResult: (id: string) => stepResults[id],
         getInitData: () => args.init,
-      } as ExecuteArg<typeof postCacheAndTablesStep>;
-      return postCacheAndTablesStep.execute(ctx) as Promise<Out>;
+      } as ExecuteArg<typeof postCacheAndTablesNode>;
+      return postCacheAndTablesNode.execute(ctx) as Promise<Out>;
     }
 
     it('reports status=AsIs when the cache hit, regardless of template match', async () => {
@@ -674,7 +671,7 @@ describe('db-query workflow steps (unit)', () => {
   // return-cached step (AsIs branch terminal)
   // ──────────────────────────────────────────────────────────
 
-  describe('returnCachedStep', () => {
+  describe('returnCachedNode', () => {
     type Out = {datasetId: string; sql: string};
 
     async function runReturnCached(
@@ -684,8 +681,8 @@ describe('db-query workflow steps (unit)', () => {
       const ctx = {
         inputData,
         requestContext: rc,
-      } as ExecuteArg<typeof returnCachedStep>;
-      return returnCachedStep.execute(ctx) as Promise<Out>;
+      } as ExecuteArg<typeof returnCachedNode>;
+      return returnCachedNode.execute(ctx) as Promise<Out>;
     }
 
     it('hydrates the dataset id + sql from the bound dataset store', async () => {
@@ -723,15 +720,15 @@ describe('db-query workflow steps (unit)', () => {
   // failed step (terminal sentinel)
   // ──────────────────────────────────────────────────────────
 
-  describe('failedStep', () => {
+  describe('failedNode', () => {
     it('returns empty datasetId/sql so the tool wrapper emits ToolStatus.Failed', async () => {
       // The empty datasetId is the contract: the tool wrapper checks
       // `datasetId ? Completed : Failed` to decide which status to emit.
       const ctx = {
         inputData: {anything: true},
         requestContext: makeRc(),
-      } as ExecuteArg<typeof failedStep>;
-      const out = (await failedStep.execute(ctx)) as {
+      } as ExecuteArg<typeof failedNode>;
+      const out = (await failedNode.execute(ctx)) as {
         datasetId: string;
         sql: string;
         replyToUser?: string;
@@ -747,8 +744,8 @@ describe('db-query workflow steps (unit)', () => {
       const ctx = {
         inputData: {feedback: 'Query Validation Failed: unknown column foo'},
         requestContext: makeRc(),
-      } as ExecuteArg<typeof failedStep>;
-      const out = (await failedStep.execute(ctx)) as {replyToUser?: string};
+      } as ExecuteArg<typeof failedNode>;
+      const out = (await failedNode.execute(ctx)) as {replyToUser?: string};
       expect(out.replyToUser).to.match(/unknown column foo/);
     });
 
@@ -756,8 +753,8 @@ describe('db-query workflow steps (unit)', () => {
       const ctx = {
         inputData: {replyToUser: 'No revenue data is stored in these tables.'},
         requestContext: makeRc(),
-      } as ExecuteArg<typeof failedStep>;
-      const out = (await failedStep.execute(ctx)) as {replyToUser?: string};
+      } as ExecuteArg<typeof failedNode>;
+      const out = (await failedNode.execute(ctx)) as {replyToUser?: string};
       expect(out.replyToUser).to.equal(
         'No revenue data is stored in these tables.',
       );
@@ -768,7 +765,7 @@ describe('db-query workflow steps (unit)', () => {
   // save-dataset step (Continue branch terminal)
   // ──────────────────────────────────────────────────────────
 
-  describe('saveDatasetStep', () => {
+  describe('saveDatasetNode', () => {
     type Input = {
       sql?: string;
       description?: string;
@@ -786,8 +783,8 @@ describe('db-query workflow steps (unit)', () => {
       const ctx = {
         inputData,
         requestContext: rc,
-      } as ExecuteArg<typeof saveDatasetStep>;
-      return saveDatasetStep.execute(ctx) as Promise<Out>;
+      } as ExecuteArg<typeof saveDatasetNode>;
+      return saveDatasetNode.execute(ctx) as Promise<Out>;
     }
 
     it('short-circuits to the cached datasetId without touching the store', async () => {

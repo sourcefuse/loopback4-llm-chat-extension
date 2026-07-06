@@ -1,8 +1,8 @@
 import {injectable, BindingScope} from '@loopback/core';
 import type {TracingContext} from '@mastra/core/observability';
 import type {LanguageModel} from 'ai';
-import {tracedGenerateText} from '../steps/_helpers';
-import type {DomainRuleContext} from '../steps/checklist.shared';
+import {tracedGenerateText} from '../_helpers';
+import type {DomainRuleContext} from '../checklist.shared';
 import type {DbSchemaHelperService} from './db-schema-helper.service';
 import type {SchemaStore} from './schema.store';
 

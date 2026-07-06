@@ -3,15 +3,18 @@ import {
   Component,
   Constructor,
   ControllerClass,
-  createBindingFromClass,
   LifeCycleObserver,
   ProviderMap,
   ServiceOrProviderClass,
 } from '@loopback/core';
 import {AnyObject} from '@loopback/repository';
-import {STEP_DEFAULT} from '../../constant';
 import {PieVisualizer, BarVisualizer, LineVisualizer} from './visualizers';
-import {VISUALIZATION_STEP_CLASSES} from './steps';
+import {
+  CallQueryGenerationNode,
+  GetDatasetDataNode,
+  RenderVisualizationNode,
+  SelectVisualizationNode,
+} from './nodes';
 import {GenerateVisualizationTool} from './tools';
 
 export class VisualizerComponent implements Component {
@@ -25,16 +28,11 @@ export class VisualizerComponent implements Component {
   constructor() {
     this.controllers = [];
     this.providers = {};
-    // DI-backed visualization workflow steps — bound as tagged services (the
-    // `@step(key)` tag makes them discoverable) and marked STEP_DEFAULT so a
-    // host override (a second `@step(key)` binding) is preferred by the resolver.
-    this.bindings = VISUALIZATION_STEP_CLASSES.map(stepClass =>
-      createBindingFromClass(stepClass).tag({[STEP_DEFAULT]: true}),
-    );
+    this.bindings = [];
     this.lifeCycleObservers = [];
     this.services = [
       // visualizers (consumer-extensible via @visualizer() — the Mastra
-      // visualizationWorkflow's render step dispatches to these via
+      // visualizationWorkflow's render node dispatches to these via
       // RequestContext, see)
       PieVisualizer,
       BarVisualizer,
@@ -42,6 +40,12 @@ export class VisualizerComponent implements Component {
       // visualization tool — registered here (not the root component) so it
       // rides with VisualizerComponent. Discovered by tag (@graphTool).
       GenerateVisualizationTool,
+      // workflow nodes — registered as tagged services (like the LangGraph
+      // version); discovered by `@graphNode(key)` tag and resolved per request.
+      SelectVisualizationNode,
+      CallQueryGenerationNode,
+      GetDatasetDataNode,
+      RenderVisualizationNode,
     ];
     this.components = [];
   }

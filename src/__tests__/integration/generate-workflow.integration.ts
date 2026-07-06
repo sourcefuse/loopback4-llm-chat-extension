@@ -2,7 +2,7 @@ import {expect} from '@loopback/testlab';
 import {createMockModel} from '@mastra/core/test-utils/llm-mock';
 import {RequestContext} from '@mastra/core/request-context';
 import {generateQueryWorkflow} from '../../components/db-query/workflows/generate.workflow';
-import {makeContainerStepResolver} from '../fixtures/step-resolver';
+import {makeContainerNodeResolver} from '../fixtures/step-resolver';
 
 /**
  * In-CI equivalent of v2 main's db-query.graph.acceptance: drives the whole
@@ -55,7 +55,7 @@ describe('generateQueryWorkflow (integration, mocked model)', () => {
     // Steps converted to constructor DI (e.g. sql-and-validate) resolve their
     // collaborators from a real Context, exactly as WorkflowRunner does — bind
     // the same stubs there. (Steps still on rc-accessors ignore these.)
-    const {resolver} = makeContainerStepResolver({
+    const {resolver} = makeContainerNodeResolver({
       connector,
       schemaStore,
       datasetStore,
@@ -63,7 +63,7 @@ describe('generateQueryWorkflow (integration, mocked model)', () => {
       smartModel,
       cheapModel,
     });
-    ctx.set('resolveStep', resolver);
+    ctx.set('resolveNode', resolver);
     return {ctx, saved};
   }
 

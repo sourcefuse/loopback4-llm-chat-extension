@@ -1,11 +1,12 @@
 import {expect, sinon} from '@loopback/testlab';
 import {RequestContext} from '@mastra/core/request-context';
-import * as helpers from '../../components/db-query/steps/_helpers';
+import * as helpers from '../../components/db-query/_helpers';
 import {generateQueryWorkflow} from '../../components/db-query/workflows/generate.workflow';
-import {MAX_VALIDATION_ATTEMPTS} from '../../components/db-query/steps/constants';
-import type {MastraRcShape} from '../../components/db-query/steps/_helpers';
+import {MAX_VALIDATION_ATTEMPTS} from '../../components/db-query/constants';
+import {DbQueryNodes} from '../../components/db-query/nodes.enum';
+import type {MastraRcShape} from '../../components/db-query/_helpers';
 import {DatasetActionType} from '../../components/db-query/constant';
-import {makeContainerStepResolver} from '../fixtures/step-resolver';
+import {makeContainerNodeResolver} from '../fixtures/step-resolver';
 
 /**
  * DAG-level coverage for `generateQueryWorkflow`. The integration test
@@ -16,7 +17,7 @@ import {makeContainerStepResolver} from '../fixtures/step-resolver';
  *   1) AsIs              — cache judge says "this past query answers it"
  *   2) FromTemplate      — template judge says "match"
  *   3) Failed (Continue) — every SQL attempt fails → MAX_VALIDATION_ATTEMPTS
- *                          → failedStep terminal
+ *                          → failedNode terminal
  *
  * Each test stubs the LLM helpers at `_helpers` (single CommonJS exports
  * object — sinon replaces the export the steps actually call), so we
@@ -37,8 +38,8 @@ describe('generateQueryWorkflow (DAG branching, unit)', () => {
     // route the stubs through the container resolver. A mock chatModel is
     // always provided so the (stubbed) `tracedGenerateText` boundary is
     // reachable (the cheap/smart tiers fall back to it). The shell reads
-    // `resolveStep` + `eventWriter` from this rc.
-    const {resolver} = makeContainerStepResolver({
+    // `resolveNode` + `eventWriter` from this rc.
+    const {resolver} = makeContainerNodeResolver({
       chatModel: {modelId: 'mock'},
       queryCache: overrides.queryCache,
       templateCache: overrides.templateCache,
@@ -51,7 +52,7 @@ describe('generateQueryWorkflow (DAG branching, unit)', () => {
       authUser: overrides.authUser,
       sqlGenHelper: overrides.sqlGenHelper,
     });
-    rc.set('resolveStep', resolver);
+    rc.set('resolveNode', resolver);
     return rc;
   }
 
@@ -67,10 +68,10 @@ describe('generateQueryWorkflow (DAG branching, unit)', () => {
   }
 
   // ──────────────────────────────────────────────────────────
-  // AsIs path: cache hit → returnCachedStep terminal
+  // AsIs path: cache hit → returnCachedNode terminal
   // ──────────────────────────────────────────────────────────
 
-  it('AsIs branch — cache hit short-circuits to returnCachedStep and the workflow exits with the cached datasetId', async () => {
+  it('AsIs branch — cache hit short-circuits to returnCachedNode and the workflow exits with the cached datasetId', async () => {
     stubLlm({'cache-judge': 'AsIs 1'});
     const queryCache = {
       invoke: sinon
@@ -104,9 +105,9 @@ describe('generateQueryWorkflow (DAG branching, unit)', () => {
     // (`save-dataset` or `failed`) — mirror that unwrap in the assertion.
     const wrapped = result.result as Record<string, unknown>;
     const out =
-      (wrapped['save-dataset'] as GenOut) ?? (wrapped as unknown as GenOut);
+      (wrapped['save_dataset'] as GenOut) ?? (wrapped as unknown as GenOut);
     // The save-dataset branch arm preserves the cached datasetId via
-    // the `cached:true` short-circuit in saveDatasetStep.
+    // the `cached:true` short-circuit in saveDatasetNode.
     expect(out.datasetId).to.equal('ds-cached');
     expect(out.sql).to.equal('SELECT * FROM employees');
     // Confirm we never went through the SQL-gen → persist pipeline.
@@ -122,7 +123,7 @@ describe('generateQueryWorkflow (DAG branching, unit)', () => {
     stubLlm({
       'cache-judge': 'AsIs 1',
       'template-judge': 'no_match',
-      'generate-checklist': '',
+      [DbQueryNodes.GenerateChecklist]: '',
     });
     sinon.stub(helpers, 'pickRelevantTables').resolves({kind: 'unknown'});
     const runAttempt = sinon.stub().resolves({
@@ -174,15 +175,15 @@ describe('generateQueryWorkflow (DAG branching, unit)', () => {
     sinon.assert.calledOnce(create);
     const wrapped = result.result as Record<string, unknown>;
     const out =
-      (wrapped['save-dataset'] as GenOut) ?? (wrapped as unknown as GenOut);
+      (wrapped['save_dataset'] as GenOut) ?? (wrapped as unknown as GenOut);
     expect(out.datasetId).to.equal('ds-new');
   });
 
   // ──────────────────────────────────────────────────────────
-  // FromTemplate path: template match → saveDatasetFromTemplateStep
+  // FromTemplate path: template match → saveDatasetFromTemplateNode
   // ──────────────────────────────────────────────────────────
 
-  it('FromTemplate branch — template judge match routes to saveDatasetFromTemplateStep and persists the resolved SQL', async () => {
+  it('FromTemplate branch — template judge match routes to saveDatasetFromTemplateNode and persists the resolved SQL', async () => {
     // cache judge: NotRelevant so cache misses
     // templates judge: "match 1" so template-id is taken
     stubLlm({'cache-judge': 'NotRelevant', 'template-judge': 'match 1'});
@@ -230,7 +231,7 @@ describe('generateQueryWorkflow (DAG branching, unit)', () => {
     if (result.status !== 'success') return;
     const wrapped = result.result as Record<string, unknown>;
     const out =
-      (wrapped['save-dataset'] as GenOut) ?? (wrapped as unknown as GenOut);
+      (wrapped['save_dataset'] as GenOut) ?? (wrapped as unknown as GenOut);
     // Template path created a fresh dataset row; id is coerced to string.
     expect(out.datasetId).to.equal('999');
     expect(out.sql).to.equal('SELECT 1 FROM tmpl');
@@ -244,15 +245,15 @@ describe('generateQueryWorkflow (DAG branching, unit)', () => {
   });
 
   // ──────────────────────────────────────────────────────────
-  // Continue path that fails every attempt → failedStep terminal
+  // Continue path that fails every attempt → failedNode terminal
   // ──────────────────────────────────────────────────────────
 
-  it(`Continue branch — when every SQL attempt fails the dountil exits after ${MAX_VALIDATION_ATTEMPTS} attempts and failedStep produces the empty sentinel`, async () => {
+  it(`Continue branch — when every SQL attempt fails the dountil exits after ${MAX_VALIDATION_ATTEMPTS} attempts and failedNode produces the empty sentinel`, async () => {
     // cache: miss, templates: no match → Continue branch
     stubLlm({
       'cache-judge': 'NotRelevant',
       'template-judge': 'no_match',
-      'generate-checklist': '',
+      [DbQueryNodes.GenerateChecklist]: '',
     });
     const runAttempt = sinon.stub().resolves({
       sql: 'BROKEN',
@@ -289,7 +290,7 @@ describe('generateQueryWorkflow (DAG branching, unit)', () => {
     if (result.status !== 'success') return;
     const wrapped = result.result as Record<string, unknown>;
     const out = (wrapped.failed as GenOut) ?? (wrapped as unknown as GenOut);
-    // failedStep emits a deterministic empty payload; saveDataset is NOT
+    // failedNode emits a deterministic empty payload; saveDataset is NOT
     // invoked because the predicate `passed === true` did not match.
     expect(out.datasetId).to.equal('');
     expect(out.sql).to.equal('');
@@ -378,7 +379,7 @@ describe('generateQueryWorkflow (DAG branching, unit)', () => {
     stubLlm({
       'cache-judge': 'NotRelevant',
       'template-judge': 'no_match',
-      'generate-checklist': '',
+      [DbQueryNodes.GenerateChecklist]: '',
     });
     // LLM hiccup / no clear verdict → unknown → fall back to all tables.
     sinon.stub(helpers, 'pickRelevantTables').resolves({kind: 'unknown'});

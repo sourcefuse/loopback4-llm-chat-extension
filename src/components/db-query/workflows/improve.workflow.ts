@@ -1,25 +1,19 @@
 import {createWorkflow} from '@mastra/core/workflows';
 import {z} from 'zod';
-import {makeStepShell} from '../../../runtime/_step-shell';
-import {
-  STEP_FAILED,
-  STEP_FIX_QUERY,
-  STEP_IMPROVE_FAILED,
-  STEP_LOAD_EXISTING,
-  STEP_SAVE_IMPROVED,
-} from '../steps/constants';
+import {makeNodeShell} from '../../../runtime/_node-shell';
+import {DbQueryNodes} from '../nodes.enum';
 import {
   MAX_IMPROVE_ATTEMPTS,
   improveInputSchema,
   improveOutputSchema,
-} from '../steps/improve.shared';
+} from '../improve.shared';
 
 // Step shells for the improve workflow — see generate.workflow.ts for the
 // shell/DI pattern. The improve terminal step keeps the Mastra id 'failed'
-// (STEP_FAILED) within this workflow but resolves under the globally-unique DI
-// key 'improve-failed' (STEP_IMPROVE_FAILED).
-export const loadExistingStep = makeStepShell({
-  id: STEP_LOAD_EXISTING,
+// (DbQueryNodes.Failed) within this workflow but resolves under the globally-unique DI
+// key 'improve-failed' (DbQueryNodes.ImproveFailed).
+export const loadExistingNode = makeNodeShell({
+  id: DbQueryNodes.LoadExisting,
   inputSchema: improveInputSchema,
   outputSchema: z.object({
     datasetId: z.string(),
@@ -32,8 +26,8 @@ export const loadExistingStep = makeStepShell({
     loadError: z.boolean().optional(),
   }),
 });
-export const fixQueryStep = makeStepShell({
-  id: STEP_FIX_QUERY,
+export const fixQueryNode = makeNodeShell({
+  id: DbQueryNodes.FixQuery,
   inputSchema: z.any(),
   outputSchema: z.object({
     datasetId: z.string(),
@@ -47,16 +41,16 @@ export const fixQueryStep = makeStepShell({
     checklist: z.string(),
   }),
 });
-export const saveImprovedStep = makeStepShell({
-  id: STEP_SAVE_IMPROVED,
+export const saveImprovedNode = makeNodeShell({
+  id: DbQueryNodes.SaveImproved,
   inputSchema: z.any(),
   outputSchema: improveOutputSchema,
 });
-export const improveFailedStep = makeStepShell({
-  id: STEP_FAILED,
+export const improveFailedNode = makeNodeShell({
+  id: DbQueryNodes.Failed,
   inputSchema: z.any(),
   outputSchema: improveOutputSchema,
-  resolverKey: STEP_IMPROVE_FAILED,
+  resolverKey: DbQueryNodes.ImproveFailed,
 });
 
 export const improveQueryWorkflow = createWorkflow({
@@ -64,20 +58,20 @@ export const improveQueryWorkflow = createWorkflow({
   inputSchema: improveInputSchema,
   outputSchema: improveOutputSchema,
 })
-  .then(loadExistingStep)
+  .then(loadExistingNode)
   .dountil(
-    fixQueryStep,
+    fixQueryNode,
     async ({inputData}) =>
       inputData.passed || inputData.attempts >= MAX_IMPROVE_ATTEMPTS,
   )
   .branch([
     [
       async ({inputData}) => !(inputData as {passed?: boolean}).passed,
-      improveFailedStep,
+      improveFailedNode,
     ],
     [
       async ({inputData}) => (inputData as {passed?: boolean}).passed === true,
-      saveImprovedStep,
+      saveImprovedNode,
     ],
   ])
   .commit();

@@ -10,8 +10,8 @@ import {
   resolvePersistDeps,
   stripJsonFences,
   stripSqlFences,
-} from '../../../components/db-query/steps/_helpers';
-import {shouldUseCheapForSqlGen} from '../../../components/db-query/steps/sql-and-validate.step';
+} from '../../../components/db-query/_helpers';
+import {SqlAndValidateNode} from '../../../components/db-query/nodes/sql-and-validate.node';
 import {SqlGenerationHelper} from '../../../components/db-query/services/sql-generation.service';
 import {SqlValidatorService} from '../../../components/db-query/services/sql-validator.service';
 import {PermissionHelper} from '../../../components/db-query/services/permission-helper.service';
@@ -20,12 +20,12 @@ import {SchemaStore} from '../../../components/db-query/services/schema.store';
 import {DataSetHelper} from '../../../components/db-query/services/dataset-helper.service';
 import {DatasetActionType} from '../../../components/db-query/constant';
 import {
-  checkCacheStep,
-  generateChecklistStep,
+  checkCacheNode,
+  generateChecklistNode,
 } from '../../../components/db-query/workflows/generate.workflow';
-import {STEP_GET_COLUMNS} from '../../../components/db-query/steps/constants';
-import {GetTablesStep} from '../../../components/db-query/steps/get-tables.step';
-import {makeContainerStepResolver} from '../../fixtures/step-resolver';
+import {DbQueryNodes} from '../../../components/db-query/nodes.enum';
+import {GetTablesNode} from '../../../components/db-query/nodes/get-tables.node';
+import {makeContainerNodeResolver} from '../../fixtures/step-resolver';
 
 // The syntactic/semantic/classify validators moved to SqlValidatorService
 // (v2 parity); it is stateless, so one shared instance drives these tests.
@@ -37,15 +37,15 @@ const sqlGen = new SqlGenerationHelper();
 
 /**
  * Minimal RequestContext stand-in: workflow steps only call `.get(key)`. Always
- * carries `resolveStep` (the static resolver) so a step-shell `.execute()`
+ * carries `resolveNode` (the static resolver) so a step-shell `.execute()`
  * resolves its `@step` class, which then reads the rest of the map. A test may
- * override `resolveStep` via the map.
+ * override `resolveNode` via the map.
  */
 function fakeRc(map: Record<string, unknown>): never {
   // Converted steps read collaborators + model tiers via constructor DI, so
   // route the map's stubs through the container resolver; the fake rc only
-  // needs `resolveStep` + `eventWriter` (the step shells read those from rc).
-  const {resolver} = makeContainerStepResolver({
+  // needs `resolveNode` + `eventWriter` (the step shells read those from rc).
+  const {resolver} = makeContainerNodeResolver({
     queryCache: map.queryCache,
     templateCache: map.templateCache,
     datasetStore: map.datasetStore,
@@ -60,13 +60,13 @@ function fakeRc(map: Record<string, unknown>): never {
     smartModel: map.smartLlm,
   });
   const full: Record<string, unknown> = {
-    resolveStep: map.resolveStep ?? resolver,
+    resolveNode: map.resolveNode ?? resolver,
     ...map,
   };
   return {get: (k: string) => full[k]} as never;
 }
 /** Invoke a Mastra step's execute directly with a fake context. */
-async function runStep(
+async function runNode(
   step: {execute: (args: never) => Promise<unknown>},
   inputData: unknown,
   rc: Record<string, unknown>,
@@ -604,17 +604,17 @@ describe('db-query generate helpers (unit)', () => {
     });
   });
 
-  describe('generateChecklistStep (checklist gate)', () => {
+  describe('generateChecklistNode (checklist gate)', () => {
     const threeTables = ['employees', 'currency', 'exchange_rate'];
-    // generateChecklistStep receives Mastra's branch-wrapped envelope:
+    // generateChecklistNode receives Mastra's branch-wrapped envelope:
     // { [stepId]: BranchResult }. Wrap helpers mirror the runtime shape.
     const continueInput = (prompt: string, tables: string[]) => ({
-      [STEP_GET_COLUMNS]: {kind: 'continue' as const, prompt, tables},
+      [DbQueryNodes.GetColumns]: {kind: 'continue' as const, prompt, tables},
     });
 
     it('runs the checklist LLM for multi-table queries when enabled', async () => {
-      const out = await runStep(
-        generateChecklistStep,
+      const out = await runNode(
+        generateChecklistNode,
         continueInput('salaries by currency', threeTables),
         {chatLlm: model('- only active rows')},
       );
@@ -622,8 +622,8 @@ describe('db-query generate helpers (unit)', () => {
     });
 
     it('skips the checklist LLM when the consumer disabled the node', async () => {
-      const out = await runStep(
-        generateChecklistStep,
+      const out = await runNode(
+        generateChecklistNode,
         continueInput('salaries by currency', threeTables),
         {
           chatLlm: model('- this must be ignored'),
@@ -635,8 +635,8 @@ describe('db-query generate helpers (unit)', () => {
     });
 
     it('skips the checklist LLM on <=2 tables (no join to mis-plan)', async () => {
-      const out = await runStep(
-        generateChecklistStep,
+      const out = await runNode(
+        generateChecklistNode,
         continueInput('list employees', ['employees', 'currency']),
         {chatLlm: model('- this must be ignored')},
       );
@@ -812,20 +812,32 @@ describe('db-query generate helpers (unit)', () => {
   });
 
   describe('shouldUseCheapForSqlGen (tier selection)', () => {
+    // The tier policy now lives on the node (reads its injected config), so
+    // drive it through an instance — the same seam a host subclass overrides.
+    const decide = (
+      config: unknown,
+      tableCount: number,
+      priorAttempts: number,
+    ) =>
+      new SqlAndValidateNode(
+        undefined,
+        undefined,
+        config as never,
+      ).shouldUseCheapForSqlGen(tableCount, priorAttempts);
     it('cheap on a validation-fix retry regardless of table count', () => {
-      expect(shouldUseCheapForSqlGen(undefined, 5, 1)).to.be.true();
+      expect(decide(undefined, 5, 1)).to.be.true();
     });
     it('cheap on a single-table first attempt', () => {
-      expect(shouldUseCheapForSqlGen(undefined, 1, 0)).to.be.true();
+      expect(decide(undefined, 1, 0)).to.be.true();
     });
     it('smart on a multi-table first attempt', () => {
-      expect(shouldUseCheapForSqlGen(undefined, 3, 0)).to.be.false();
+      expect(decide(undefined, 3, 0)).to.be.false();
     });
     it('smart for single-table when the consumer forces it', () => {
       const config = {
         nodes: {sqlGenerationNode: {useSmartLLMForSingleTableQueries: true}},
-      } as never;
-      expect(shouldUseCheapForSqlGen(config, 1, 0)).to.be.false();
+      };
+      expect(decide(config, 1, 0)).to.be.false();
     });
   });
 
@@ -846,30 +858,30 @@ describe('db-query generate helpers (unit)', () => {
     });
   });
 
-  // get-tables is now the DI-backed GetTablesStep class (resolved by the
+  // get-tables is now the DI-backed GetTablesNode class (resolved by the
   // workflow shell at run time). The baseline behaviour is asserted by
   // constructing the class with a stub SchemaStore — the shell/resolver wiring
   // is covered in the workflow + integration suites.
-  describe('GetTablesStep (get-tables baseline)', () => {
+  describe('GetTablesNode (get-tables baseline)', () => {
     it('returns the schema table names from SchemaStore', async () => {
       // SchemaStore is now constructor-injected — pass it to the class, not rc.
-      const step = new GetTablesStep({
+      const step = new GetTablesNode({
         get: () => ({tables: {employees: {}, currencies: {}}}),
       } as never);
-      const out = await runStep(step, {prompt: 'x'}, {});
+      const out = await runNode(step, {prompt: 'x'}, {});
       expect(out.tables).to.eql(['employees', 'currencies']);
     });
     it('returns [] when no SchemaStore is bound', async () => {
-      const out = await runStep(new GetTablesStep(), {prompt: 'x'}, {});
+      const out = await runNode(new GetTablesNode(), {prompt: 'x'}, {});
       expect(out.tables).to.eql([]);
     });
   });
 
-  describe('checkCacheStep (cache judge)', () => {
+  describe('checkCacheNode (cache judge)', () => {
     const cache = (docs: unknown[]) => ({invoke: async () => docs});
     it('returns cacheHit when the judge replies AsIs <index>', async () => {
-      const out = await runStep(
-        checkCacheStep,
+      const out = await runNode(
+        checkCacheNode,
         {prompt: 'top earners'},
         {
           queryCache: cache([
@@ -882,8 +894,8 @@ describe('db-query generate helpers (unit)', () => {
       expect(out.datasetId).to.equal('42');
     });
     it('returns no cacheHit when the judge replies Similar', async () => {
-      const out = await runStep(
-        checkCacheStep,
+      const out = await runNode(
+        checkCacheNode,
         {prompt: 'top earners'},
         {
           queryCache: cache([
@@ -895,8 +907,8 @@ describe('db-query generate helpers (unit)', () => {
       expect(out.cacheHit).to.be.false();
     });
     it('returns no cacheHit when the cache has no candidates', async () => {
-      const out = await runStep(
-        checkCacheStep,
+      const out = await runNode(
+        checkCacheNode,
         {prompt: 'x'},
         {queryCache: cache([]), cheapLlm: model('AsIs 1')},
       );

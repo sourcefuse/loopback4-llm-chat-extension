@@ -10,7 +10,6 @@ import {
   ServiceOrProviderClass,
 } from '@loopback/core';
 import {AnyObject} from '@loopback/repository';
-import {STEP_DEFAULT} from '../../constant';
 import {DataSetController, TemplateController} from './controller';
 import {DatasetServiceComponent} from './dataset-service.component';
 import {DbQueryAIExtensionBindings} from './keys';
@@ -29,7 +28,24 @@ import {SqlGenerationHelper} from './services/sql-generation.service';
 import {SqlValidatorService} from './services/sql-validator.service';
 import {TableSearchService} from './services/search/table-search.service';
 import {PgWithRlsConnector} from './connectors/pg';
-import {DB_QUERY_STEP_CLASSES} from './steps';
+import {
+  CheckCacheNode,
+  CheckTemplatesNode,
+  FailedNode,
+  FixQueryNode,
+  GenerateChecklistNode,
+  GetColumnsNode,
+  GetTablesNode,
+  ImproveFailedNode,
+  LoadExistingNode,
+  PostCacheAndTablesNode,
+  ReturnCachedNode,
+  SaveDataSetNode,
+  SaveDatasetFromTemplateNode,
+  SaveImprovedNode,
+  SqlAndValidateNode,
+  VerifyChecklistNode,
+} from './nodes';
 import {
   AskAboutDatasetTool,
   GetDataAsDatasetTool,
@@ -54,17 +70,11 @@ export class DbQueryComponent implements Component {
         key: DbQueryAIExtensionBindings.Connector.key,
         defaultScope: BindingScope.TRANSIENT,
       }),
-      // DI-backed workflow steps — bound as tagged services (the `@step(key)`
-      // tag makes them discoverable) and marked STEP_DEFAULT so a host override
-      // (a second `@step(key)` binding) is preferred by the resolver.
-      ...DB_QUERY_STEP_CLASSES.map(stepClass =>
-        createBindingFromClass(stepClass).tag({[STEP_DEFAULT]: true}),
-      ),
     ];
     this.lifeCycleObservers = [TableSeedObserver];
     this.services = [
       // db helpers — still consumed by generateQueryWorkflow / improveQueryWorkflow
-      // step bodies.
+      // node bodies.
       ChecklistHelper,
       DbSchemaHelperService,
       PermissionHelper,
@@ -81,6 +91,25 @@ export class DbQueryComponent implements Component {
       GetDataAsDatasetTool,
       ImproveDatasetTool,
       AskAboutDatasetTool,
+      // workflow nodes — registered as tagged services exactly as in the
+      // LangGraph version; each `@graphNode(key)` class is discovered by tag and
+      // resolved per request (WorkflowRunner.resolveGraphNode = BaseGraph._getNodeFn).
+      CheckCacheNode,
+      CheckTemplatesNode,
+      FailedNode,
+      FixQueryNode,
+      GenerateChecklistNode,
+      GetColumnsNode,
+      GetTablesNode,
+      ImproveFailedNode,
+      LoadExistingNode,
+      PostCacheAndTablesNode,
+      ReturnCachedNode,
+      SaveDataSetNode,
+      SaveDatasetFromTemplateNode,
+      SaveImprovedNode,
+      SqlAndValidateNode,
+      VerifyChecklistNode,
     ];
     this.components = [DatasetServiceComponent];
   }

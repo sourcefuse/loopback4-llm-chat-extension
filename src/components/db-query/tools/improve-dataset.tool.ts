@@ -14,6 +14,7 @@ import {
 import {AiIntegrationBindings} from '../../../keys';
 import {graphTool} from '../../../decorators';
 import {buildDatasetReadout} from '../utils';
+import {DbQueryNodes} from '../nodes.enum';
 
 /**
  * Mastra-shaped dataset-improvement tool. Final form — calls
@@ -75,7 +76,7 @@ export class ImproveDatasetTool implements IGraphTool {
     // `save-improved` vs `failed`; unwrap whichever fired.
     const root = asRecord(result);
     const rawResult = asRecord(root.result);
-    const saveResult = asRecord(rawResult['save-improved']);
+    const saveResult = asRecord(rawResult[DbQueryNodes.SaveImproved]);
     const failedResult = asRecord(rawResult.failed);
     const branchOutput = pickBranchOutput(saveResult, failedResult, rawResult);
     return {

@@ -14,6 +14,7 @@ import {
 import {AiIntegrationBindings} from '../../../keys';
 import {graphTool} from '../../../decorators';
 import {buildDatasetReadout} from '../utils';
+import {DbQueryNodes} from '../nodes.enum';
 
 /**
  * Mastra-shaped NL2SQL tool. Final form — calls
@@ -84,7 +85,7 @@ export class GetDataAsDatasetTool implements IGraphTool {
     // `save-dataset`/`failed` key when present.
     const root = asRecord(result);
     const rawResult = asRecord(root.result);
-    const saveResult = asRecord(rawResult['save-dataset']);
+    const saveResult = asRecord(rawResult[DbQueryNodes.SaveDataset]);
     const failedResult = asRecord(rawResult.failed);
     const branchOutput = pickBranchOutput(saveResult, failedResult, rawResult);
     return {

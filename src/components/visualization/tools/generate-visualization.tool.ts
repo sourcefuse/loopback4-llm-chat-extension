@@ -115,7 +115,7 @@ It does not return anything, instead it fires an event internally that renders t
     if (result.status !== 'success') {
       throw new Error(`Visualization failed: ${result.status}`);
     }
-    // visualizationWorkflow's final step is `.then(renderVisualizationStep)`
+    // visualizationWorkflow's final step is `.then(renderVisualizationNode)`
     // (not a `.branch()`), so the result lands directly on the top level
     // — no branch-key unwrap needed.
     const root = asRecord(result);

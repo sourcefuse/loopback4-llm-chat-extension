@@ -3,7 +3,7 @@ import type {TracingContext} from '@mastra/core/observability';
 import type {LanguageModel} from 'ai';
 import debugFactory from 'debug';
 import type {IDbConnector} from '../types';
-import {tracedGenerateText} from '../steps/_helpers';
+import {tracedGenerateText} from '../_helpers';
 
 const dbg = debugFactory('ai-integration:sql-validator');
 

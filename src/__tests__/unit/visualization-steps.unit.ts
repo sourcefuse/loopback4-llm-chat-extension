@@ -1,9 +1,9 @@
 import {expect, sinon} from '@loopback/testlab';
 import {RequestContext} from '@mastra/core/request-context';
-import {callQueryGenerationStep} from '../../components/visualization/workflows/visualization.workflow';
-import {getDatasetDataStep} from '../../components/visualization/workflows/visualization.workflow';
-import {renderVisualizationStep} from '../../components/visualization/workflows/visualization.workflow';
-import {selectVisualisationStep} from '../../components/visualization/workflows/visualization.workflow';
+import {callQueryGenerationNode} from '../../components/visualization/workflows/visualization.workflow';
+import {getDatasetDataNode} from '../../components/visualization/workflows/visualization.workflow';
+import {renderVisualizationNode} from '../../components/visualization/workflows/visualization.workflow';
+import {selectVisualisationNode} from '../../components/visualization/workflows/visualization.workflow';
 import {
   buildVisualizerSelectionPrompt,
   DEFAULT_CHART_TYPE,
@@ -12,10 +12,12 @@ import {
   parseVisualizerSelection,
   pickFromBranch,
   pickVisualizer,
-} from '../../components/visualization/steps/shared';
-import type {MastraRcShape} from '../../components/db-query/steps/_helpers';
+} from '../../components/visualization/shared';
+import {VisualizationGraphNodes} from '../../components/visualization/nodes.enum';
+import type {MastraRcShape} from '../../components/db-query/_helpers';
+import {DbQueryNodes} from '../../components/db-query/nodes.enum';
 import type {IVisualizer} from '../../components/visualization/types';
-import {makeContainerStepResolver} from '../fixtures/step-resolver';
+import {makeContainerNodeResolver} from '../fixtures/step-resolver';
 
 /**
  * Visualization workflow is the second half of the chart pipeline: given
@@ -39,15 +41,15 @@ describe('visualization workflow steps (unit)', () => {
     rc.set('resourceId', overrides.resourceId ?? 't1:u1');
     // Viz steps read visualizers (tagged) + datasetStore/dataSetHelper + model
     // tiers via constructor DI, so route the stubs through the container
-    // resolver. The shell reads `resolveStep` + `eventWriter` from this rc.
-    const {resolver} = makeContainerStepResolver({
+    // resolver. The shell reads `resolveNode` + `eventWriter` from this rc.
+    const {resolver} = makeContainerNodeResolver({
       visualizers: overrides.visualizers as IVisualizer[] | undefined,
       datasetStore: overrides.datasetStore,
       dataSetHelper: overrides.dataSetHelper,
       chatModel: overrides.chatLlm,
       cheapModel: overrides.cheapLlm,
     });
-    rc.set('resolveStep', resolver);
+    rc.set('resolveNode', resolver);
     return rc;
   }
 
@@ -59,7 +61,7 @@ describe('visualization workflow steps (unit)', () => {
     return {
       name,
       // The `getConfig` shape is the visualizer interface used by
-      // `renderVisualizationStep`; per-visualizer schemas live under
+      // `renderVisualizationNode`; per-visualizer schemas live under
       // src/components/visualization/visualizers/* and are covered
       // by their own unit tests.
       getConfig: sinon.stub().resolves({type: name, options: {}}),
@@ -67,10 +69,10 @@ describe('visualization workflow steps (unit)', () => {
   }
 
   // ──────────────────────────────────────────────────────────
-  // select-visualisation
+  // select-visualization
   // ──────────────────────────────────────────────────────────
 
-  describe('selectVisualisationStep', () => {
+  describe('selectVisualisationNode', () => {
     type Out = {
       datasetId: string;
       needsQuery: boolean;
@@ -85,8 +87,8 @@ describe('visualization workflow steps (unit)', () => {
       const ctx = {
         inputData,
         requestContext: rc,
-      } as ExecuteArg<typeof selectVisualisationStep>;
-      return selectVisualisationStep.execute(ctx) as Promise<Out>;
+      } as ExecuteArg<typeof selectVisualisationNode>;
+      return selectVisualisationNode.execute(ctx) as Promise<Out>;
     }
 
     it('honours the consumer-supplied chart type verbatim (explicit > auto-pick)', async () => {
@@ -137,7 +139,7 @@ describe('visualization workflow steps (unit)', () => {
   // call-query-generation
   // ──────────────────────────────────────────────────────────
 
-  describe('callQueryGenerationStep', () => {
+  describe('callQueryGenerationNode', () => {
     type Out = {
       datasetId: string;
       needsQuery: boolean;
@@ -159,8 +161,8 @@ describe('visualization workflow steps (unit)', () => {
         inputData,
         mastra,
         requestContext: rc,
-      } as ExecuteArg<typeof callQueryGenerationStep>;
-      return callQueryGenerationStep.execute(ctx) as Promise<Out>;
+      } as ExecuteArg<typeof callQueryGenerationNode>;
+      return callQueryGenerationNode.execute(ctx) as Promise<Out>;
     }
 
     it('pass-through when the upstream step already resolved a datasetId (no nested workflow call)', async () => {
@@ -194,11 +196,13 @@ describe('visualization workflow steps (unit)', () => {
 
     it('unwraps the generateQueryWorkflow save-dataset branch and returns the resulting datasetId', async () => {
       // The generate workflow nests its terminal output under
-      // `result['save-dataset']` (Mastra `branch()` arm key). The step
+      // `result['save_dataset']` (Mastra `branch()` arm key). The step
       // is responsible for digging through that wrapper.
       const start = sinon.stub().resolves({
         status: 'success',
-        result: {'save-dataset': {datasetId: 'ds-77', sql: 'SELECT 1'}},
+        result: {
+          [DbQueryNodes.SaveDataset]: {datasetId: 'ds-77', sql: 'SELECT 1'},
+        },
       });
       const createRun = sinon.stub().resolves({start});
       const getWorkflow = sinon.stub().returns({createRun});
@@ -252,7 +256,7 @@ describe('visualization workflow steps (unit)', () => {
   // get-dataset-data
   // ──────────────────────────────────────────────────────────
 
-  describe('getDatasetDataStep', () => {
+  describe('getDatasetDataNode', () => {
     type Out = {
       datasetId: string;
       rows: unknown[];
@@ -269,8 +273,8 @@ describe('visualization workflow steps (unit)', () => {
       const ctx = {
         inputData,
         requestContext: rc,
-      } as ExecuteArg<typeof getDatasetDataStep>;
-      return getDatasetDataStep.execute(ctx) as Promise<Out>;
+      } as ExecuteArg<typeof getDatasetDataNode>;
+      return getDatasetDataNode.execute(ctx) as Promise<Out>;
     }
 
     it('fetches descriptor + rows when a dataset id arrives from the call-query-generation branch', async () => {
@@ -282,7 +286,7 @@ describe('visualization workflow steps (unit)', () => {
 
       const out = await runGet(
         {
-          'call-query-generation': {
+          [VisualizationGraphNodes.CallQueryGeneration]: {
             datasetId: 'ds-1',
             chartType: 'bar',
             userQuery: 'q',
@@ -342,7 +346,7 @@ describe('visualization workflow steps (unit)', () => {
   // render-visualization
   // ──────────────────────────────────────────────────────────
 
-  describe('renderVisualizationStep', () => {
+  describe('renderVisualizationNode', () => {
     type Out = {
       visualization: string;
       chartConfig: unknown;
@@ -365,8 +369,8 @@ describe('visualization workflow steps (unit)', () => {
       const ctx = {
         inputData,
         requestContext: rc,
-      } as ExecuteArg<typeof renderVisualizationStep>;
-      return renderVisualizationStep.execute(ctx) as Promise<Out>;
+      } as ExecuteArg<typeof renderVisualizationNode>;
+      return renderVisualizationNode.execute(ctx) as Promise<Out>;
     }
 
     it('returns the visualizer-built config when a matching visualizer is registered', async () => {
@@ -449,15 +453,15 @@ describe('visualization workflow steps (unit)', () => {
     describe('pickFromBranch', () => {
       it('unwraps a branch-arm-keyed payload', () => {
         const out = pickFromBranch(
-          {'call-query-generation': {datasetId: 'ds-1'}},
-          'call-query-generation',
+          {[VisualizationGraphNodes.CallQueryGeneration]: {datasetId: 'ds-1'}},
+          'call_query_generation',
         );
         expect(out).to.eql({datasetId: 'ds-1'});
       });
       it('returns the input as-is when the branch key is missing', () => {
         const out = pickFromBranch(
           {datasetId: 'ds-1'},
-          'call-query-generation',
+          'call_query_generation',
         );
         expect(out).to.eql({datasetId: 'ds-1'});
       });

@@ -5,6 +5,8 @@ export * from './dataset-service.component';
 export * from './db-query.component';
 export * from './keys';
 export * from './models';
+export * from './nodes';
+export * from './nodes.enum';
 export * from './services';
 export * from './tools';
 export * from './types';

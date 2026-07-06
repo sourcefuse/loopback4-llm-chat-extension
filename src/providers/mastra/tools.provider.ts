@@ -6,7 +6,8 @@ import {
   Provider,
 } from '@loopback/core';
 import {TOOL_TAG} from '../../constant';
-import type {IGraphTool, ToolStore} from '../../graphs/types';
+import type {IGraphTool} from '../../graphs/types';
+import type {ToolStore} from '../../types';
 
 const debug = require('debug')('ai-integration:mastra:tools');
 
@@ -26,7 +27,7 @@ const debug = require('debug')('ai-integration:mastra:tools');
  * constructed once and re-used per request.
  */
 @injectable({scope: BindingScope.SINGLETON})
-export class DefaultToolsProvider implements Provider<ToolStore> {
+export class ToolsProvider implements Provider<ToolStore> {
   constructor(
     @inject.context()
     private readonly context: Context,

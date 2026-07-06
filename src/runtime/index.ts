@@ -22,21 +22,21 @@ export {visualizationWorkflow} from '../components/visualization/workflows/visua
 
 // Individual db-query generate step SHELLS — reuse the ones you keep when
 // recomposing a custom workflow (see README "Steps and workflows"). To override
-// the LOGIC of a step, bind your own `@step(key)` class instead (the simpler
-// path) — `step` + `IWorkflowStep` are on the package root.
+// the LOGIC of a step, bind your own `@graphNode(key)` class instead (the simpler
+// path) — `step` + `IGraphNode` are on the package root.
 export {
-  checkCacheStep,
-  getTablesStep,
-  checkTemplatesStep,
-  postCacheAndTablesStep,
-  returnCachedStep,
-  saveDatasetFromTemplateStep,
-  failedStep,
-  getColumnsStep,
-  generateChecklistStep,
-  verifyChecklistStep,
-  sqlAndValidateStep,
-  saveDatasetStep,
+  checkCacheNode,
+  getTablesNode,
+  checkTemplatesNode,
+  postCacheAndTablesNode,
+  returnCachedNode,
+  saveDatasetFromTemplateNode,
+  failedNode,
+  getColumnsNode,
+  generateChecklistNode,
+  verifyChecklistNode,
+  sqlAndValidateNode,
+  saveDatasetNode,
 } from '../components/db-query/workflows/generate.workflow';
 
 // Step keys + the workflow input/output contract.
@@ -44,13 +44,13 @@ export {
   MAX_VALIDATION_ATTEMPTS,
   inputSchema as generateQueryInputSchema,
   outputSchema as generateQueryOutputSchema,
-} from '../components/db-query/steps/constants';
+} from '../components/db-query/constants';
 
 // Pure relevant-table-selection helper (the LLM narrowing that runs inside
-// getColumnsStep). Exported so hosts can unit-test table selection WITHOUT an
+// getColumnsNode). Exported so hosts can unit-test table selection WITHOUT an
 // app boot or a RequestContext:
 //   pickRelevantTables({chatLlm, prompt, tablesWithColumns, upstreamTables})
 //     -> {kind: 'tables', tables} | {kind: 'unanswerable', reason} | {kind: 'unknown'}
 // This is the Mastra equivalent of the deleted LangGraph GetTablesNode test seam.
-export {pickRelevantTables} from '../components/db-query/steps/_helpers';
-export type {RelevantTablesResult} from '../components/db-query/steps/_helpers';
+export {pickRelevantTables} from '../components/db-query/_helpers';
+export type {RelevantTablesResult} from '../components/db-query/_helpers';

@@ -8,6 +8,7 @@ import {GenerateVisualizationTool} from '../../components/visualization/tools/ge
 import {LLMStreamEventType} from '../../graphs/event.types';
 import type {LLMStreamEvent} from '../../graphs/event.types';
 import {ToolStatus} from '../../graphs/types';
+import {DbQueryNodes} from '../../components/db-query/nodes.enum';
 
 /**
  * Mastra-shaped tool wrapper coverage. Each tool:
@@ -91,7 +92,9 @@ describe('mastra tool wrappers (unit)', () => {
         'generateQueryWorkflow',
         {
           status: 'success',
-          result: {'save-dataset': {datasetId: 'ds-1', sql: 'SELECT 1'}},
+          result: {
+            [DbQueryNodes.SaveDataset]: {datasetId: 'ds-1', sql: 'SELECT 1'},
+          },
         },
       );
       const {events, writer} = captureWriter();
@@ -220,7 +223,10 @@ describe('mastra tool wrappers (unit)', () => {
       const {mastra, getWorkflow} = makeMastraWith('improveQueryWorkflow', {
         status: 'success',
         result: {
-          'save-improved': {datasetId: 'ds-improved', sql: 'SELECT 2'},
+          [DbQueryNodes.SaveImproved]: {
+            datasetId: 'ds-improved',
+            sql: 'SELECT 2',
+          },
         },
       });
       const {events, writer} = captureWriter();

@@ -1,35 +1,24 @@
 import {createWorkflow} from '@mastra/core/workflows';
 import {z} from 'zod';
-import {makeStepShell} from '../../../runtime/_step-shell';
+import {makeNodeShell} from '../../../runtime/_node-shell';
 import {
   MAX_VALIDATION_ATTEMPTS,
-  STEP_CHECK_CACHE,
-  STEP_CHECK_TEMPLATES,
-  STEP_FAILED,
-  STEP_GENERATE_CHECKLIST,
-  STEP_GET_COLUMNS,
-  STEP_GET_TABLES,
-  STEP_POST_CACHE_AND_TABLES,
-  STEP_RETURN_CACHED,
-  STEP_SAVE_DATASET,
-  STEP_SAVE_FROM_TEMPLATE,
-  STEP_SQL_AND_VALIDATE,
-  STEP_VERIFY_CHECKLIST,
   branchCachedSchema,
   branchContinueSchema,
   branchTemplateSchema,
   inputSchema,
   outputSchema,
-} from '../steps/constants';
-import {checklistStateSchema} from '../steps/checklist.shared';
+} from '../constants';
+import {DbQueryNodes} from '../nodes.enum';
+import {checklistStateSchema} from '../checklist.shared';
 
 // Step shells — the Mastra-named equivalent of LangGraph's
 // `addNode(key, getNodeFn(key))`: each shell fixes a step's id + schemas at
-// build time and delegates to the `@step(key)` class resolved from the LB4
-// container at run time (see ../steps + WorkflowRunner.resolveWorkflowStep).
+// build time and delegates to the `@graphNode(key)` class resolved from the LB4
+// container at run time (see ../steps + WorkflowRunner.resolveGraphNode).
 // Exported so the advanced "recompose a workflow" path can reuse them.
-export const checkCacheStep = makeStepShell({
-  id: STEP_CHECK_CACHE,
+export const checkCacheNode = makeNodeShell({
+  id: DbQueryNodes.CheckCache,
   inputSchema,
   outputSchema: z.object({
     cacheHit: z.boolean(),
@@ -38,21 +27,21 @@ export const checkCacheStep = makeStepShell({
     samplePrompt: z.string().optional(),
   }),
 });
-export const getTablesStep = makeStepShell({
-  id: STEP_GET_TABLES,
+export const getTablesNode = makeNodeShell({
+  id: DbQueryNodes.GetTables,
   inputSchema,
   outputSchema: z.object({tables: z.array(z.string())}),
 });
-export const checkTemplatesStep = makeStepShell({
-  id: STEP_CHECK_TEMPLATES,
+export const checkTemplatesNode = makeNodeShell({
+  id: DbQueryNodes.CheckTemplates,
   inputSchema,
   outputSchema: z.object({
     matched: z.boolean(),
     templateId: z.string().optional(),
   }),
 });
-export const postCacheAndTablesStep = makeStepShell({
-  id: STEP_POST_CACHE_AND_TABLES,
+export const postCacheAndTablesNode = makeNodeShell({
+  id: DbQueryNodes.PostCacheAndTables,
   inputSchema: z.any(),
   outputSchema: z.object({
     fromCache: z.boolean(),
@@ -66,33 +55,33 @@ export const postCacheAndTablesStep = makeStepShell({
     samplePrompt: z.string().optional(),
   }),
 });
-export const returnCachedStep = makeStepShell({
-  id: STEP_RETURN_CACHED,
+export const returnCachedNode = makeNodeShell({
+  id: DbQueryNodes.ReturnCached,
   inputSchema: z.any(),
   outputSchema: branchCachedSchema,
 });
-export const saveDatasetFromTemplateStep = makeStepShell({
-  id: STEP_SAVE_FROM_TEMPLATE,
+export const saveDatasetFromTemplateNode = makeNodeShell({
+  id: DbQueryNodes.SaveFromTemplate,
   inputSchema: z.any(),
   outputSchema: branchTemplateSchema,
 });
-export const getColumnsStep = makeStepShell({
-  id: STEP_GET_COLUMNS,
+export const getColumnsNode = makeNodeShell({
+  id: DbQueryNodes.GetColumns,
   inputSchema: z.any(),
   outputSchema: branchContinueSchema,
 });
-export const generateChecklistStep = makeStepShell({
-  id: STEP_GENERATE_CHECKLIST,
+export const generateChecklistNode = makeNodeShell({
+  id: DbQueryNodes.GenerateChecklist,
   inputSchema: z.record(z.string(), z.unknown()),
   outputSchema: checklistStateSchema,
 });
-export const verifyChecklistStep = makeStepShell({
-  id: STEP_VERIFY_CHECKLIST,
+export const verifyChecklistNode = makeNodeShell({
+  id: DbQueryNodes.VerifyChecklist,
   inputSchema: checklistStateSchema,
   outputSchema: checklistStateSchema,
 });
-export const sqlAndValidateStep = makeStepShell({
-  id: STEP_SQL_AND_VALIDATE,
+export const sqlAndValidateNode = makeNodeShell({
+  id: DbQueryNodes.SqlAndValidate,
   inputSchema: z.any(),
   outputSchema: z.object({
     sql: z.string(),
@@ -111,13 +100,13 @@ export const sqlAndValidateStep = makeStepShell({
     samplePrompt: z.string().optional(),
   }),
 });
-export const saveDatasetStep = makeStepShell({
-  id: STEP_SAVE_DATASET,
+export const saveDatasetNode = makeNodeShell({
+  id: DbQueryNodes.SaveDataset,
   inputSchema: z.any(),
   outputSchema,
 });
-export const failedStep = makeStepShell({
-  id: STEP_FAILED,
+export const failedNode = makeNodeShell({
+  id: DbQueryNodes.Failed,
   inputSchema: z.any(),
   outputSchema,
 });
@@ -127,39 +116,39 @@ export const generateQueryWorkflow = createWorkflow({
   inputSchema,
   outputSchema,
 })
-  .parallel([checkCacheStep, getTablesStep, checkTemplatesStep])
-  .then(postCacheAndTablesStep)
+  .parallel([checkCacheNode, getTablesNode, checkTemplatesNode])
+  .then(postCacheAndTablesNode)
   .branch([
     [
       async ({inputData}) =>
         (inputData as {status?: string}).status === 'FromTemplate',
-      saveDatasetFromTemplateStep,
+      saveDatasetFromTemplateNode,
     ],
     [
       async ({inputData}) => (inputData as {status?: string}).status === 'AsIs',
-      returnCachedStep,
+      returnCachedNode,
     ],
     [
       async ({inputData}) =>
         (inputData as {status?: string}).status === 'Continue',
-      getColumnsStep,
+      getColumnsNode,
     ],
   ])
-  .then(generateChecklistStep)
-  .then(verifyChecklistStep)
+  .then(generateChecklistNode)
+  .then(verifyChecklistNode)
   .dountil(
-    sqlAndValidateStep,
+    sqlAndValidateNode,
     async ({inputData}) =>
       inputData.passed || inputData.attempts >= MAX_VALIDATION_ATTEMPTS,
   )
   .branch([
     [
       async ({inputData}) => !(inputData as {passed?: boolean}).passed,
-      failedStep,
+      failedNode,
     ],
     [
       async ({inputData}) => (inputData as {passed?: boolean}).passed === true,
-      saveDatasetStep,
+      saveDatasetNode,
     ],
   ])
   .commit();

@@ -15,7 +15,7 @@ export class PermissionHelper {
 
   /**
    * Drop tables the user lacks read permission for (v2 `_filterByPermissions`).
-   * Shared by getTablesStep (initial selection) and the table_not_found reselect
+   * Shared by getTablesNode (initial selection) and the table_not_found reselect
    * so a widened table set can never reintroduce an unauthorized table. Strips
    * the `schema.` prefix before the lookup.
    */
