@@ -71,6 +71,18 @@
     "./mastra-observability": {
       "type": "./dist/providers/mastra/observability/multi.provider.d.ts",
       "default": "./dist/providers/mastra/observability/multi.provider.js"
+    },
+    "./langfuse": {
+      "type": "./dist/providers/mastra/observability/langfuse.provider.d.ts",
+      "default": "./dist/providers/mastra/observability/langfuse.provider.js"
+    },
+    "./langsmith": {
+      "type": "./dist/providers/mastra/observability/langsmith.provider.d.ts",
+      "default": "./dist/providers/mastra/observability/langsmith.provider.js"
+    },
+    "./observability": {
+      "type": "./dist/providers/mastra/observability/multi.provider.d.ts",
+      "default": "./dist/providers/mastra/observability/multi.provider.js"
     }
   },
   "typesVersions": {
@@ -115,6 +127,15 @@
         "dist/providers/mastra/observability/langsmith.provider.d.ts"
       ],
       "mastra-observability": [
+        "dist/providers/mastra/observability/multi.provider.d.ts"
+      ],
+      "langfuse": [
+        "dist/providers/mastra/observability/langfuse.provider.d.ts"
+      ],
+      "langsmith": [
+        "dist/providers/mastra/observability/langsmith.provider.d.ts"
+      ],
+      "observability": [
         "dist/providers/mastra/observability/multi.provider.d.ts"
       ]
     }

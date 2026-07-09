@@ -12,13 +12,17 @@
 
 export {MastraProvider} from '../providers/mastra/mastra.provider';
 
-// The three workflows registered on the Mastra singleton, by id:
-//   generateQueryWorkflow -> 'generate-query'
-//   improveQueryWorkflow  -> 'improve-query'
-//   visualizationWorkflow -> 'visualization'
-export {generateQueryWorkflow} from '../components/db-query/workflows/generate.workflow';
-export {improveQueryWorkflow} from '../components/db-query/workflows/improve.workflow';
-export {visualizationWorkflow} from '../components/visualization/workflows/visualization.workflow';
+// The graphs registered on the Mastra singleton, by id:
+//   dbQueryGraph       -> 'db-query'       (single entry both db-query tools call)
+//   generateQueryGraph -> 'generate-query' (generate sub-graph it dispatches to)
+//   improveQueryGraph  -> 'improve-query'  (improve sub-graph it dispatches to)
+//   visualizationGraph -> 'visualization'
+export {
+  dbQueryGraph,
+  generateQueryGraph,
+  improveQueryGraph,
+} from '../components/db-query/db-query.graph';
+export {visualizationGraph} from '../components/visualization/visualization.graph';
 
 // Individual db-query generate step SHELLS — reuse the ones you keep when
 // recomposing a custom workflow (see README "Steps and workflows"). To override
@@ -35,9 +39,14 @@ export {
   getColumnsNode,
   generateChecklistNode,
   verifyChecklistNode,
-  sqlAndValidateNode,
+  classifyChangeNode,
+  sqlGenerationNode,
+  syntacticValidatorNode,
+  semanticValidatorNode,
+  generateDescriptionNode,
+  postValidationNode,
   saveDatasetNode,
-} from '../components/db-query/workflows/generate.workflow';
+} from '../components/db-query/db-query.graph';
 
 // Step keys + the workflow input/output contract.
 export {

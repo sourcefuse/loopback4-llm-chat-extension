@@ -66,7 +66,7 @@ export * from './prompts';
  * field is optional so workflow steps stay runnable when the consumer
  * has not bound the relevant component.
  *
- * WorkflowRunner.run() resolves each binding once at request entry +
+ * ChatGraph.execute() resolves each binding once at request entry +
  * sets every key. Step bodies use the typed accessors below — no
  * `lb4Ctx.get(...)` lookups inside step execute().
  */
@@ -121,7 +121,7 @@ export interface MastraRcShape {
   };
   visualizers?: IVisualizer[];
   // Per-request resolver for `@graphNode(key)` classes (see graphs/types
-  // NodeResolver). WorkflowRunner publishes a closure over the request-scoped
+  // NodeResolver). ChatGraph publishes a closure over the request-scoped
   // LB4 context so a committed step shell can fetch its DI-backed
   // implementation. This is the narrow seam that gives steps real DI without
   // re-exposing the full LB4 Context to step bodies.

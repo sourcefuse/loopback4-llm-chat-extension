@@ -1,4 +1,4 @@
-# `src/mastra/` — Mastra runtime layer
+# `src/runtime/` — Mastra runtime layer
 
 Quick map for anyone landing here after the LangGraph → Mastra migration
 (PR #22, branch `feat/mastra-migration-v2`). The 27 v2 graph nodes did
@@ -7,57 +7,77 @@ not disappear — each one moved to one of three Mastra primitives.
 ## Top-level layout
 
 ```
-src/mastra/
-├── bridge/
-│ ├── workflow-runner.ts # REQUEST-scoped. Replaces ChatGraph.execute()
-│ ├── async-event-queue.ts # SSE event ordering across producers
-│ └── run-registry.ts # HITL approval flow (sessionId → runId)
-└── workflows/
- ├── db-query/
- │ ├── workflows/
- │ │ ├── generate.workflow.ts # Replaces v2 DbQueryGraph (17 nodes)
- │ │ └── improve.workflow.ts # Improvement variant (subset of DbQuery)
- │ └── steps/
- └── visualization/
-	├── workflows/
-	│ └── visualization.workflow.ts # Replaces v2 VisualizationGraph (4 nodes)
-	└── steps/
+src/
+├── graphs/                          # the chat graph (LangGraph structure, preserved)
+│ ├── base.graph.ts                  # BaseGraph._getNodeFn — node resolver + override seam
+│ ├── state.ts                       # ChatState / IChatNode
+│ └── chat/
+│   ├── chat.graph.ts                # ChatGraph.execute() — orchestrates the nodes (replaces WorkflowRunner)
+│   ├── chat.store.ts                # ChatStore — thread/Memory resolution + token-count persistence
+│   ├── chat-metadata.type.ts        # message-metadata types
+│   ├── nodes.enum.ts                # ChatNodes (6 keys)
+│   └── nodes/                       # the 6 @graphNode classes
+│     ├── init-session.node.ts       #   init_session   (live)
+│     ├── summarise-file.node.ts     #   summarise_file (live)
+│     ├── call-llm.node.ts           #   call_llm       (live — owns agent.stream)
+│     ├── run-tool.node.ts           #   run_tool       (override seam — Agent runs tools)
+│     ├── context-compression.node.ts#   trim_messages  (override seam — Memory trims)
+│     └── end-session.node.ts        #   end_session    (live)
+├── runtime/                         # Mastra glue (no LangGraph node analog)
+│ ├── bridge/
+│ │ ├── agent-stream.ts              # pumpAgentStream: fullStream → SSE + usage (CallLLMNode delegates here)
+│ │ ├── async-event-queue.ts         # SSE event ordering across producers
+│ │ └── run-registry.ts              # HITL approval flow (sessionId → runId)
+│ ├── request-context.builder.ts     # RequestContextBuilder: assembles the per-request Mastra RequestContext
+│ ├── model-resolver.ts              # resolveAiSdkModel / modelLabel (shared by builder + SummariseFileNode)
+│ ├── _node-shell.ts                 # DI shell for committed workflow steps
+│ ├── chat-agent-instructions.ts     # shared chat system prompt builder
+│ └── resource-id.util.ts            # tenant-scoped resourceId derivation
+└── components/{db-query,visualization}/workflows/   # the two Mastra Workflows
 ```
 
-There is **no `chat.workflow.ts`** — that is a deliberate decision from
-the migration plan : chat is a ReAct loop and Mastra
-`Agent.stream({maxSteps})` does that natively. The 6 v2 ChatGraph nodes
-collapsed into the `WorkflowRunner` + `Agent` + `Memory` triple.
+There is **no `chat.workflow.ts`** — that is a deliberate decision: chat is
+a ReAct loop and Mastra `Agent.stream({maxSteps})` does that natively.
+Unlike DbQuery/Visualization (Mastra Workflows), chat keeps the LangGraph
+`ChatGraph` shape: a `ChatGraph` orchestrating six `@graphNode` classes
+imperatively over an `Agent` + `Memory`, rather than a compiled `StateGraph`.
 
 ## The three v2 → v3 routes
 
-| v2 graph           | Nodes | v3 primitive        | File(s)                                                                     |
-| ------------------ | :---: | ------------------- | --------------------------------------------------------------------------- |
-| ChatGraph          |   6   | Mastra **Agent**    | `bridge/workflow-runner.ts` (per-request `Agent` build)                     |
-| DbQueryGraph       |  17   | Mastra **Workflow** | `workflows/db-query/workflows/generate.workflow.ts` + `improve.workflow.ts` |
-| VisualizationGraph |   4   | Mastra **Workflow** | `workflows/visualization/workflows/visualization.workflow.ts`               |
+| v2 graph           | Nodes | v3 primitive                | File(s)                                                                     |
+| ------------------ | :---: | --------------------------- | --------------------------------------------------------------------------- |
+| ChatGraph          |   6   | `ChatGraph` + Mastra **Agent** | `graphs/chat/` (ChatGraph orchestrating `@graphNode` classes over an Agent) |
+| DbQueryGraph       |  17   | Mastra **Workflow**         | `components/db-query/workflows/generate.workflow.ts` + `improve.workflow.ts` |
+| VisualizationGraph |   4   | Mastra **Workflow**         | `components/visualization/workflows/visualization.workflow.ts`              |
 
 Chat picked **Agent** because the loop is `CallLLM → RunTool → CallLLM`
 which is exactly what `agent.stream({maxSteps, tools, memory})` already
-does. Wrapping that in `createWorkflow` would be redundant.
+does. Wrapping that in `createWorkflow` would be redundant. The
+LangGraph node layout is still mirrored under `graphs/chat/` so a host can
+override any node by rebinding its `@graphNode(key)` class.
 
 DbQuery and Visualization picked **Workflow** because both are explicit
 DAGs with parallel fan-out, conditional branches, retry loops, and
 shared state — that's what `.parallel().branch().dountil()` is for.
 
-## ChatGraph (6 nodes) → Agent + WorkflowRunner
+## ChatGraph (6 nodes) → ChatGraph + node classes
+
+Each node is a `@graphNode(ChatNodes.X)` class under `graphs/chat/nodes/`.
+`ChatGraph.execute()` runs them in order (init → summarise → call-llm →
+end), merging each node's `Partial<ChatState>`; a host overrides any one by
+rebinding its key (the `BaseGraph._getNodeFn` seam).
 
 | v2 node                                        | Where it lives now                                                                                                                                                                                                                                       |
 | ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `InitSessionNode`                              | `WorkflowRunner.run()` pre-block: `memory.createThread({resourceId})` + `Init` SSE event                                                                                                                                                                 |
-| `SummariseFileNode`                            | `WorkflowRunner.run()` file loop: emits `Status` events; per-file summarisation pre-pass (current commit emits Status only; LLM summarisation rejoins as a future commit)                                                                                |
-| `CallLLMNode`                                  | `agent.stream(messages, {maxSteps: 60})` — native ReAct loop                                                                                                                                                                                             |
-| `RunToolNode`                                  | `Agent.tools` registry + Mastra's internal tool-execution + `fullStream` `tool-call` / `tool-result` chunks pumped to SSE by `WorkflowRunner`                                                                                                            |
-| `ContextCompressionNode` (a.k.a. TrimMessages) | `Memory({options: {lastMessages: 20}})` — automatic message-history trim. Semantic recall (no v2 equivalent) is **opt-in** via `MASTRA_SEMANTIC_RECALL=true`; default OFF so latency matches v2 even when a vector store is bound for the db-query cache |
-| `EndSessionNode`                               | `WorkflowRunner.run()` post-stream block: `await stream.usage` → `TokenCount` SSE event + `UsageAccumulator.add()`                                                                                                                                       |
+| `InitSessionNode`                              | `init-session.node.ts` (live): `ChatStore.resolveThread` → `memory.createThread({resourceId})` + `Init` SSE event                                                                                                                                        |
+| `SummariseFileNode`                            | `summarise-file.node.ts` (live): per-file `generateText` summary merged into the prompt; emits a `Status` per file                                                                                                                                        |
+| `CallLLMNode`                                  | `call-llm.node.ts` (live): `agent.stream(messages, {maxSteps: 8})` — native ReAct loop; pumps `fullStream` → SSE                                                                                                                                          |
+| `RunToolNode`                                  | `run-tool.node.ts` (**override seam**): tool execution happens inside `agent.stream` — the Agent runs tool-calls and `tool-call`/`tool-result` chunks are mapped to SSE by CallLLMNode; each tool self-emits its lifecycle events                          |
+| `ContextCompressionNode` (a.k.a. TrimMessages) | `context-compression.node.ts` (**override seam**): trimming is done by `Memory({options:{lastMessages}})` + the agent's TokenLimiter inside `agent.stream`; no separate scheduled step. Semantic recall is **opt-in** via `MASTRA_SEMANTIC_RECALL=true`   |
+| `EndSessionNode`                               | `end-session.node.ts` (live): `TokenCount` SSE event (full request total) + `ChatStore.updateCounts` (thread metadata + `chats` ledger)                                                                                                                   |
 
 Locked SSE wire contract (8 event types) is preserved byte-identical —
-the controller surface `POST /reply` is unchanged..
+the controller surface `POST /reply` is unchanged.
 
 ## DbQueryGraph (17 nodes) → generateQueryWorkflow + improveQueryWorkflow
 
@@ -110,11 +130,11 @@ did. A.3.
 POST /reply
  └─ GenerationController.reply()
  └─ GenerationService.generate()
- └─ WorkflowRunner.run() ← REQUEST-scoped
- ├─ pre: memory.createThread + Init
- ├─ pre: file loop + Status events
- ├─ build per-request Agent (with consumer-bound chatLlm + Mastra tools)
- ├─ agent.stream(messages, {memory, requestContext, maxSteps})
+ └─ ChatGraph.execute() ← REQUEST-scoped
+ ├─ InitSessionNode: memory.createThread + Init
+ ├─ SummariseFileNode: file loop + Status events
+ ├─ CallLLMNode: build per-request RequestContext (consumer-bound chatLlm + Mastra tools)
+ ├─ CallLLMNode: agent.stream(messages, {memory, requestContext, maxSteps})
  │ ↓
  │ Mastra Agent runs the ReAct loop. Whenever the model
  │ fires a tool call, Mastra invokes the tool's execute().
@@ -127,15 +147,15 @@ POST /reply
  │ - generate-visualization → mastra.getWorkflow('visualizationWorkflow').createRun().start()
  │ The fourth (ask-about-dataset) runs a one-shot Mastra Agent inline.
  │ ↓
- ├─ pump task: drain stream.fullStream → AsyncEventQueue
+ ├─ CallLLMNode pump: drain stream.fullStream → AsyncEventQueue
  │ (text-delta → Message, tool-call → Tool, tripwire → Error, etc.)
- ├─ post: await stream.usage → TokenCount + UsageAccumulator.add
+ ├─ EndSessionNode: await stream.usage → TokenCount + ChatStore.updateCounts
  └─ yield* queue
 ```
 
 ## RequestContext flow
 
-`WorkflowRunner.run()` populates 5 keys before `agent.stream()`. Every
+`CallLLMNode` populates the RequestContext keys before `agent.stream()`. Every
 workflow step body can read them via the native `requestContext`
 parameter:
 

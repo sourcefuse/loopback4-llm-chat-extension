@@ -4,20 +4,36 @@ import type {IGraphNode, GraphNodeCtx} from '../../../graphs/types';
 import {emitToolStatus} from '../../db-query/_helpers';
 import {VISUALIZATION_KEY} from '../keys';
 import type {IVisualizer, RenderIn} from '../types';
-import {pickVisualizer} from '../shared';
+import {pickVisualizer as pickVisualizerShared} from '../shared';
 import {VisualizationGraphNodes} from '../nodes.enum';
+import {POST_DATASET_TAG} from '../../db-query/keys';
 
 /**
  * Build the chart config via the selected visualizer (the Mastra-named
  * successor of the LangGraph RenderVisualization node). DI-resolved `@step`
  * class.
  */
-@graphNode(VisualizationGraphNodes.RenderVisualization)
+@graphNode(VisualizationGraphNodes.RenderVisualization, {
+  [POST_DATASET_TAG]: true,
+})
 export class RenderVisualizationNode implements IGraphNode<RenderIn> {
   constructor(
     @inject.tag(VISUALIZATION_KEY)
     private readonly visualizers: IVisualizer[] = [],
   ) {}
+
+  /**
+   * Resolve the visualizer for a chart type (falls back to the first when the
+   * type is unknown). Overridable seam so a host registering custom chart types
+   * can change the fallback policy, then rebind under
+   * `@graphNode(VisualizationGraphNodes.RenderVisualization)`.
+   */
+  protected pickVisualizer(
+    visualizers: IVisualizer[],
+    chartType: string,
+  ): ReturnType<typeof pickVisualizerShared> {
+    return pickVisualizerShared(visualizers, chartType);
+  }
 
   async execute({inputData, requestContext}: GraphNodeCtx<RenderIn>) {
     // No visualizer fit the request (v2 "none" path). Surface the reason via
@@ -31,7 +47,10 @@ export class RenderVisualizationNode implements IGraphNode<RenderIn> {
       };
     }
 
-    const visualizer = pickVisualizer(this.visualizers, inputData.chartType);
+    const visualizer = this.pickVisualizer(
+      this.visualizers,
+      inputData.chartType,
+    );
 
     emitToolStatus(
       requestContext,

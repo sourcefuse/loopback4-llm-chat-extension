@@ -24,6 +24,15 @@ export const inputSchema = z.object({
   prompt: z.string(),
 });
 
+// Unified entry contract for the single `dbQueryGraph` (both the
+// get-data-as-dataset and improve-dataset tools call it). `datasetId` present
+// selects the improve path, absent the generate path — the Mastra equivalent of
+// LangGraph's `IsImprovement` dispatch at START of the one DbQueryGraph.
+export const dbQueryInputSchema = z.object({
+  prompt: z.string(),
+  datasetId: z.string().optional(),
+});
+
 export const outputSchema = z.object({
   datasetId: z.string(),
   sql: z.string(),

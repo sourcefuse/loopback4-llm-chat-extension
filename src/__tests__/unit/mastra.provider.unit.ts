@@ -77,7 +77,7 @@ describe('Mastra runtime Provider (unit)', () => {
     );
   });
 
-  it('returns a Mastra instance with the three workflows + ChatAgent registered (baseline contract)', async () => {
+  it('returns a Mastra instance with the db-query graph (+ sub-graphs) and ChatAgent registered (baseline contract)', async () => {
     process.env.MASTRA_DEFAULT_CHAT_MODEL = 'openai/gpt-4o-mini';
     const provider = new MastraProvider(makeStorage());
     const mastra = await provider.value();
@@ -85,9 +85,13 @@ describe('Mastra runtime Provider (unit)', () => {
     expect(mastra).to.be.instanceOf(Mastra);
     // The tool wrappers look up workflows by these EXACT ids — a typo
     // would silently break tools at runtime with "workflow not found".
-    expect(mastra.getWorkflow('generateQueryWorkflow')).to.not.be.undefined();
-    expect(mastra.getWorkflow('improveQueryWorkflow')).to.not.be.undefined();
-    expect(mastra.getWorkflow('visualizationWorkflow')).to.not.be.undefined();
+    // `dbQueryGraph` is the single entry both db-query tools call; it
+    // dispatches to the generate/improve sub-graphs (also registered so the
+    // entry node can resolve them by id at run time).
+    expect(mastra.getWorkflow('dbQueryGraph')).to.not.be.undefined();
+    expect(mastra.getWorkflow('generateQueryGraph')).to.not.be.undefined();
+    expect(mastra.getWorkflow('improveQueryGraph')).to.not.be.undefined();
+    expect(mastra.getWorkflow('visualizationGraph')).to.not.be.undefined();
     // WorkflowRunner streams `mastra.getAgent('chatAgent')` — the key
     // is the Agent's `name`, NOT its `id`.
     expect(mastra.getAgent('chatAgent')).to.not.be.undefined();

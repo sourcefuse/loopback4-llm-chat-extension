@@ -4,10 +4,10 @@ import type {z} from 'zod';
 import type {NodeResolver, GraphNodeCtx} from '../graphs/types';
 
 /**
- * RequestContext key under which WorkflowRunner publishes the per-request
- * {@link NodeResolver}. The committed step shell reads it to fetch its
- * DI-backed implementation. Kept here (not in db-query `_helpers`) so the shell
- * stays domain-agnostic and reusable by any workflow.
+ * RequestContext key under which the chat graph's CallLLMNode publishes the
+ * per-request {@link NodeResolver}. The committed step shell reads it to fetch
+ * its DI-backed implementation. Kept here (not in db-query `_helpers`) so the
+ * shell stays domain-agnostic and reusable by any workflow.
  */
 export const NODE_RESOLVER_KEY = 'resolveNode';
 
@@ -46,8 +46,9 @@ export function makeNodeShell(opts: {
       if (!resolve) {
         throw new Error(
           `Workflow step "${opts.id}" is a DI shell but no step resolver was ` +
-            `found in RequestContext. Ensure WorkflowRunner populated it (the ` +
-            `step must be run via the bundled runner, not a detached workflow run).`,
+            `found in RequestContext. Ensure the ChatGraph (CallLLMNode) ` +
+            `populated it (the step must be run via the bundled chat graph, ` +
+            `not a detached workflow run).`,
         );
       }
       const stepImpl = await resolve(resolverKey);

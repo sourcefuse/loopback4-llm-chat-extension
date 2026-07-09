@@ -36,7 +36,7 @@ export function resolvePrincipalId(
  * the tenant-scoped `${tenantId}:${principalId}` (multi-tenant isolation).
  * Returns `undefined` when the user has no resolvable identity.
  *
- * Single source of truth shared by the WorkflowRunner (which WRITES threads
+ * Single source of truth shared by the ChatGraph (which WRITES threads
  * under this id) and the ChatController (which LISTS/READS them) — they must
  * never diverge or history reads would query the wrong Memory scope.
  */

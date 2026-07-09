@@ -1,12 +1,12 @@
 import {expect} from '@loopback/testlab';
 import {createMockModel} from '@mastra/core/test-utils/llm-mock';
 import {RequestContext} from '@mastra/core/request-context';
-import {generateQueryWorkflow} from '../../components/db-query/workflows/generate.workflow';
+import {generateQueryGraph} from '../../components/db-query/db-query.graph';
 import {makeContainerNodeResolver} from '../fixtures/step-resolver';
 
 /**
  * In-CI equivalent of v2 main's db-query.graph.acceptance: drives the whole
- * generateQueryWorkflow end-to-end (prompt -> tables -> SQL -> validate ->
+ * generateQueryGraph end-to-end (prompt -> tables -> SQL -> validate ->
  * persist) with a MOCKED smart model returning SQL and stub schema/connector/
  * dataset deps wired through RequestContext. Asserts a real dataset is
  * persisted with the generated SQL.
@@ -15,7 +15,7 @@ import {makeContainerNodeResolver} from '../fixtures/step-resolver';
  * (cache-judge, column-narrowing, checklist) self-skip — keeping a single
  * deterministic mock model sufficient for the whole run.
  */
-describe('generateQueryWorkflow (integration, mocked model)', () => {
+describe('generateQueryGraph (integration, mocked model)', () => {
   const SQL = 'SELECT name FROM employees';
   const schema = {
     tables: {employees: {columns: {id: {}, name: {}, salary: {}}}},
@@ -69,7 +69,7 @@ describe('generateQueryWorkflow (integration, mocked model)', () => {
 
   it('runs prompt -> SQL -> validate -> persisted dataset', async () => {
     const {ctx, saved} = buildContext();
-    const run = await generateQueryWorkflow.createRun();
+    const run = await generateQueryGraph.createRun();
     const result = await run.start({
       inputData: {prompt: 'list employee names'},
       requestContext: ctx,

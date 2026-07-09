@@ -29,6 +29,20 @@ export class GetColumnsNode implements IGraphNode {
     private readonly cheapModel?: LanguageModel,
   ) {}
 
+  /**
+   * Select the query-relevant tables + answerability gate. Overridable seam
+   * restoring the v2 `GetTablesNode` LLM prompt/parse/unanswerable logic (which
+   * the thin rewrite moved into the module-level `pickRelevantTables`): a host
+   * can `extends GetColumnsNode` and override this to change the selection
+   * prompt, parsing, or unanswerable policy, then rebind under
+   * `@graphNode(DbQueryNodes.GetColumns)`. Delegates to the shared helper.
+   */
+  protected selectRelevantTables(
+    args: Parameters<typeof pickRelevantTables>[0],
+  ): ReturnType<typeof pickRelevantTables> {
+    return pickRelevantTables(args);
+  }
+
   async execute({inputData, requestContext, tracingContext}: GraphNodeCtx) {
     emitToolStatus(
       requestContext,
@@ -54,7 +68,7 @@ export class GetColumnsNode implements IGraphNode {
     }
 
     const tablesWithColumns = this.schemaStore?.tablesWithColumns(tables) ?? {};
-    const picked = await pickRelevantTables({
+    const picked = await this.selectRelevantTables({
       chatLlm,
       tracing: tracingContext,
       prompt,

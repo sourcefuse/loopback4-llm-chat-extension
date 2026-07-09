@@ -3,7 +3,10 @@ import type {LanguageModel} from 'ai';
 import {graphNode} from '../../../decorators';
 import type {IGraphNode, GraphNodeCtx} from '../../../graphs/types';
 import {AiIntegrationBindings} from '../../../keys';
-import {DbQueryAIExtensionBindings} from '../../db-query/keys';
+import {
+  DbQueryAIExtensionBindings,
+  POST_DATASET_TAG,
+} from '../../db-query/keys';
 import {emitToolStatus, tracedGenerateText} from '../../db-query/_helpers';
 import type {IDataSetStore} from '../../db-query/types';
 import {VISUALIZATION_KEY} from '../keys';
@@ -24,7 +27,9 @@ import {VisualizationGraphNodes} from '../nodes.enum';
  * (`selectViaLlm`) so a host can `extends SelectVisualizationNode` and override
  * it, then rebind under `@graphNode(VisualizationGraphNodes.SelectVisualisation)`.
  */
-@graphNode(VisualizationGraphNodes.SelectVisualisation)
+@graphNode(VisualizationGraphNodes.SelectVisualisation, {
+  [POST_DATASET_TAG]: true,
+})
 export class SelectVisualizationNode implements IGraphNode<SelectIn> {
   constructor(
     @inject.tag(VISUALIZATION_KEY)
@@ -109,14 +114,39 @@ export class SelectVisualizationNode implements IGraphNode<SelectIn> {
     try {
       const result = await tracedGenerateText({
         model: llm,
-        prompt: buildVisualizerSelectionPrompt(userQuery, visualizers, data),
+        prompt: this.buildSelectionPrompt(userQuery, visualizers, data),
         tracing,
         label: VisualizationGraphNodes.SelectVisualisation,
         resultType: 'planning',
       });
-      return parseVisualizerSelection(result.text, visualizers);
+      return this.parseSelection(result.text, visualizers);
     } catch {
       return {chartType: visualizers[0].name};
     }
+  }
+
+  /**
+   * Build the visualizer-selection prompt. Overridable seam restoring the v2
+   * `SelectVisualizationNode.prompt` field: a host adding custom chart types
+   * can override just the prompt (leaving `selectViaLlm` intact), then rebind
+   * under `@graphNode(VisualizationGraphNodes.SelectVisualisation)`.
+   */
+  protected buildSelectionPrompt(
+    userQuery: string,
+    visualizers: IVisualizer[],
+    data: VisualizationDataContext,
+  ): string {
+    return buildVisualizerSelectionPrompt(userQuery, visualizers, data);
+  }
+
+  /**
+   * Parse the selection LLM reply into a chart choice / rejection. Overridable
+   * seam restoring the v2 inline parse in `execute`.
+   */
+  protected parseSelection(
+    text: string,
+    visualizers: IVisualizer[],
+  ): VisualizerSelection {
+    return parseVisualizerSelection(text, visualizers);
   }
 }

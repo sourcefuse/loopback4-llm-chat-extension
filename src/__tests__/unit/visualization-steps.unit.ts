@@ -1,9 +1,9 @@
 import {expect, sinon} from '@loopback/testlab';
 import {RequestContext} from '@mastra/core/request-context';
-import {callQueryGenerationNode} from '../../components/visualization/workflows/visualization.workflow';
-import {getDatasetDataNode} from '../../components/visualization/workflows/visualization.workflow';
-import {renderVisualizationNode} from '../../components/visualization/workflows/visualization.workflow';
-import {selectVisualisationNode} from '../../components/visualization/workflows/visualization.workflow';
+import {callQueryGenerationNode} from '../../components/visualization/visualization.graph';
+import {getDatasetDataNode} from '../../components/visualization/visualization.graph';
+import {renderVisualizationNode} from '../../components/visualization/visualization.graph';
+import {selectVisualisationNode} from '../../components/visualization/visualization.graph';
 import {
   buildVisualizerSelectionPrompt,
   DEFAULT_CHART_TYPE,
@@ -194,7 +194,7 @@ describe('visualization workflow steps (unit)', () => {
       expect(out.datasetId).to.equal('');
     });
 
-    it('unwraps the generateQueryWorkflow save-dataset branch and returns the resulting datasetId', async () => {
+    it('unwraps the generateQueryGraph save-dataset branch and returns the resulting datasetId', async () => {
       // The generate workflow nests its terminal output under
       // `result['save_dataset']` (Mastra `branch()` arm key). The step
       // is responsible for digging through that wrapper.
@@ -215,7 +215,7 @@ describe('visualization workflow steps (unit)', () => {
 
       expect(out.datasetId).to.equal('ds-77');
       expect(out.needsQuery).to.be.false();
-      sinon.assert.calledOnceWithExactly(getWorkflow, 'generateQueryWorkflow');
+      sinon.assert.calledOnceWithExactly(getWorkflow, 'generateQueryGraph');
     });
 
     it('falls back to top-level datasetId when the save-dataset branch wrapper is absent', async () => {

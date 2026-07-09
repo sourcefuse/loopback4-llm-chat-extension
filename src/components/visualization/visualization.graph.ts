@@ -1,8 +1,8 @@
 import {createWorkflow} from '@mastra/core/workflows';
 import {z} from 'zod';
-import {makeNodeShell} from '../../../runtime/_node-shell';
-import {visualizationInputSchema, visualizationOutputSchema} from '../shared';
-import {VisualizationGraphNodes} from '../nodes.enum';
+import {makeNodeShell} from '../../runtime/_node-shell';
+import {visualizationInputSchema, visualizationOutputSchema} from './shared';
+import {VisualizationGraphNodes} from './nodes.enum';
 
 const selectionOutputSchema = z.object({
   datasetId: z.string(),
@@ -58,7 +58,7 @@ export const renderVisualizationNode = makeNodeShell({
   outputSchema: visualizationOutputSchema,
 });
 
-export const visualizationWorkflow = createWorkflow({
+export const visualizationGraph = createWorkflow({
   id: 'visualization',
   inputSchema: visualizationInputSchema,
   outputSchema: visualizationOutputSchema,

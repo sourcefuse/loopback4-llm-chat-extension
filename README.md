@@ -34,10 +34,28 @@ A Loopback4 based component to integrate an LLM chat endpoint (powered by [Mastr
 - **LLM provider value type.** `AiIntegrationBindings.{ChatLLM, CheapLLM, SmartLLM, SmartNonThinkingLLM, FileLLM}` now resolve to an AI-SDK `LanguageModelV2` instead of a LangChain `BaseChatModel`. Code that injects these and calls LangChain APIs (`.invoke()`, `.pipe()`, etc.) must migrate to the AI-SDK surface (or call the model through the component's tools/workflows instead of directly). There is no LangChain compatibility shim.
 - **Embedding provider value type.** `AiIntegrationBindings.EmbeddingModel` now resolves to an AI-SDK embedding model rather than a LangChain `Embeddings`.
 - **`RunnableConfig` and the LangGraph types are no longer exported** (`@langchain/langgraph` was removed). Tools no longer receive a `LangGraphRunnableConfig`; the Mastra tool/step context replaces it.
-- **Removed `db-query` re-exports.** `./nodes`, `./nodes.enum`, `./state`, and the graph classes (e.g. `GetTablesNode`, `services.GetTablesNode`) are gone. The relevant-table selection seam is now `pickRelevantTables` exported from the package's Mastra path; individual node classes are replaced by Mastra workflow steps.
+- **`db-query` exports — what changed.** The node classes and enum are **still exported** (`./nodes`, `./nodes.enum`), and each node remains a DI-resolvable `@graphNode` seam (see "Overriding node behaviour" below). What was removed is the LangGraph-only `./state` module. The compiled `DbQueryGraph` class's successor is `dbQueryGraph` (exported from the `db-query` barrel) — the single graph both the `get-data-as-dataset` and `improve-dataset` tools call, which dispatches at its entry node on `datasetId` (absent → generate, present → improve), mirroring v3's one `DbQueryGraph` with its `IsImprovement` entry. The two paths it dispatches to are also exported (`generateQueryGraph` / `improveQueryGraph`) for composition. The relevant-table selection seam is the overridable `GetColumnsNode.selectRelevantTables()` (the underlying `pickRelevantTables` helper is also exported).
 - **`IDataSetStore` gained required methods.** `deleteById` and `deleteAll` are now required members; existing implementations must add them.
 - **Node.js.** The supported engines are now `22 || 24` (Node 18/20 dropped).
-- **Provider inference knobs.** Some per-provider env vars that the LangChain providers honoured (e.g. `CLAUDE_THINKING`/`CLAUDE_THINKING_BUDGET`, `*_TEMPERATURE`, `*_TOP_P`) are not yet re-wired on the AI-SDK providers. Track [PR #22](https://github.com/sourcefuse/loopback4-llm-chat-extension/pull/22) for the call-time `providerOptions` replacement; set them explicitly via a custom provider if you depend on them today.
+- **Provider inference knobs.** `CLAUDE_THINKING`/`CLAUDE_THINKING_BUDGET` and the `*_TEMPERATURE` env vars **are honoured** — the AI-SDK providers are stateless, so these are applied at call time via `providerOptions` / `temperature` on every LLM call (Anthropic, Bedrock, and OpenRouter reasoning shapes are all emitted). The only knobs not yet re-wired are Cerebras-specific `CEREBRAS_TOP_P` / `CEREBRAS_MAX_TOKENS`; set those via a custom provider if you depend on them.
+
+#### Backward-compatibility aliases (no code change required)
+
+These `3.x` symbols/paths were preserved so existing imports keep resolving:
+
+- **`TokenCounter`** — re-exported as an alias of its Mastra successor `UsageAccumulator` (same per-request token-accounting role).
+- **`IGraphTool.needsReview`** — retained as an optional field (currently inert; the Agent drives tool calls). The human-in-the-loop successor `requireApproval` lands in a later release.
+- **Observability subpaths** — `lb4-llm-chat-component/langfuse`, `/langsmith`, and `/observability` still resolve (alongside the newer `/mastra-*` aliases).
+
+#### Overriding node behaviour
+
+Every node is DI-resolved per request from a `@graphNode(key)` class, exactly as in `3.x`. To customise behaviour, `extends` the node, override a method, and rebind the subclass under the same `@graphNode` key. The prompt/selection logic is exposed as small overridable seams so you don't have to re-implement `execute`:
+
+- `SqlAndValidateNode.buildPrompt()` — the SQL-generation prompt (dialect, house style, guard rules).
+- `FixQueryNode.buildPrompt()` — the SQL-repair prompt.
+- `GetColumnsNode.selectRelevantTables()` — table-relevance selection + the "unanswerable" gate.
+- `SelectVisualizationNode.buildSelectionPrompt()` / `parseSelection()` — visualizer choice for custom chart types.
+- `RenderVisualizationNode.pickVisualizer()` / `CallQueryGenerationNode.pickVisualizer()` — the unknown-chart-type fallback policy.
 
 ### Installation
 
@@ -675,40 +693,43 @@ The db-query step keys: `check-cache`, `get-tables`, `check-templates`,
 `render-visualization`. (The constants are exported from
 `lb4-llm-chat-component/mastra` as `STEP_GET_TABLES`, etc.)
 
-### Recompose a whole workflow (advanced)
+### Recompose a whole graph (advanced)
 
 When you need to change the DAG shape itself (add/remove steps, change a
-branch), build a custom workflow from the exported step shells and rebind the
-Mastra instance under the key the tools look up (`generateQueryWorkflow`):
+branch), build a custom graph from the exported step shells and register it
+under the key it is resolved by. Both tools call the single `dbQueryGraph`,
+whose entry node dispatches to `generateQueryGraph` / `improveQueryGraph` — so
+to change the generate DAG you rebind the `generateQueryGraph` key (to change
+dispatch/routing itself, rebind `dbQueryGraph`):
 
 ```ts
 import {createWorkflow} from '@mastra/core/workflows';
 import {
-  checkCacheStep,
-  getTablesStep,
+  checkCacheNode,
+  getTablesNode,
   // ...other step shells you keep...
   generateQueryInputSchema,
   generateQueryOutputSchema,
 } from 'lb4-llm-chat-component/mastra';
 
-export const myGenerateWorkflow = createWorkflow({
+export const myGenerateGraph = createWorkflow({
   id: 'generate-query',
   inputSchema: generateQueryInputSchema,
   outputSchema: generateQueryOutputSchema,
 })
-  .parallel([checkCacheStep, getTablesStep /* , ... */])
-  // ...mirror the DAG in the package's generate.workflow.ts...
+  .parallel([checkCacheNode, getTablesNode /* , ... */])
+  // ...mirror the DAG in the package's generate.graph.ts...
   .commit();
 ```
 
-Register it by building a custom Mastra instance that maps your workflow to the
-`generateQueryWorkflow` key, then rebind `AiIntegrationBindings.Mastra` (the
-tools resolve the workflow by that key via `mastra.getWorkflow(...)`):
+Register it by building a custom Mastra instance that maps your graph to the
+`generateQueryGraph` key, then rebind `AiIntegrationBindings.Mastra` (the entry
+node resolves the sub-graph by that key via `mastra.getWorkflow(...)`):
 
 ```ts
 import {Mastra} from '@mastra/core';
-import {myGenerateWorkflow} from './my-generate.workflow';
-// new Mastra({ workflows: { generateQueryWorkflow: myGenerateWorkflow, ... }, ... })
+import {myGenerateGraph} from './my-generate.graph';
+// new Mastra({ workflows: { generateQueryGraph: myGenerateGraph, ... }, ... })
 ```
 
 ## Storage and memory knobs

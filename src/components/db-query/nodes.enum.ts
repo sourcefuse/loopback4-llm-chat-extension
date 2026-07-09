@@ -8,11 +8,24 @@
  * registered/tagged as `ImproveFailed` ('improve_failed').
  */
 export enum DbQueryNodes {
+  // Entry dispatch (restores the LangGraph `IsImprovement` node): the single
+  // db-query graph branches here on `datasetId` — present → improve path,
+  // absent → generate path. Keeps LangGraph's "one graph, two entrypoints".
+  IsImprovement = 'is_improvement',
   CheckCache = 'check_cache',
   GetTables = 'get_tables',
+  CheckPermissions = 'check_permissions',
   CheckTemplates = 'check_templates',
   GetColumns = 'get_columns',
-  SqlAndValidate = 'sql_and_validate',
+  ClassifyChange = 'classify_change',
+  // The v2 generate/validate loop nodes, restored 1:1 (SqlGeneration →
+  // parallel[SyntacticValidator, SemanticValidator, GenerateDescription] →
+  // PostValidation), run inside a Mastra `.dountil` loop.
+  SqlGeneration = 'sql_generation',
+  SyntacticValidator = 'syntactic_validator',
+  SemanticValidator = 'semantic_validator',
+  GenerateDescription = 'generate_description',
+  PostValidation = 'post_validation',
   ReturnCached = 'return_cached',
   SaveFromTemplate = 'save_dataset_from_template',
   PostCacheAndTables = 'post_cache_and_tables',

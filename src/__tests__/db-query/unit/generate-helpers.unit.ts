@@ -11,7 +11,7 @@ import {
   stripJsonFences,
   stripSqlFences,
 } from '../../../components/db-query/_helpers';
-import {SqlAndValidateNode} from '../../../components/db-query/nodes/sql-and-validate.node';
+import {SqlGenerationNode} from '../../../components/db-query/nodes/sql-generation.node';
 import {SqlGenerationHelper} from '../../../components/db-query/services/sql-generation.service';
 import {SqlValidatorService} from '../../../components/db-query/services/sql-validator.service';
 import {PermissionHelper} from '../../../components/db-query/services/permission-helper.service';
@@ -22,7 +22,7 @@ import {DatasetActionType} from '../../../components/db-query/constant';
 import {
   checkCacheNode,
   generateChecklistNode,
-} from '../../../components/db-query/workflows/generate.workflow';
+} from '../../../components/db-query/db-query.graph';
 import {DbQueryNodes} from '../../../components/db-query/nodes.enum';
 import {GetTablesNode} from '../../../components/db-query/nodes/get-tables.node';
 import {makeContainerNodeResolver} from '../../fixtures/step-resolver';
@@ -819,7 +819,7 @@ describe('db-query generate helpers (unit)', () => {
       tableCount: number,
       priorAttempts: number,
     ) =>
-      new SqlAndValidateNode(
+      new SqlGenerationNode(
         undefined,
         undefined,
         config as never,

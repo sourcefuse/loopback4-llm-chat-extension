@@ -1,7 +1,10 @@
 import {inject} from '@loopback/core';
 import {graphNode} from '../../../decorators';
 import type {IGraphNode, GraphNodeCtx} from '../../../graphs/types';
-import {DbQueryAIExtensionBindings} from '../../db-query/keys';
+import {
+  DbQueryAIExtensionBindings,
+  POST_DATASET_TAG,
+} from '../../db-query/keys';
 import type {DataSetHelper} from '../../db-query/services';
 import {emitToolStatus} from '../../db-query/_helpers';
 import type {IDataSetStore} from '../../db-query/types';
@@ -18,7 +21,7 @@ import {VisualizationGraphNodes} from '../nodes.enum';
  * Fetch the rows + descriptor to chart (the Mastra-named successor of the
  * LangGraph GetDatasetData node). DI-resolved `@step` class.
  */
-@graphNode(VisualizationGraphNodes.GetDatasetData)
+@graphNode(VisualizationGraphNodes.GetDatasetData, {[POST_DATASET_TAG]: true})
 export class GetDatasetDataNode implements IGraphNode {
   constructor(
     @inject(DbQueryAIExtensionBindings.DatasetStore, {optional: true})

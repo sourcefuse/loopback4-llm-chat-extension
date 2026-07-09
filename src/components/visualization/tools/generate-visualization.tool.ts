@@ -15,13 +15,14 @@ import {graphTool} from '../../../decorators';
 
 /**
  * Mastra-shaped visualization tool. Final form — calls
- * `mastra.getWorkflow('visualizationWorkflow').createRun().start()`.
+ * `mastra.getWorkflow('visualizationGraph').createRun().start()`.
  * The visualizer-type enum is no longer generated dynamically from the
  * legacy registry here; the renderVisualization step of the workflow
  * dispatches to @visualizer() classes via RequestContext at run time.
  */
 @graphTool()
 export class GenerateVisualizationTool implements IGraphTool {
+  needsReview = false;
   key = 'generate-visualization';
   constructor(
     @inject(AiIntegrationBindings.Mastra) private readonly mastra: Mastra,
@@ -61,7 +62,7 @@ It does not return anything, instead it fires an event internally that renders t
           data: {id: toolCallId, status: ToolStatus.Running},
         });
         try {
-          return await this.runVisualizationWorkflow(
+          return await this.runVisualizationGraph(
             writer,
             toolCallId,
             inputData.datasetId ?? '',
@@ -81,7 +82,7 @@ It does not return anything, instead it fires an event internally that renders t
     });
   }
 
-  private async runVisualizationWorkflow(
+  private async runVisualizationGraph(
     writer: ((e: LLMStreamEvent) => void) | undefined,
     toolCallId: string,
     datasetId: string,
@@ -89,10 +90,10 @@ It does not return anything, instead it fires an event internally that renders t
     requestedType: string | undefined,
     ctx: ToolExecutionContext,
   ): Promise<unknown> {
-    const workflow = this.mastra.getWorkflow('visualizationWorkflow');
+    const workflow = this.mastra.getWorkflow('visualizationGraph');
     if (!workflow) {
       throw new Error(
-        'visualizationWorkflow not registered in Mastra — check Provider workflows config',
+        'visualizationGraph not registered in Mastra — check Provider workflows config',
       );
     }
     const run = await workflow.createRun();
@@ -115,7 +116,7 @@ It does not return anything, instead it fires an event internally that renders t
     if (result.status !== 'success') {
       throw new Error(`Visualization failed: ${result.status}`);
     }
-    // visualizationWorkflow's final step is `.then(renderVisualizationNode)`
+    // visualizationGraph's final step is `.then(renderVisualizationNode)`
     // (not a `.branch()`), so the result lands directly on the top level
     // — no branch-key unwrap needed.
     const root = asRecord(result);

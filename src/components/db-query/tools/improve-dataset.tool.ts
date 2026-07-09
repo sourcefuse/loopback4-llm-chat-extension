@@ -8,20 +8,21 @@ import {IGraphTool, ToolStatus} from '../../../graphs/types';
 import {
   asEventWriter,
   asRecord,
-  pickBranchOutput,
   readString,
 } from '../../../graphs/tool-event.util';
 import {AiIntegrationBindings} from '../../../keys';
 import {graphTool} from '../../../decorators';
 import {buildDatasetReadout} from '../utils';
-import {DbQueryNodes} from '../nodes.enum';
 
 /**
- * Mastra-shaped dataset-improvement tool. Final form — calls
- * `mastra.getWorkflow('improveQueryWorkflow').createRun().start()`.
+ * Mastra-shaped dataset-improvement tool. Calls the single
+ * `mastra.getWorkflow('dbQueryGraph').createRun().start()` (the same graph the
+ * get-data-as-dataset tool uses); passing a `datasetId` routes the graph's
+ * entry node to the improve path.
  */
 @graphTool()
 export class ImproveDatasetTool implements IGraphTool {
+  needsReview = false;
   key = 'improve-dataset';
   constructor(
     @inject(AiIntegrationBindings.Mastra) private readonly mastra: Mastra,
@@ -50,12 +51,7 @@ export class ImproveDatasetTool implements IGraphTool {
           data: {id: toolCallId, status: ToolStatus.Running},
         });
         try {
-          return await this.runImproveWorkflow(
-            writer,
-            toolCallId,
-            inputData,
-            ctx,
-          );
+          return await this.runImproveGraph(writer, toolCallId, inputData, ctx);
         } catch (err) {
           // Single Failed emit — non-success branch throws above.
           writer?.({
@@ -68,33 +64,30 @@ export class ImproveDatasetTool implements IGraphTool {
     });
   }
 
-  private extractImproveBranchResult(result: unknown): {
+  private extractImproveResult(result: unknown): {
     datasetId?: string;
     sql?: string;
   } {
-    // improveQueryWorkflow ends with a `.branch()` keyed by
-    // `save-improved` vs `failed`; unwrap whichever fired.
-    const root = asRecord(result);
-    const rawResult = asRecord(root.result);
-    const saveResult = asRecord(rawResult[DbQueryNodes.SaveImproved]);
-    const failedResult = asRecord(rawResult.failed);
-    const branchOutput = pickBranchOutput(saveResult, failedResult, rawResult);
+    // dbQueryGraph ends with `.then(isImprovementNode)` (not a `.branch()`), and
+    // that entry node already flattened the improve sub-graph's branch output,
+    // so the flat contract lands directly on the top-level result.
+    const out = asRecord(asRecord(result).result);
     return {
-      datasetId: readString(branchOutput.datasetId),
-      sql: readString(branchOutput.sql),
+      datasetId: readString(out.datasetId),
+      sql: readString(out.sql),
     };
   }
 
-  private async runImproveWorkflow(
+  private async runImproveGraph(
     writer: ((e: LLMStreamEvent) => void) | undefined,
     toolCallId: string,
     inputData: {datasetId: string; prompt: string},
     ctx: ToolExecutionContext,
   ): Promise<unknown> {
-    const workflow = this.mastra.getWorkflow('improveQueryWorkflow');
+    const workflow = this.mastra.getWorkflow('dbQueryGraph');
     if (!workflow) {
       throw new Error(
-        'improveQueryWorkflow not registered in Mastra — check Provider workflows config',
+        'dbQueryGraph not registered in Mastra — check Provider workflows config',
       );
     }
     const run = await workflow.createRun();
@@ -117,7 +110,7 @@ export class ImproveDatasetTool implements IGraphTool {
     if (result.status !== 'success') {
       throw new Error(`Improve dataset failed: ${result.status}`);
     }
-    const workflowResult = this.extractImproveBranchResult(result);
+    const workflowResult = this.extractImproveResult(result);
     const datasetId = workflowResult.datasetId ?? '';
     // Emit final Tool event so the UI can attach the SQL/template
     // badge and like/dislike footer (app.js reads

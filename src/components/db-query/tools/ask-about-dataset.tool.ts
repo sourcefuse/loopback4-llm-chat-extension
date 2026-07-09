@@ -21,6 +21,7 @@ import type {IDataSetStore} from '../types';
  */
 @graphTool()
 export class AskAboutDatasetTool implements IGraphTool {
+  needsReview = false;
   key = 'ask-about-dataset';
   constructor(
     @inject(AiIntegrationBindings.Mastra)

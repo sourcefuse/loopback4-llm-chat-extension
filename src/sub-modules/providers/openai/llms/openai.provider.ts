@@ -3,6 +3,21 @@ import {LLMProvider} from '../../../../types';
 import {createOpenAI} from '@ai-sdk/openai';
 
 export class OpenAI implements Provider<LLMProvider> {
+  /**
+   * Back-compat factory preserved from the LangGraph extension's
+   * `OpenAI.createInstance`. Builds an AI-SDK `LanguageModel` for a specific
+   * model id; delegates to {@link createOpenAIModel}. The signature is
+   * AI-SDK-shaped `(model, opts)` rather than the old LangChain
+   * `OpenAIInstanceConfig` (which wrapped `@langchain/openai` fields that no
+   * longer exist), but the symbol is retained so host references resolve.
+   */
+  static createInstance(
+    model: string,
+    opts: {apiKey?: string; baseURL?: string} = {},
+  ): LLMProvider {
+    return createOpenAIModel(model, opts);
+  }
+
   value(): LLMProvider {
     if (!process.env.OPENAI_MODEL || !process.env.OPENAI_API_KEY) {
       throw new Error(

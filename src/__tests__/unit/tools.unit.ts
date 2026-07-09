@@ -8,7 +8,6 @@ import {GenerateVisualizationTool} from '../../components/visualization/tools/ge
 import {LLMStreamEventType} from '../../graphs/event.types';
 import type {LLMStreamEvent} from '../../graphs/event.types';
 import {ToolStatus} from '../../graphs/types';
-import {DbQueryNodes} from '../../components/db-query/nodes.enum';
 
 /**
  * Mastra-shaped tool wrapper coverage. Each tool:
@@ -88,15 +87,13 @@ describe('mastra tool wrappers (unit)', () => {
 
   describe('GetDataAsDatasetTool', () => {
     it('emits Running → Tool → Completed and returns the AI readout when the workflow persists a dataset', async () => {
-      const {mastra, start, getWorkflow} = makeMastraWith(
-        'generateQueryWorkflow',
-        {
-          status: 'success',
-          result: {
-            [DbQueryNodes.SaveDataset]: {datasetId: 'ds-1', sql: 'SELECT 1'},
-          },
-        },
-      );
+      // dbQueryGraph's entry node returns the FLAT contract (it already
+      // unwrapped the generate sub-graph's branch), so the tool reads
+      // result.result directly.
+      const {mastra, start, getWorkflow} = makeMastraWith('dbQueryGraph', {
+        status: 'success',
+        result: {datasetId: 'ds-1', sql: 'SELECT 1'},
+      });
       const {events, writer} = captureWriter();
       const rc = makeRc(writer);
 
@@ -106,7 +103,7 @@ describe('mastra tool wrappers (unit)', () => {
         makeCtx(rc, 'call-42'),
       );
 
-      sinon.assert.calledOnceWithExactly(getWorkflow, 'generateQueryWorkflow');
+      sinon.assert.calledOnceWithExactly(getWorkflow, 'dbQueryGraph');
       sinon.assert.calledOnce(start);
 
       const types = events.map(e => e.type);
@@ -143,9 +140,9 @@ describe('mastra tool wrappers (unit)', () => {
       // The workflow's `failed` arm produces `{datasetId:'', sql:''}` —
       // the tool must classify that as failed even though the workflow
       // status itself was `success`.
-      const {mastra} = makeMastraWith('generateQueryWorkflow', {
+      const {mastra} = makeMastraWith('dbQueryGraph', {
         status: 'success',
-        result: {failed: {datasetId: '', sql: ''}},
+        result: {datasetId: '', sql: ''},
       });
       const {events, writer} = captureWriter();
 
@@ -164,7 +161,7 @@ describe('mastra tool wrappers (unit)', () => {
       // Hooked for the v3.1 ApprovalController path — the tool returns
       // an empty payload so the Agent loop pauses without injecting a
       // tool result the model would interpret as completion.
-      const {mastra} = makeMastraWith('generateQueryWorkflow', {
+      const {mastra} = makeMastraWith('dbQueryGraph', {
         status: 'suspended',
       });
       const {events, writer} = captureWriter();
@@ -180,7 +177,7 @@ describe('mastra tool wrappers (unit)', () => {
       expect(last.data.status).to.equal(ToolStatus.AwaitingApproval);
     });
 
-    it('throws (and emits Failed) when generateQueryWorkflow is not registered (provider misconfigured)', async () => {
+    it('throws (and emits Failed) when dbQueryGraph is not registered (provider misconfigured)', async () => {
       // Fail-loud guard: the tool depends on the Provider having wired
       // the workflow; without it the agent gets a typed runtime error.
       const getWorkflow = sinon.stub().returns(undefined);
@@ -190,14 +187,14 @@ describe('mastra tool wrappers (unit)', () => {
       const tool = new GetDataAsDatasetTool(mastra).build();
       await expect(
         executeFor(tool)({prompt: 'x'}, makeCtx(makeRc(writer))),
-      ).to.be.rejectedWith(/generateQueryWorkflow not registered/);
+      ).to.be.rejectedWith(/dbQueryGraph not registered/);
 
       const last = events[events.length - 1] as {data: {status: ToolStatus}};
       expect(last.data.status).to.equal(ToolStatus.Failed);
     });
 
     it('throws (and emits Failed) when the workflow status is not success/suspended (e.g. failed/canceled)', async () => {
-      const {mastra} = makeMastraWith('generateQueryWorkflow', {
+      const {mastra} = makeMastraWith('dbQueryGraph', {
         status: 'failed',
       });
       const {events, writer} = captureWriter();
@@ -220,14 +217,9 @@ describe('mastra tool wrappers (unit)', () => {
     it('unwraps the `save-improved` branch and emits Completed with the improved datasetId', async () => {
       // Different branch arm key than GetDataAsDatasetTool — improve's
       // success arm is `save-improved`.
-      const {mastra, getWorkflow} = makeMastraWith('improveQueryWorkflow', {
+      const {mastra, getWorkflow} = makeMastraWith('dbQueryGraph', {
         status: 'success',
-        result: {
-          [DbQueryNodes.SaveImproved]: {
-            datasetId: 'ds-improved',
-            sql: 'SELECT 2',
-          },
-        },
+        result: {datasetId: 'ds-improved', sql: 'SELECT 2'},
       });
       const {events, writer} = captureWriter();
 
@@ -237,7 +229,7 @@ describe('mastra tool wrappers (unit)', () => {
         makeCtx(makeRc(writer), 'call-7'),
       );
 
-      sinon.assert.calledOnceWithExactly(getWorkflow, 'improveQueryWorkflow');
+      sinon.assert.calledOnceWithExactly(getWorkflow, 'dbQueryGraph');
       const toolEvt = events.find(
         e => e.type === LLMStreamEventType.Tool,
       ) as unknown as {
@@ -251,9 +243,9 @@ describe('mastra tool wrappers (unit)', () => {
     });
 
     it('falls back to the `failed` arm and returns the "could not update" readout', async () => {
-      const {mastra} = makeMastraWith('improveQueryWorkflow', {
+      const {mastra} = makeMastraWith('dbQueryGraph', {
         status: 'success',
-        result: {failed: {datasetId: '', sql: ''}},
+        result: {datasetId: '', sql: ''},
       });
       const {events, writer} = captureWriter();
 
@@ -268,7 +260,7 @@ describe('mastra tool wrappers (unit)', () => {
       expect(result as string).to.match(/Could not update/i);
     });
 
-    it('throws when improveQueryWorkflow is not registered', async () => {
+    it('throws when dbQueryGraph is not registered', async () => {
       const getWorkflow = sinon.stub().returns(undefined);
       const mastra = {getWorkflow} as unknown as Mastra;
       const {writer} = captureWriter();
@@ -279,7 +271,7 @@ describe('mastra tool wrappers (unit)', () => {
           {datasetId: 'ds-orig', prompt: 'x'},
           makeCtx(makeRc(writer)),
         ),
-      ).to.be.rejectedWith(/improveQueryWorkflow not registered/);
+      ).to.be.rejectedWith(/dbQueryGraph not registered/);
     });
   });
 
@@ -293,7 +285,7 @@ describe('mastra tool wrappers (unit)', () => {
       // to the chart settings — both must be on `data.data`. `existingDatasetId`
       // is the history/re-run marker (the "Load Dataset" button), so it must be
       // ABSENT on a live turn or the UI won't auto-render the chart.
-      const {mastra} = makeMastraWith('visualizationWorkflow', {
+      const {mastra} = makeMastraWith('visualizationGraph', {
         status: 'success',
         result: {
           visualization: 'bar',
@@ -342,7 +334,7 @@ describe('mastra tool wrappers (unit)', () => {
     });
 
     it('forwards datasetId="" and type=undefined when the agent omits them (auto-pick path)', async () => {
-      const {mastra, start} = makeMastraWith('visualizationWorkflow', {
+      const {mastra, start} = makeMastraWith('visualizationGraph', {
         status: 'success',
         result: {chartConfig: {}, visualization: 'bar', datasetId: 'fresh'},
       });
@@ -365,7 +357,7 @@ describe('mastra tool wrappers (unit)', () => {
     });
 
     it('emits AwaitingApproval and returns {} when the workflow is suspended', async () => {
-      const {mastra} = makeMastraWith('visualizationWorkflow', {
+      const {mastra} = makeMastraWith('visualizationGraph', {
         status: 'suspended',
       });
       const {events, writer} = captureWriter();
@@ -381,7 +373,7 @@ describe('mastra tool wrappers (unit)', () => {
       expect(last.data.status).to.equal(ToolStatus.AwaitingApproval);
     });
 
-    it('throws when visualizationWorkflow is not registered', async () => {
+    it('throws when visualizationGraph is not registered', async () => {
       const getWorkflow = sinon.stub().returns(undefined);
       const mastra = {getWorkflow} as unknown as Mastra;
       const {writer} = captureWriter();
@@ -389,7 +381,7 @@ describe('mastra tool wrappers (unit)', () => {
       const tool = new GenerateVisualizationTool(mastra).build();
       await expect(
         executeFor(tool)({prompt: 'q'}, makeCtx(makeRc(writer))),
-      ).to.be.rejectedWith(/visualizationWorkflow not registered/);
+      ).to.be.rejectedWith(/visualizationGraph not registered/);
     });
   });
 });

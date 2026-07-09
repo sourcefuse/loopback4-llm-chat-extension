@@ -41,7 +41,7 @@ export const CHAT_AGENT_DIRECTIVES: readonly string[] = [
  * current date, then the host's `systemContext`. Restores the v2
  * init-session.node ordering (directives → `Current date is …` → context).
  * The date is passed in (defaulting to now) so the prompt reflects the request
- * time and stays unit-testable. Shared by WorkflowRunner.buildInstructions.
+ * time and stays unit-testable. Shared by CallLLMNode.buildInstructions.
  */
 export function buildChatInstructions(
   systemContext: readonly string[] = [],

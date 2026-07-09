@@ -8,7 +8,11 @@ import type {PermissionHelper} from '../services';
 import type {SchemaStore} from '../services/schema.store';
 import {SqlGenerationHelper} from '../services/sql-generation.service';
 import type {IDbConnector} from '../types';
-import {buildImproveSqlPrompt, emitToolStatus} from '../_helpers';
+import {
+  buildImproveSqlPrompt,
+  emitToolStatus,
+  type SqlGenInput,
+} from '../_helpers';
 import {DbQueryNodes} from '../nodes.enum';
 import {loadErrorShortCircuit} from '../improve.shared';
 
@@ -42,6 +46,16 @@ export class FixQueryNode implements IGraphNode {
    * Gather the SQL-gen schema inputs from the injected SchemaStore (fail-open
    * when unbound). Extracted to keep `execute` under the complexity cap (S1541).
    */
+  /**
+   * Build the SQL-repair prompt. Overridable seam restoring the v2
+   * `FixQueryNode.fixPrompt`: a host can `extends FixQueryNode` and override
+   * just this to change the repair instructions, then rebind under
+   * `@graphNode(DbQueryNodes.FixQuery)`. Delegates to the shared builder.
+   */
+  protected buildPrompt(input: SqlGenInput): string {
+    return buildImproveSqlPrompt(input);
+  }
+
   private resolveSchemaInputs(tables: string[]) {
     const store = this.schemaStore;
     return {
@@ -89,7 +103,7 @@ export class FixQueryNode implements IGraphNode {
       checks: this.globalContext,
       checklist: data.checklist,
       feedback: data.feedback,
-      buildPrompt: buildImproveSqlPrompt,
+      buildPrompt: input => this.buildPrompt(input),
       initialSql: data.originalSql,
       rc: requestContext,
       permissionHelper: this.permissionHelper,

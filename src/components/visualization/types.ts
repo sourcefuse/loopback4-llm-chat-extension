@@ -31,7 +31,7 @@ export type RenderIn = {
 /**
  * Plain interface describing what a visualizer needs to render a chart.
  * Lifted out of the deleted state.ts (formerly a LangGraph Annotation)
- * so visualizers stay framework-free. The Mastra visualizationWorkflow
+ * so visualizers stay framework-free. The Mastra visualizationGraph
  * populates this shape from RequestContext at runtime.
  */
 export interface VisualizationGraphState {

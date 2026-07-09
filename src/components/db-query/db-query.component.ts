@@ -30,20 +30,27 @@ import {TableSearchService} from './services/search/table-search.service';
 import {PgWithRlsConnector} from './connectors/pg';
 import {
   CheckCacheNode,
+  CheckPermissionsNode,
   CheckTemplatesNode,
+  ClassifyChangeNode,
   FailedNode,
   FixQueryNode,
   GenerateChecklistNode,
+  GenerateDescriptionNode,
   GetColumnsNode,
   GetTablesNode,
   ImproveFailedNode,
+  IsImprovementNode,
   LoadExistingNode,
   PostCacheAndTablesNode,
+  PostValidationNode,
   ReturnCachedNode,
   SaveDataSetNode,
   SaveDatasetFromTemplateNode,
   SaveImprovedNode,
-  SqlAndValidateNode,
+  SemanticValidatorNode,
+  SqlGenerationNode,
+  SyntacticValidatorNode,
   VerifyChecklistNode,
 } from './nodes';
 import {
@@ -73,7 +80,7 @@ export class DbQueryComponent implements Component {
     ];
     this.lifeCycleObservers = [TableSeedObserver];
     this.services = [
-      // db helpers — still consumed by generateQueryWorkflow / improveQueryWorkflow
+      // db helpers — still consumed by generateQueryGraph / improveQueryGraph
       // node bodies.
       ChecklistHelper,
       DbSchemaHelperService,
@@ -93,22 +100,29 @@ export class DbQueryComponent implements Component {
       AskAboutDatasetTool,
       // workflow nodes — registered as tagged services exactly as in the
       // LangGraph version; each `@graphNode(key)` class is discovered by tag and
-      // resolved per request (WorkflowRunner.resolveGraphNode = BaseGraph._getNodeFn).
+      // resolved per request (resolveNodeFromContext = BaseGraph._getNodeFn).
       CheckCacheNode,
+      CheckPermissionsNode,
       CheckTemplatesNode,
+      ClassifyChangeNode,
       FailedNode,
       FixQueryNode,
       GenerateChecklistNode,
+      GenerateDescriptionNode,
       GetColumnsNode,
       GetTablesNode,
       ImproveFailedNode,
+      IsImprovementNode,
       LoadExistingNode,
       PostCacheAndTablesNode,
+      PostValidationNode,
       ReturnCachedNode,
       SaveDataSetNode,
       SaveDatasetFromTemplateNode,
       SaveImprovedNode,
-      SqlAndValidateNode,
+      SemanticValidatorNode,
+      SqlGenerationNode,
+      SyntacticValidatorNode,
       VerifyChecklistNode,
     ];
     this.components = [DatasetServiceComponent];

@@ -2,7 +2,7 @@ import {BindingScope, injectable} from '@loopback/core';
 
 /**
  * Per-model input/output token accumulator. Replaces the LangChain-callback-based
- * TokenCounter in v3. WorkflowRunner adds totals from
+ * TokenCounter in v3. ChatGraph adds totals from
  * `await stream.usage` after every agent.stream() / workflow run completes.
  * LimitStrategy consumes `flush()` instead of the old `TokenCounter.report()`.
  *

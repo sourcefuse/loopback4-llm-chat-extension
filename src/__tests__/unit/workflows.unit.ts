@@ -2,9 +2,12 @@ import {expect} from '@loopback/testlab';
 import {Mastra} from '@mastra/core';
 import {InMemoryStore} from '@mastra/core/storage';
 import {RequestContext} from '@mastra/core/request-context';
-import {generateQueryWorkflow} from '../../components/db-query/workflows/generate.workflow';
-import {improveQueryWorkflow} from '../../components/db-query/workflows/improve.workflow';
-import {visualizationWorkflow} from '../../components/visualization/workflows/visualization.workflow';
+import {
+  dbQueryGraph,
+  generateQueryGraph,
+  improveQueryGraph,
+} from '../../components/db-query/db-query.graph';
+import {visualizationGraph} from '../../components/visualization/visualization.graph';
 import {
   DB_QUERY_NODE_BY_KEY,
   VISUALIZATION_NODE_BY_KEY,
@@ -40,20 +43,56 @@ function smokeContext(): RequestContext {
 describe('P3 Workflow Smoke', () => {
   const mastra = new Mastra({
     workflows: {
-      generateQueryWorkflow,
-      improveQueryWorkflow,
-      visualizationWorkflow,
+      dbQueryGraph,
+      generateQueryGraph,
+      improveQueryGraph,
+      visualizationGraph,
     },
     storage: new InMemoryStore({id: 'workflow-smoke-test-store'}),
   });
 
-  describe('generateQueryWorkflow', () => {
+  describe('dbQueryGraph (single entry, dispatches on datasetId)', () => {
+    // Proves the consolidation works END TO END: the parent graph resolves its
+    // IsImprovement entry node, which runs the correct nested sub-graph via
+    // ctx.mastra.getWorkflow(...) with the SAME requestContext (so the nested
+    // shells resolve), and returns the flat contract. Both tools call this one
+    // graph, matching LangGraph's single DbQueryGraph.
+    before(() => {
+      dbQueryGraph.__registerMastra(mastra);
+      generateQueryGraph.__registerMastra(mastra);
+      improveQueryGraph.__registerMastra(mastra);
+    });
+
+    it('routes to the generate sub-graph when no datasetId is given', async () => {
+      const workflow = mastra.getWorkflow('dbQueryGraph');
+      if (!workflow) throw new Error('dbQueryGraph not registered');
+      const run = await workflow.createRun();
+      const result = await run.start({
+        inputData: {prompt: 'top customers'},
+        requestContext: smokeContext(),
+      });
+      expect(result.status).to.equal('success');
+    });
+
+    it('routes to the improve sub-graph when a datasetId is given', async () => {
+      const workflow = mastra.getWorkflow('dbQueryGraph');
+      if (!workflow) throw new Error('dbQueryGraph not registered');
+      const run = await workflow.createRun();
+      const result = await run.start({
+        inputData: {datasetId: 'd1', prompt: 'add region column'},
+        requestContext: smokeContext(),
+      });
+      expect(result.status).to.equal('success');
+    });
+  });
+
+  describe('generateQueryGraph', () => {
     it('completes the stub path with status=success', async () => {
-      generateQueryWorkflow.__registerMastra(mastra);
-      const workflow = mastra.getWorkflow('generateQueryWorkflow');
+      generateQueryGraph.__registerMastra(mastra);
+      const workflow = mastra.getWorkflow('generateQueryGraph');
       expect(workflow).to.not.be.undefined();
       if (!workflow) {
-        throw new Error('generateQueryWorkflow not registered');
+        throw new Error('generateQueryGraph not registered');
       }
       const run = await workflow.createRun();
       const result = await run.start({
@@ -64,13 +103,13 @@ describe('P3 Workflow Smoke', () => {
     });
   });
 
-  describe('improveQueryWorkflow', () => {
+  describe('improveQueryGraph', () => {
     it('completes the stub path with status=success', async () => {
-      improveQueryWorkflow.__registerMastra(mastra);
-      const workflow = mastra.getWorkflow('improveQueryWorkflow');
+      improveQueryGraph.__registerMastra(mastra);
+      const workflow = mastra.getWorkflow('improveQueryGraph');
       expect(workflow).to.not.be.undefined();
       if (!workflow) {
-        throw new Error('improveQueryWorkflow not registered');
+        throw new Error('improveQueryGraph not registered');
       }
       const run = await workflow.createRun();
       const result = await run.start({
@@ -81,13 +120,13 @@ describe('P3 Workflow Smoke', () => {
     });
   });
 
-  describe('visualizationWorkflow', () => {
+  describe('visualizationGraph', () => {
     it('completes the stub path with status=success', async () => {
-      visualizationWorkflow.__registerMastra(mastra);
-      const workflow = mastra.getWorkflow('visualizationWorkflow');
+      visualizationGraph.__registerMastra(mastra);
+      const workflow = mastra.getWorkflow('visualizationGraph');
       expect(workflow).to.not.be.undefined();
       if (!workflow) {
-        throw new Error('visualizationWorkflow not registered');
+        throw new Error('visualizationGraph not registered');
       }
       const run = await workflow.createRun();
       const result = await run.start({

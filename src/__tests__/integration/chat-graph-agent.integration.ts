@@ -1,4 +1,3 @@
-import {Context} from '@loopback/core';
 import {expect} from '@loopback/testlab';
 import {Mastra} from '@mastra/core';
 import {Agent} from '@mastra/core/agent';
@@ -12,12 +11,12 @@ import {Memory} from '@mastra/memory';
 // `MastraLanguageModelV2Mock`, but the `createMockModel` factory is the
 // supported entrypoint.
 import {createMockModel} from '@mastra/core/test-utils/llm-mock';
-import {InProcessRunRegistry} from '../../runtime/bridge/run-registry';
-import {WorkflowRunner} from '../../runtime/bridge/workflow-runner';
+import {ChatGraph} from '../../graphs/chat/chat.graph';
 import {LLMStreamEvent, LLMStreamEventType} from '../../graphs/event.types';
 import {UsageAccumulator} from '../../services/usage-accumulator.service';
+import {makeChatGraph} from '../fixtures/chat-graph-context';
 
-// WorkflowRunner streams the chatAgent registered on this Mastra instance
+// ChatGraph streams the chatAgent registered on this Mastra instance
 // (via getAgent), so the registered agent's static mock model drives output.
 // Env var is set defensively; the registered agent never reads it here.
 process.env.MASTRA_DEFAULT_CHAT_MODEL ??= 'mock/test-model';
@@ -25,18 +24,18 @@ process.env.MASTRA_DEFAULT_CHAT_MODEL ??= 'mock/test-model';
 /**
  * End-to-end integration: real Mastra + real Memory + real LibSQL
  * (in-memory) driven by Mastra's stock MockLanguageModelV2. Verifies the
- * full WorkflowRunner.run() pipeline maps fullStream chunks to the SSE
+ * full ChatGraph.execute() pipeline maps fullStream chunks to the SSE
  * wire contract without any sinon stubs.
  *
  * If Mastra renames a chunk type ('text-delta' / 'tool-call' / 'finish')
  * or shifts the fullStream payload shape between minor versions, this
- * test catches it before WorkflowRunner is exercised in production.
+ * test catches it before ChatGraph is exercised in production.
  */
-describe('WorkflowRunner Agent Integration', () => {
+describe('ChatGraph Agent Integration', () => {
   const requesterResourceId = 'tenant-integration:user-integration';
   let storage: LibSQLStore;
   let mastra: Mastra;
-  let runner: WorkflowRunner;
+  let runner: ChatGraph;
   let usage: UsageAccumulator;
 
   beforeEach(async () => {
@@ -65,15 +64,12 @@ describe('WorkflowRunner Agent Integration', () => {
       storage,
     });
     usage = new UsageAccumulator();
-    runner = new WorkflowRunner(
-      new Context('integration'),
+    runner = makeChatGraph({
       mastra,
-      makeMockModel('Hello world') as never,
-      new InProcessRunRegistry(),
-      requesterResourceId,
-      undefined,
       usage,
-    );
+      resourceId: requesterResourceId,
+      chatLlm: makeMockModel('Hello world'),
+    }).chatGraph;
   });
 
   async function collect(
@@ -86,7 +82,7 @@ describe('WorkflowRunner Agent Integration', () => {
 
   it('streams Init, Message chunks and TokenCount end-to-end against a real Mastra Agent', async () => {
     const events = await collect(
-      runner.run('hello', undefined, new AbortController().signal),
+      runner.execute('hello', undefined, new AbortController().signal),
     );
 
     const types = events.map(e => e.type);
@@ -104,15 +100,19 @@ describe('WorkflowRunner Agent Integration', () => {
       e => e.type === LLMStreamEventType.TokenCount,
     ) as {data: {inputTokens: number; outputTokens: number}} | undefined;
     expect(tokenCount).to.not.be.undefined();
-    expect(usage.flush()['chat-llm']).to.eql({
-      input: tokenCount!.data.inputTokens,
-      output: tokenCount!.data.outputTokens,
-    });
+    // Usage is bucketed under the real model id now (not a hardcoded
+    // 'chat-llm'); a no-file chat turn has exactly one bucket.
+    expect(Object.values(usage.flush())).to.eql([
+      {
+        input: tokenCount!.data.inputTokens,
+        output: tokenCount!.data.outputTokens,
+      },
+    ]);
   });
 
   it('persists a Mastra thread and resumes it on the second run', async () => {
     const first = await collect(
-      runner.run('first turn', undefined, new AbortController().signal),
+      runner.execute('first turn', undefined, new AbortController().signal),
     );
     const sessionId = (
       first.find(e => e.type === LLMStreamEventType.Init) as {
@@ -122,17 +122,14 @@ describe('WorkflowRunner Agent Integration', () => {
     expect(sessionId).to.be.a.String();
 
     // Fresh runner sharing the same Mastra instance — Memory + storage stay alive.
-    const runner2 = new WorkflowRunner(
-      new Context('integration-2'),
+    const runner2 = makeChatGraph({
       mastra,
-      makeMockModel('Hello world') as never,
-      new InProcessRunRegistry(),
-      requesterResourceId,
-      undefined,
       usage,
-    );
+      resourceId: requesterResourceId,
+      chatLlm: makeMockModel('Hello world'),
+    }).chatGraph;
     const second = await collect(
-      runner2.run(
+      runner2.execute(
         'second turn',
         undefined,
         new AbortController().signal,

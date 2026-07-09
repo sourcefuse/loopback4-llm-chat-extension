@@ -52,9 +52,19 @@ import {AIIntegrationConfig} from './types';
 import {PgVectorStore, hasPgVectorEnv} from './sub-modules/db/postgresql';
 import {DefaultStorageProvider} from './providers/mastra/storage.provider';
 import {MastraProvider} from './providers/mastra/mastra.provider';
-import {ToolsProvider} from './providers/mastra/tools.provider';
+import {ToolsProvider} from './providers/tools.provider';
 import {InProcessRunRegistry} from './runtime/bridge/run-registry';
-import {WorkflowRunner} from './runtime/bridge/workflow-runner';
+import {RequestContextBuilder} from './runtime/request-context.builder';
+import {
+  CallLLMNode,
+  ChatGraph,
+  ChatStore,
+  ContextCompressionNode,
+  EndSessionNode,
+  InitSessionNode,
+  RunToolNode,
+  SummariseFileNode,
+} from './graphs/chat';
 import {RuntimeLifecycleObserver} from './observers/mastra-lifecycle.observer';
 
 const debug = require('debug')('ai-integration:log-events:component');
@@ -104,7 +114,19 @@ export class AiIntegrationsComponent implements Component {
       // mastra v3 services
       UsageAccumulator,
       ChatLedgerService,
-      WorkflowRunner,
+      // Chat graph + its persistence store, and the 6 chat nodes registered as
+      // tagged `@graphNode(key)` services exactly as in the LangGraph version —
+      // each discovered by tag and resolved per request (BaseGraph._getNodeFn),
+      // so a host overrides any node by rebinding its class.
+      ChatGraph,
+      ChatStore,
+      RequestContextBuilder,
+      InitSessionNode,
+      SummariseFileNode,
+      CallLLMNode,
+      RunToolNode,
+      ContextCompressionNode,
+      EndSessionNode,
       // Tools are registered by their own components (DbQueryComponent /
       // VisualizerComponent), not here — so each rides with its module and is
       // independently selectable/overridable. Discovered by tag (@graphTool).

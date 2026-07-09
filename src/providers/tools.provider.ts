@@ -5,9 +5,9 @@ import {
   injectable,
   Provider,
 } from '@loopback/core';
-import {TOOL_TAG} from '../../constant';
-import type {IGraphTool} from '../../graphs/types';
-import type {ToolStore} from '../../types';
+import {TOOL_TAG} from '../constant';
+import type {IGraphTool} from '../graphs/types';
+import type {ToolStore} from '../types';
 
 const debug = require('debug')('ai-integration:mastra:tools');
 

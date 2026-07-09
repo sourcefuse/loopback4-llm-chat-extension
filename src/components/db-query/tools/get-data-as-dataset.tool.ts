@@ -8,23 +8,21 @@ import {IGraphTool, ToolStatus} from '../../../graphs/types';
 import {
   asEventWriter,
   asRecord,
-  pickBranchOutput,
   readString,
 } from '../../../graphs/tool-event.util';
 import {AiIntegrationBindings} from '../../../keys';
 import {graphTool} from '../../../decorators';
 import {buildDatasetReadout} from '../utils';
-import {DbQueryNodes} from '../nodes.enum';
 
 /**
- * Mastra-shaped NL2SQL tool. Final form — calls
- * `mastra.getWorkflow('generateQueryWorkflow').createRun().start()`
- * directly; no more legacy IGraphTool delegation. The workflow itself
- * still has stub step bodies until real DbQueryService
- * helpers are wired into each step.
+ * Mastra-shaped NL2SQL tool. Calls the single
+ * `mastra.getWorkflow('dbQueryGraph').createRun().start()` (the same graph the
+ * improve-dataset tool uses); with no `datasetId` the graph's entry node routes
+ * to the generate path.
  */
 @graphTool()
 export class GetDataAsDatasetTool implements IGraphTool {
+  needsReview = false;
   key = 'get-data-as-dataset';
   constructor(
     @inject(AiIntegrationBindings.Mastra) private readonly mastra: Mastra,
@@ -56,12 +54,7 @@ export class GetDataAsDatasetTool implements IGraphTool {
           data: {id: toolCallId, status: ToolStatus.Running},
         });
         try {
-          return await this.runQueryWorkflow(
-            writer,
-            toolCallId,
-            inputData,
-            ctx,
-          );
+          return await this.runQueryGraph(writer, toolCallId, inputData, ctx);
         } catch (err) {
           // Single Failed emit. Status-not-success path throws above
           // without emitting; this catch is the only Failed source.
@@ -75,36 +68,33 @@ export class GetDataAsDatasetTool implements IGraphTool {
     });
   }
 
-  private extractQueryBranchResult(result: unknown): {
+  private extractQueryResult(result: unknown): {
     datasetId?: string;
     sql?: string;
     replyToUser?: string;
   } {
-    // Mastra wraps the matched branch's output under the branch step id
-    // (mirroring `.parallel()` fan-in shape), so unwrap the
-    // `save-dataset`/`failed` key when present.
-    const root = asRecord(result);
-    const rawResult = asRecord(root.result);
-    const saveResult = asRecord(rawResult[DbQueryNodes.SaveDataset]);
-    const failedResult = asRecord(rawResult.failed);
-    const branchOutput = pickBranchOutput(saveResult, failedResult, rawResult);
+    // dbQueryGraph ends with `.then(isImprovementNode)` (not a `.branch()`), and
+    // that entry node already flattened the sub-graph's branch output — so the
+    // flat `{datasetId, sql, replyToUser?}` contract lands directly on the
+    // top-level result, no branch-key unwrap needed.
+    const out = asRecord(asRecord(result).result);
     return {
-      datasetId: readString(branchOutput.datasetId),
-      sql: readString(branchOutput.sql),
-      replyToUser: readString(branchOutput.replyToUser),
+      datasetId: readString(out.datasetId),
+      sql: readString(out.sql),
+      replyToUser: readString(out.replyToUser),
     };
   }
 
-  private async runQueryWorkflow(
+  private async runQueryGraph(
     writer: ((e: LLMStreamEvent) => void) | undefined,
     toolCallId: string,
     inputData: {prompt: string},
     ctx: ToolExecutionContext,
   ): Promise<unknown> {
-    const workflow = this.mastra.getWorkflow('generateQueryWorkflow');
+    const workflow = this.mastra.getWorkflow('dbQueryGraph');
     if (!workflow) {
       throw new Error(
-        'generateQueryWorkflow not registered in Mastra — check Provider workflows config',
+        'dbQueryGraph not registered in Mastra — check Provider workflows config',
       );
     }
     const run = await workflow.createRun();
@@ -133,7 +123,7 @@ export class GetDataAsDatasetTool implements IGraphTool {
     if (result.status !== 'success') {
       throw new Error(`Query generation failed: ${result.status}`);
     }
-    const workflowResult = this.extractQueryBranchResult(result);
+    const workflowResult = this.extractQueryResult(result);
     const datasetId = workflowResult.datasetId ?? '';
     // Emit final Tool event so the UI's chat bubble can attach the
     // SQL/template badge and the like/dislike footer (app.js reads

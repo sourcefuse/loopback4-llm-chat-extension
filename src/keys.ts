@@ -72,7 +72,7 @@ export namespace AiIntegrationBindings {
     'services.ai-reporting.obf-handler',
   );
   // Optional per-provider file → LLM message-part builder (v2
-  // `LLMProvider.getFile` / `FileMessageBuilder`). When bound, WorkflowRunner's
+  // `LLMProvider.getFile` / `FileMessageBuilder`). When bound, ChatGraph's
   // file-summarisation path uses it to shape the file content block for the
   // bound model's API (e.g. AWS Bedrock `document` blocks) instead of the
   // generic `{type:'file'}` default.
@@ -104,7 +104,7 @@ export namespace AiIntegrationBindings {
     'services.ai-reporting.resourceId',
   );
 
-  // Per-request RESOLVED AI-SDK model tiers. WorkflowRunner binds these into
+  // Per-request RESOLVED AI-SDK model tiers. ChatGraph binds these into
   // the request context each run (after async `resolveModelConfig`), so step
   // classes can `@inject` a ready-to-call model instead of reading the config
   // from RequestContext. Optional — unbound tiers fall back to ChatModel in the

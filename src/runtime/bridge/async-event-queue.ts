@@ -1,6 +1,6 @@
 /**
  * Single-producer-or-multiple-producer / single-consumer async queue used to
- * funnel SSE events from the WorkflowRunner pre-processing block, the Mastra
+ * funnel SSE events from the ChatGraph pre-processing block, the Mastra
  * agent fullStream pump task, and tool-side eventWriter calls into a single
  * ordered iterator that the controller consumes.
  *

@@ -1,7 +1,7 @@
 import {expect, sinon} from '@loopback/testlab';
 import {RequestContext} from '@mastra/core/request-context';
 import * as helpers from '../../components/db-query/_helpers';
-import {generateQueryWorkflow} from '../../components/db-query/workflows/generate.workflow';
+import {generateQueryGraph} from '../../components/db-query/db-query.graph';
 import {MAX_VALIDATION_ATTEMPTS} from '../../components/db-query/constants';
 import {DbQueryNodes} from '../../components/db-query/nodes.enum';
 import type {MastraRcShape} from '../../components/db-query/_helpers';
@@ -9,7 +9,7 @@ import {DatasetActionType} from '../../components/db-query/constant';
 import {makeContainerNodeResolver} from '../fixtures/step-resolver';
 
 /**
- * DAG-level coverage for `generateQueryWorkflow`. The integration test
+ * DAG-level coverage for `generateQueryGraph`. The integration test
  * in src/__tests__/integration/generate-workflow.integration.ts already
  * exercises the happy `Continue → SQL gen → validate → save` path with
  * a mocked smart model. These tests cover the THREE other branch arms:
@@ -23,7 +23,7 @@ import {makeContainerNodeResolver} from '../fixtures/step-resolver';
  * object — sinon replaces the export the steps actually call), so we
  * avoid wiring real models and exercise pure routing.
  */
-describe('generateQueryWorkflow (DAG branching, unit)', () => {
+describe('generateQueryGraph (DAG branching, unit)', () => {
   afterEach(() => sinon.restore());
 
   type GenOut = {datasetId: string; sql: string};
@@ -93,7 +93,7 @@ describe('generateQueryWorkflow (DAG branching, unit)', () => {
       authUser: {id: 'u1', tenantId: 't1'} as never,
     });
 
-    const run = await generateQueryWorkflow.createRun();
+    const run = await generateQueryGraph.createRun();
     const result = await run.start({
       inputData: {prompt: 'list employees'},
       requestContext: rc as RequestContext,
@@ -126,11 +126,17 @@ describe('generateQueryWorkflow (DAG branching, unit)', () => {
       [DbQueryNodes.GenerateChecklist]: '',
     });
     sinon.stub(helpers, 'pickRelevantTables').resolves({kind: 'unknown'});
-    const runAttempt = sinon.stub().resolves({
-      sql: 'SELECT regenerated',
-      passed: true,
-      description: 'd',
-    });
+    // Split loop: SqlGenerationNode → parallel[validators + description] →
+    // PostValidation. Stub the generation seam; validation passes via the real
+    // SqlValidatorService (connector.validate resolves, checklist empty).
+    const runGenerationStage = sinon
+      .stub()
+      .resolves({sql: 'SELECT regenerated', description: 'd'});
+    const sqlGenHelper = {
+      runGenerationStage,
+      streamDescription: sinon.stub().resolves('d'),
+      resolveReselectedTables: sinon.stub().resolves(undefined),
+    };
     const schema = {tables: {employees: {columns: {id: {}}}}};
     const queryCache = {
       invoke: sinon
@@ -158,10 +164,10 @@ describe('generateQueryWorkflow (DAG branching, unit)', () => {
         validate: async () => undefined,
         execute: async () => [],
       } as never,
-      sqlGenHelper: {runAttempt},
+      sqlGenHelper,
     });
 
-    const run = await generateQueryWorkflow.createRun();
+    const run = await generateQueryGraph.createRun();
     const result = await run.start({
       inputData: {prompt: 'list employees'},
       requestContext: rc as RequestContext,
@@ -171,7 +177,7 @@ describe('generateQueryWorkflow (DAG branching, unit)', () => {
     if (result.status !== 'success') return;
     // Regenerated: SQL-gen ran and a NEW dataset was created — the disliked
     // cached row was NOT re-served.
-    sinon.assert.called(runAttempt);
+    sinon.assert.called(runGenerationStage);
     sinon.assert.calledOnce(create);
     const wrapped = result.result as Record<string, unknown>;
     const out =
@@ -221,7 +227,7 @@ describe('generateQueryWorkflow (DAG branching, unit)', () => {
       schemaStore: {get: () => ({tables: {employees: {}}})} as never,
     });
 
-    const run = await generateQueryWorkflow.createRun();
+    const run = await generateQueryGraph.createRun();
     const result = await run.start({
       inputData: {prompt: 'list employees'},
       requestContext: rc as RequestContext,
@@ -255,11 +261,12 @@ describe('generateQueryWorkflow (DAG branching, unit)', () => {
       'template-judge': 'no_match',
       [DbQueryNodes.GenerateChecklist]: '',
     });
-    const runAttempt = sinon.stub().resolves({
-      sql: 'BROKEN',
-      passed: false,
-      feedback: 'syntactic error',
-    });
+    const runGenerationStage = sinon.stub().resolves({sql: 'BROKEN'});
+    const sqlGenHelper = {
+      runGenerationStage,
+      streamDescription: sinon.stub().resolves(''),
+      resolveReselectedTables: sinon.stub().resolves(undefined),
+    };
 
     const queryCache = {invoke: sinon.stub().resolves([])};
     const templateCache = {invoke: sinon.stub().resolves([])};
@@ -273,14 +280,18 @@ describe('generateQueryWorkflow (DAG branching, unit)', () => {
       } as never,
       datasetStore: {create: datasetCreate, findById: sinon.stub()} as never,
       authUser: {id: 'u1', tenantId: 't1'} as never,
+      // Syntactic validation fails every attempt (EXPLAIN throws), so the
+      // dountil never passes and exits on the attempt cap.
       dbConnector: {
-        validate: async () => undefined,
+        validate: async () => {
+          throw new Error('syntactic error');
+        },
         execute: async () => [],
       } as never,
-      sqlGenHelper: {runAttempt},
+      sqlGenHelper,
     });
 
-    const run = await generateQueryWorkflow.createRun();
+    const run = await generateQueryGraph.createRun();
     const result = await run.start({
       inputData: {prompt: 'something hard'},
       requestContext: rc as RequestContext,
@@ -297,7 +308,7 @@ describe('generateQueryWorkflow (DAG branching, unit)', () => {
     // The dountil predicate `attempts >= MAX_VALIDATION_ATTEMPTS` caps
     // iterations at exactly MAX_VALIDATION_ATTEMPTS — this is the user-
     // visible "stop wasting model calls" guarantee.
-    expect(runAttempt.callCount).to.equal(MAX_VALIDATION_ATTEMPTS);
+    expect(runGenerationStage.callCount).to.equal(MAX_VALIDATION_ATTEMPTS);
     sinon.assert.notCalled(datasetCreate);
   });
 
@@ -345,7 +356,7 @@ describe('generateQueryWorkflow (DAG branching, unit)', () => {
       sqlGenHelper: {runAttempt},
     });
 
-    const run = await generateQueryWorkflow.createRun();
+    const run = await generateQueryGraph.createRun();
     const result = await run.start({
       inputData: {prompt: 'total revenue by region'},
       requestContext: rc as RequestContext,
@@ -383,11 +394,14 @@ describe('generateQueryWorkflow (DAG branching, unit)', () => {
     });
     // LLM hiccup / no clear verdict → unknown → fall back to all tables.
     sinon.stub(helpers, 'pickRelevantTables').resolves({kind: 'unknown'});
-    const runAttempt = sinon.stub().resolves({
-      sql: 'SELECT 1',
-      passed: true,
-      description: 'd',
-    });
+    const runGenerationStage = sinon
+      .stub()
+      .resolves({sql: 'SELECT 1', description: 'd'});
+    const sqlGenHelper = {
+      runGenerationStage,
+      streamDescription: sinon.stub().resolves('d'),
+      resolveReselectedTables: sinon.stub().resolves(undefined),
+    };
 
     const queryCache = {invoke: sinon.stub().resolves([])};
     const templateCache = {invoke: sinon.stub().resolves([])};
@@ -408,10 +422,10 @@ describe('generateQueryWorkflow (DAG branching, unit)', () => {
         validate: async () => undefined,
         execute: async () => [],
       } as never,
-      sqlGenHelper: {runAttempt},
+      sqlGenHelper,
     });
 
-    const run = await generateQueryWorkflow.createRun();
+    const run = await generateQueryGraph.createRun();
     const result = await run.start({
       inputData: {prompt: 'list employees'},
       requestContext: rc as RequestContext,
@@ -419,7 +433,7 @@ describe('generateQueryWorkflow (DAG branching, unit)', () => {
 
     expect(result.status).to.equal('success');
     if (result.status !== 'success') return;
-    sinon.assert.called(runAttempt);
+    sinon.assert.called(runGenerationStage);
     sinon.assert.calledOnce(create);
   });
 });

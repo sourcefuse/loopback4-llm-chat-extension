@@ -3,7 +3,7 @@ import {AnyObject} from '@loopback/repository';
 import type {IGraphTool} from './graphs/types';
 
 /**
- * Registry shape consumed by WorkflowRunner, holding IGraphTool instances.
+ * Registry shape consumed by ChatGraph, holding IGraphTool instances.
  *
  * `map` is keyed by each tool's `key` so consumers (and the runner) can look a
  * tool up by name without scanning `list`. It is OPTIONAL so providers that

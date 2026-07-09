@@ -12,18 +12,21 @@ import {AiIntegrationBindings} from '../../keys';
 import {TokenLimiter} from '@mastra/core/processors';
 import {buildChatInstructions} from '../../runtime/chat-agent-instructions';
 import {DEFAULT_MAX_TOKEN_COUNT} from '../../constant';
-import {generateQueryWorkflow} from '../../components/db-query/workflows/generate.workflow';
-import {improveQueryWorkflow} from '../../components/db-query/workflows/improve.workflow';
-import {visualizationWorkflow} from '../../components/visualization/workflows/visualization.workflow';
+import {
+  dbQueryGraph,
+  generateQueryGraph,
+  improveQueryGraph,
+} from '../../components/db-query/db-query.graph';
+import {visualizationGraph} from '../../components/visualization/visualization.graph';
 
 /**
  * Singleton Mastra instance. Holds storage pools, vector clients, registered
  * Agents, and observability exporters. Per-request DI (resourceId, eventWriter,
  * dbConnector) flows through `agent.stream({requestContext})` invoked by the
- * REQUEST-scoped WorkflowRunner — NOT by spinning a new Mastra per request.
+ * REQUEST-scoped ChatGraph — NOT by spinning a new Mastra per request.
  *
  * The ChatAgent registered here is the canonical one streamed by
- * WorkflowRunner via `mastra.getAgent('chatAgent')`. Its model, tools and
+ * ChatGraph via `mastra.getAgent('chatAgent')`. Its model, tools and
  * instructions are resolved per request from RequestContext (see below),
  * so it stays registered with this instance and keeps emitting traces.
  *
@@ -99,7 +102,7 @@ export class MastraProvider implements Provider<Mastra> {
     // long-lived process.
     const systemContext = this.systemContext;
 
-    // Dynamic, request-resolved ChatAgent. The REQUEST-scoped WorkflowRunner
+    // Dynamic, request-resolved ChatAgent. The REQUEST-scoped ChatGraph
     // streams THIS registered agent (via `mastra.getAgent('chatAgent')`) and
     // passes the per-request model / tools / instructions through
     // RequestContext. Resolving them via function-typed params — instead of
@@ -151,9 +154,13 @@ export class MastraProvider implements Provider<Mastra> {
     return new Mastra({
       agents: {chatAgent, askAboutDatasetAgent},
       workflows: {
-        generateQueryWorkflow,
-        improveQueryWorkflow,
-        visualizationWorkflow,
+        // Single db-query entry graph both tools call; it dispatches to the
+        // generate/improve sub-graphs below (kept registered so the entry
+        // node can resolve them by id at run time).
+        dbQueryGraph,
+        generateQueryGraph,
+        improveQueryGraph,
+        visualizationGraph,
       },
       storage: this.storage,
       vectors: this.vector ? {default: this.vector} : undefined,

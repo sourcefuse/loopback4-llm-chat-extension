@@ -1,23 +1,22 @@
-import {Context} from '@loopback/core';
 import {expect} from '@loopback/testlab';
 import {Mastra} from '@mastra/core';
 import {Agent} from '@mastra/core/agent';
 import {LibSQLStore} from '@mastra/libsql';
 import {Memory} from '@mastra/memory';
-// See workflow-runner-agent.integration.ts for why the .d.ts is shimmed in
+// See chat-graph-agent.integration.ts for why the .d.ts is shimmed in
 // mastra-test-utils.d.ts — the package ships the JS but forgets the types.
 import {createMockModel} from '@mastra/core/test-utils/llm-mock';
-import {InProcessRunRegistry} from '../../runtime/bridge/run-registry';
-import {WorkflowRunner} from '../../runtime/bridge/workflow-runner';
+import {ChatGraph} from '../../graphs/chat/chat.graph';
 import {LLMStreamEvent, LLMStreamEventType} from '../../graphs/event.types';
 import {UsageAccumulator} from '../../services/usage-accumulator.service';
+import {makeChatGraph} from '../fixtures/chat-graph-context';
 
 // The registered chatAgent reads no env here (its model is a static mock),
 // but set defensively as the sibling integration test does.
 process.env.MASTRA_DEFAULT_CHAT_MODEL ??= 'mock/test-model';
 
 /**
- * Integration: the file-upload (summariseFile) path of WorkflowRunner.run().
+ * Integration: the file-upload (summariseFile) path of ChatGraph.execute().
  *
  * Drives the PUBLIC run(query, files, abort) surface — no sinon stubs of the
  * private summariseAndMergeFiles / summariseFile. A capturing mock
@@ -32,11 +31,11 @@ process.env.MASTRA_DEFAULT_CHAT_MODEL ??= 'mock/test-model';
  * hook so we can observe the merged `[Attached file "..."]` summary in the
  * chat agent's input without coupling to its output.
  */
-describe('WorkflowRunner File Summarise Integration', () => {
+describe('ChatGraph File Summarise Integration', () => {
   const requesterResourceId = 'tenant-integration:user-integration';
   let storage: LibSQLStore;
   let mastra: Mastra;
-  let runner: WorkflowRunner;
+  let runner: ChatGraph;
   let usage: UsageAccumulator;
 
   // Captured by the file-summary mock's doGenerate (the AI-SDK V2 prompt).
@@ -81,18 +80,15 @@ describe('WorkflowRunner File Summarise Integration', () => {
       storage,
     });
     usage = new UsageAccumulator();
-    runner = new WorkflowRunner(
-      new Context('file-summarise'),
+    runner = makeChatGraph({
       mastra,
-      // chatLlm — the capturing file-summary model.
-      makeCapturingFileModel(opts => {
-        capturedFilePrompt = opts.prompt as V2Prompt;
-      }) as never,
-      new InProcessRunRegistry(),
-      requesterResourceId,
-      undefined,
       usage,
-    );
+      resourceId: requesterResourceId,
+      // chatLlm — the capturing file-summary model.
+      chatLlm: makeCapturingFileModel(opts => {
+        capturedFilePrompt = opts.prompt as V2Prompt;
+      }),
+    }).chatGraph;
   });
 
   async function collect(
@@ -123,7 +119,7 @@ describe('WorkflowRunner File Summarise Integration', () => {
     const file = buildFile('Q3 Report!.pdf');
 
     const events = await collect(
-      runner.run('summarise this', [file], new AbortController().signal),
+      runner.execute('summarise this', [file], new AbortController().signal),
     );
 
     // The summariseFile generateText call must have hit the capturing model.
@@ -193,7 +189,7 @@ describe('WorkflowRunner File Summarise Integration', () => {
 
   it('passes the prompt through unchanged when no file is attached (no summarise call)', async () => {
     await collect(
-      runner.run('just a question', [], new AbortController().signal),
+      runner.execute('just a question', [], new AbortController().signal),
     );
 
     // summariseFile must NOT have run — no file model call.

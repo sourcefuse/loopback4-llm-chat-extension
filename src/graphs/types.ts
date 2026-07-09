@@ -25,7 +25,7 @@ export interface GraphNodeCtx<TIn = unknown> {
   getStepResult(stepId: string): unknown;
   getInitData?(): unknown;
   // Present on Mastra's step execute ctx; used by steps that invoke a nested
-  // workflow (e.g. call-query-generation runs generateQueryWorkflow).
+  // workflow (e.g. call-query-generation runs generateQueryGraph).
   mastra?: Mastra;
 }
 
@@ -33,7 +33,7 @@ export interface GraphNodeCtx<TIn = unknown> {
  * DI-resolved workflow step (the Mastra-named successor of the LangGraph
  * `IGraphNode`). A `@graphNode(key)`-decorated class implements this; the workflow
  * never references the concrete class — it resolves the instance by tag at run
- * time (see {@link makeNodeShell} + WorkflowRunner.resolveGraphNode), so a
+ * time (see {@link makeNodeShell} + resolveNodeFromContext), so a
  * host app overrides a step purely by rebinding the tagged class.
  */
 export interface IGraphNode<TIn = unknown, TOut = unknown> {
@@ -42,7 +42,7 @@ export interface IGraphNode<TIn = unknown, TOut = unknown> {
 
 /**
  * Resolve a `@graphNode(key)`-tagged class instance from the LB4 container. Threaded
- * into the Mastra RequestContext by WorkflowRunner so a committed step shell
+ * into the Mastra RequestContext by ChatGraph so a committed step shell
  * can fetch its DI-backed implementation per request. Mirrors
  * BaseGraph._getNodeFn (tag lookup → context.get).
  */
@@ -57,7 +57,7 @@ export enum ToolStatus {
 
 /**
  * Mastra-shaped tool interface used by the Mastra createTool wrappers and
- * consumed by WorkflowRunner (built into the per-request tool map) via
+ * consumed by ChatGraph (built into the per-request tool map) via
  * ToolStore.
  */
 export interface IGraphTool {
@@ -65,9 +65,13 @@ export interface IGraphTool {
   build(): Tool;
   getValue?(result: Record<string, unknown>): string;
   getMetadata?(result: Record<string, unknown>): AnyObject;
-  // `requireApproval` arrives in v3.1 alongside the ApprovalController
-  // PR. Until the resume side is wired, declaring it on the interface
-  // misleads consumers into thinking HITL works end-to-end.
+  // Preserved from the LangGraph `IGraphTool` for backward compatibility so
+  // host-authored tools that declare `needsReview` still satisfy the
+  // interface. Currently inert — the default chat flow no longer branches on
+  // it (Mastra's Agent drives tool calls). The real human-in-the-loop gate
+  // arrives in v3.1 as `requireApproval` alongside the ApprovalController;
+  // this field stays optional until then.
+  needsReview?: boolean;
 }
 
 // `ToolStore` + `toolMap()` live in `src/types.ts` (as in the LangGraph

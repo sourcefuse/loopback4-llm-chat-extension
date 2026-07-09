@@ -31,21 +31,17 @@ export class VisualizerComponent implements Component {
     this.bindings = [];
     this.lifeCycleObservers = [];
     this.services = [
-      // visualizers (consumer-extensible via @visualizer() — the Mastra
-      // visualizationWorkflow's render node dispatches to these via
-      // RequestContext, see)
-      PieVisualizer,
-      BarVisualizer,
-      LineVisualizer,
-      // visualization tool — registered here (not the root component) so it
-      // rides with VisualizerComponent. Discovered by tag (@graphTool).
+      // tools
       GenerateVisualizationTool,
-      // workflow nodes — registered as tagged services (like the LangGraph
-      // version); discovered by `@graphNode(key)` tag and resolved per request.
+      // nodes
       SelectVisualizationNode,
       CallQueryGenerationNode,
       GetDatasetDataNode,
       RenderVisualizationNode,
+      // visualizers
+      PieVisualizer,
+      BarVisualizer,
+      LineVisualizer,
     ];
     this.components = [];
   }

@@ -18,7 +18,7 @@ import {PermissionKey} from '../permissions';
  * `ChatController` (which read the ARC `chats`/`messages` tables via
  * `ChatStore`). Chat history now lives in Mastra Memory (threads + messages in
  * the bound storage adapter), so these routes read it from there, scoped to
- * the requester's `resourceId` — the same id the `WorkflowRunner` writes
+ * the requester's `resourceId` — the same id the `ChatGraph` writes
  * threads under (see {@link deriveResourceId}).
  *
  * Returns empty / 404 when Memory is not configured (no storage bound) or the

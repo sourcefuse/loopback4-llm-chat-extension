@@ -131,7 +131,7 @@ export class SqlGenerationHelper {
     };
   }
 
-  private async runGenerationStage(args: {
+  async runGenerationStage(args: {
     chatLlm: LanguageModel | undefined;
     prompt: string;
     tables: string[];
@@ -243,7 +243,7 @@ Describe the query — do not return SQL.`;
    * / no model). Single-shot stream → the OpenRouter reasoning-replay stall does
    * not apply.
    */
-  private async streamDescription(args: {
+  async streamDescription(args: {
     model: LanguageModel | undefined;
     prompt: string;
     sql: string;
@@ -357,7 +357,7 @@ Describe the query — do not return SQL.`;
    * that function stays under the cyclomatic-complexity cap (S1541); returns
    * undefined (no change) for a pass or a non-syntactic failure.
    */
-  private async resolveReselectedTables(
+  async resolveReselectedTables(
     args: {
       cheapLlm?: LanguageModel;
       chatLlm: LanguageModel | undefined;

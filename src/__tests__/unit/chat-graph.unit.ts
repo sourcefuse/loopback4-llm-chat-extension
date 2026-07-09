@@ -1,12 +1,18 @@
-import {Context} from '@loopback/core';
 import {expect, sinon} from '@loopback/testlab';
-import {AuthenticationBindings} from 'loopback4-authentication';
 import type {IAuthUserWithPermissions} from '@sourceloop/core';
-import {WorkflowRunner} from '../../runtime/bridge/workflow-runner';
+import {ChatGraph} from '../../graphs/chat/chat.graph';
 import {InProcessRunRegistry} from '../../runtime/bridge/run-registry';
 import {UsageAccumulator} from '../../services/usage-accumulator.service';
 import {LLMStreamEvent, LLMStreamEventType} from '../../graphs/event.types';
 import {ToolStatus} from '../../graphs/types';
+import {makeChatGraph} from '../fixtures/chat-graph-context';
+
+const DEFAULT_USER = {
+  id: 'user-1',
+  userTenantId: 'user-1',
+  tenantId: 'tenant-1',
+  permissions: ['*'],
+} as unknown as IAuthUserWithPermissions;
 
 // Set defensively; the unit suite drives a stubbed Mastra (getAgent returns
 // a stub agent whose getMemory/stream are sinon stubs), so the real model is
@@ -47,7 +53,7 @@ async function collect(
   return out;
 }
 
-describe('WorkflowRunner Unit', () => {
+describe('ChatGraph Unit', () => {
   let streamStub: sinon.SinonStub;
   let getMemoryStub: sinon.SinonStub;
   let createThread: sinon.SinonStub;
@@ -84,26 +90,17 @@ describe('WorkflowRunner Unit', () => {
 
   function makeRunner(
     resourceIdValue?: string,
-    authUser: IAuthUserWithPermissions | null = {
-      id: 'user-1',
-      userTenantId: 'user-1',
-      tenantId: 'tenant-1',
-      permissions: ['*'],
-    } as unknown as IAuthUserWithPermissions,
-  ): WorkflowRunner {
-    const ctx = new Context('test');
-    if (authUser) {
-      ctx.bind(AuthenticationBindings.CURRENT_USER).to(authUser);
-    }
-    return new WorkflowRunner(
-      ctx,
-      mastraStub as never,
-      undefined,
-      runRegistry,
-      resourceIdValue,
-      undefined,
+    authUser: IAuthUserWithPermissions | null = DEFAULT_USER,
+  ): ChatGraph {
+    // Resolve ChatGraph from a real container with the chat nodes + store bound
+    // as tagged services — the production wiring — so the nodes' DI runs and
+    // BaseGraph._getNodeFn resolves them (never `new ChatGraph()`).
+    return makeChatGraph({
+      mastra: mastraStub,
       usage,
-    );
+      resourceId: resourceIdValue,
+      authUser,
+    }).chatGraph;
   }
 
   function stubStreamWith(
@@ -126,7 +123,7 @@ describe('WorkflowRunner Unit', () => {
     const runner = makeRunner();
     const abort = new AbortController();
 
-    const events = await collect(runner.run('hi', undefined, abort.signal));
+    const events = await collect(runner.execute('hi', undefined, abort.signal));
 
     expect(events.map(e => e.type)).to.eql([
       LLMStreamEventType.Init,
@@ -145,7 +142,9 @@ describe('WorkflowRunner Unit', () => {
       inputTokens: 11,
       outputTokens: 5,
     });
-    expect(usage.flush()['chat-llm']).to.eql({input: 11, output: 5});
+    // Usage is now bucketed under the real model id (not a hardcoded
+    // 'chat-llm'); a no-file chat turn has exactly one bucket.
+    expect(Object.values(usage.flush())).to.eql([{input: 11, output: 5}]);
   });
 
   it('streams one Message per text-delta when MASTRA_STREAM_TOKENS=true', async () => {
@@ -160,7 +159,7 @@ describe('WorkflowRunner Unit', () => {
     process.env.MASTRA_STREAM_TOKENS = 'true';
     try {
       const events = await collect(
-        makeRunner().run('hi', undefined, new AbortController().signal),
+        makeRunner().execute('hi', undefined, new AbortController().signal),
       );
       // Two separate Message events (deltas), not one coalesced message.
       expect(events.map(e => e.type)).to.eql([
@@ -189,7 +188,7 @@ describe('WorkflowRunner Unit', () => {
     stubStreamWith([{type: 'text-delta', payload: {text: 'ok'}}]);
 
     const events = await collect(
-      makeRunner().run(
+      makeRunner().execute(
         'cont',
         undefined,
         new AbortController().signal,
@@ -212,7 +211,7 @@ describe('WorkflowRunner Unit', () => {
     });
 
     const events = await collect(
-      makeRunner().run(
+      makeRunner().execute(
         'cont',
         undefined,
         new AbortController().signal,
@@ -231,7 +230,7 @@ describe('WorkflowRunner Unit', () => {
     getThreadById.resolves({id: 'thread-existing'});
 
     const events = await collect(
-      makeRunner().run(
+      makeRunner().execute(
         'cont',
         undefined,
         new AbortController().signal,
@@ -253,7 +252,7 @@ describe('WorkflowRunner Unit', () => {
     });
 
     const events = await collect(
-      makeRunner(undefined, null).run(
+      makeRunner(undefined, null).execute(
         'cont',
         undefined,
         new AbortController().signal,
@@ -272,7 +271,7 @@ describe('WorkflowRunner Unit', () => {
     getThreadById.resolves(null);
 
     const events = await collect(
-      makeRunner().run(
+      makeRunner().execute(
         'cont',
         undefined,
         new AbortController().signal,
@@ -291,7 +290,7 @@ describe('WorkflowRunner Unit', () => {
     getMemoryStub.resolves(null);
 
     const events = await collect(
-      makeRunner().run('hi', undefined, new AbortController().signal),
+      makeRunner().execute('hi', undefined, new AbortController().signal),
     );
 
     expect(events).to.have.length(1);
@@ -316,7 +315,7 @@ describe('WorkflowRunner Unit', () => {
     ]);
 
     const events = await collect(
-      makeRunner().run('q', undefined, new AbortController().signal),
+      makeRunner().execute('q', undefined, new AbortController().signal),
     );
 
     const toolEvent = events.find(e => e.type === LLMStreamEventType.Tool);
@@ -344,7 +343,7 @@ describe('WorkflowRunner Unit', () => {
     ]);
 
     const events = await collect(
-      makeRunner().run('q', undefined, new AbortController().signal),
+      makeRunner().execute('q', undefined, new AbortController().signal),
     );
 
     const status = events.find(
@@ -365,7 +364,7 @@ describe('WorkflowRunner Unit', () => {
     ]);
 
     const events = await collect(
-      makeRunner().run('q', undefined, new AbortController().signal),
+      makeRunner().execute('q', undefined, new AbortController().signal),
     );
 
     const err = events.find(e => e.type === LLMStreamEventType.Error) as
@@ -389,7 +388,7 @@ describe('WorkflowRunner Unit', () => {
     ]);
 
     await collect(
-      makeRunner().run('q', undefined, new AbortController().signal),
+      makeRunner().execute('q', undefined, new AbortController().signal),
     );
 
     expect(await runRegistry.get('thread-suspend')).to.be.undefined();
@@ -404,7 +403,7 @@ describe('WorkflowRunner Unit', () => {
       {originalname: 'b.pdf'} as Express.Multer.File,
     ];
     const events = await collect(
-      makeRunner().run('q', files, new AbortController().signal),
+      makeRunner().execute('q', files, new AbortController().signal),
     );
 
     const statusMsgs = events
@@ -425,7 +424,7 @@ describe('WorkflowRunner Unit', () => {
     stubStreamWith([{type: 'text-delta', payload: {text: '.'}}]);
 
     await collect(
-      makeRunner('tenant-a:user-1').run(
+      makeRunner('tenant-a:user-1').execute(
         'q',
         undefined,
         new AbortController().signal,
@@ -443,11 +442,10 @@ describe('WorkflowRunner Unit', () => {
   });
 
   it('forwards CheapLLM / SmartLLM / SmartNonThinkingLLM into the RequestContext when bound', async () => {
-    // Tier slots are appended at the END of the constructor signature so
-    // existing fixtures don't have to re-number. The runner resolves each
-    // slot through resolveModelConfig before placing it on the RC (so
-    // workflow steps can hand it straight to generateText), hence the
-    // fixtures are minimal AI-SDK v2 model stubs, identified by modelId.
+    // Tier configs are injected into CallLLMNode (AiIntegrationBindings.CheapLLM
+    // etc). The node resolves each through resolveModelConfig before placing it
+    // on the RC (so workflow steps can hand it straight to generateText), hence
+    // the fixtures are minimal AI-SDK v2 model stubs, identified by modelId.
     const fakeModel = (id: string) =>
       ({
         specificationVersion: 'v2',
@@ -459,22 +457,17 @@ describe('WorkflowRunner Unit', () => {
     createThread.resolves({id: 't1'});
     stubStreamWith([{type: 'text-delta', payload: {text: '.'}}]);
 
-    const runner = new WorkflowRunner(
-      new Context('test'),
-      mastraStub as never,
-      undefined,
-      runRegistry,
-      'tenant-a:user-1',
-      undefined,
+    const {chatGraph: runner} = makeChatGraph({
+      mastra: mastraStub,
       usage,
-      undefined,
-      undefined,
-      fakeModel('cheap'),
-      fakeModel('smart'),
-      fakeModel('snt'),
-    );
+      resourceId: 'tenant-a:user-1',
+      authUser: DEFAULT_USER,
+      cheapLlm: fakeModel('cheap'),
+      smartLlm: fakeModel('smart'),
+      smartNonThinkingLlm: fakeModel('snt'),
+    });
 
-    await collect(runner.run('q', undefined, new AbortController().signal));
+    await collect(runner.execute('q', undefined, new AbortController().signal));
 
     const streamOpts = streamStub.firstCall.args[1] as {
       requestContext: {get: (k: string) => unknown};
