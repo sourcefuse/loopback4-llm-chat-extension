@@ -2,6 +2,7 @@ import {expect, sinon} from '@loopback/testlab';
 import {Mastra} from '@mastra/core';
 import {RequestContext} from '@mastra/core/request-context';
 import type {Tool, ToolExecutionContext} from '@mastra/core/tools';
+import * as dbHelpers from '../../components/db-query/_helpers';
 import {AskAboutDatasetTool} from '../../components/db-query/tools/ask-about-dataset.tool';
 import {GetDataAsDatasetTool} from '../../components/db-query/tools/get-data-as-dataset.tool';
 import {ImproveDatasetTool} from '../../components/db-query/tools/improve-dataset.tool';
@@ -391,27 +392,20 @@ describe('mastra tool wrappers (unit)', () => {
   // ──────────────────────────────────────────────────────────────
 
   describe('AskAboutDatasetTool', () => {
-    it('loads the dataset via its (request-scoped) store and answers via the agent resolved by registry key', async () => {
-      // The tool is REQUEST-scoped (ToolsProvider is REQUEST scope), so its
-      // tenant-scoped collaborators are constructor-injected. Two regressions
-      // guarded here: (1) the SINGLETON ToolsProvider used to skip this tool
-      // because those deps can't resolve at boot; (2) getAgent must use the
-      // registry key `askAboutDatasetAgent`, not the agent id.
-      const generate = sinon
-        .stub()
-        .resolves({text: 'It filters deals by their start date in July.'});
-      const getAgent = sinon
-        .stub()
-        .callsFake((k: string) =>
-          k === 'askAboutDatasetAgent' ? {generate} : undefined,
-        );
-      const mastra = {getAgent} as unknown as Mastra;
+    it('loads the dataset via its (request-scoped) store and answers with a single cheap-tier LLM call (no dedicated agent)', async () => {
+      // v2 parity: ONE direct cheap-LLM call (tracedGenerateText), not an
+      // agent. The tool is REQUEST-scoped so its tenant DatasetStore is
+      // constructor-injected; the cheap-tier model is read from RequestContext.
+      const traced = sinon.stub(dbHelpers, 'tracedGenerateText').resolves({
+        text: 'It filters deals by their start date in July.',
+      } as never);
       const findById = sinon
         .stub()
         .resolves({query: 'SELECT * FROM deals ...', tables: ['deals']});
+      const rc = new RequestContext();
+      rc.set('cheapLlm', {modelId: 'mock'} as never);
 
       const tool = new AskAboutDatasetTool(
-        mastra,
         {findById} as never, // store
         undefined, // checks (GlobalContext, optional)
         {getTablesContext: () => []} as never, // schemaHelper
@@ -419,14 +413,11 @@ describe('mastra tool wrappers (unit)', () => {
       ).build();
       const result = await executeFor(tool)(
         {datasetId: 'ds-1', question: 'which column did you filter on?'},
-        makeCtx(
-          makeRc(() => undefined),
-          'call-1',
-        ),
+        makeCtx(rc, 'call-1'),
       );
 
-      sinon.assert.calledWith(getAgent, 'askAboutDatasetAgent');
       sinon.assert.calledOnceWithExactly(findById, 'ds-1');
+      sinon.assert.calledOnce(traced);
       expect(result).to.equal('It filters deals by their start date in July.');
     });
   });

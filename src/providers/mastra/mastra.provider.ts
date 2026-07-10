@@ -138,21 +138,12 @@ export class MastraProvider implements Provider<Mastra> {
       inputProcessors: [maxTokenCountProcessor],
     });
 
-    // One-shot Q&A agent for the ask-about-dataset tool. Registered on the
-    // singleton (not constructed per-call) so its spans reach the configured
-    // observability exporter. Uses the same dynamic model resolver as chatAgent
-    // so it follows the per-request model binding when called from a tool.
-    const askAboutDatasetAgent = new Agent({
-      id: 'ask-about-dataset-agent',
-      name: 'AskAboutDatasetAgent',
-      instructions:
-        'Answer the user question concisely. Do not reveal the underlying SQL or schema details.',
-      model: ({requestContext}) =>
-        pick<MastraModelConfig>(requestContext, 'agentModel') ?? defaultModel,
-    });
+    // The ask-about-dataset tool no longer needs a dedicated agent: it makes a
+    // single cheap-tier `tracedGenerateText` call (v2 parity — v2 used a plain
+    // CheapLLM RunnableSequence), which already emits a MODEL_GENERATION span.
 
     return new Mastra({
-      agents: {chatAgent, askAboutDatasetAgent},
+      agents: {chatAgent},
       workflows: {
         // Single db-query entry graph both tools call; it dispatches to the
         // generate/improve sub-graphs below (kept registered so the entry
