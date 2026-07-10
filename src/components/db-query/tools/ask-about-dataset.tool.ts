@@ -71,7 +71,10 @@ export class AskAboutDatasetTool implements IGraphTool {
         // emits no traces and re-builds model/instruction plumbing on every
         // invocation. Pass requestContext so the per-request model binding
         // (agentModel) is honoured and spans attach to the parent trace.
-        const agent = this.mastra.getAgent('ask-about-dataset-agent');
+        // Look up by the REGISTRY KEY (`agents: {askAboutDatasetAgent}`), not
+        // the agent's `id` — Mastra.getAgent resolves by map key (cf.
+        // getAgent('chatAgent')). The id returned undefined → threw on generate.
+        const agent = this.mastra.getAgent('askAboutDatasetAgent');
         const result = await agent.generate(prompt, {
           requestContext: ctx?.requestContext,
         });

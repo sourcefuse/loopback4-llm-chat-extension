@@ -97,9 +97,12 @@ export class AiIntegrationsComponent implements Component {
       createBindingFromClass(InProcessRunRegistry, {
         key: AiIntegrationBindings.RunRegistry.key,
       }).inScope(BindingScope.SINGLETON),
+      // REQUEST-scoped (as in the LangGraph version) so each tool resolves
+      // per request with its request-scoped DI (e.g. ask-about-dataset's
+      // tenant DatasetStore). SINGLETON silently skipped those tools at boot.
       createBindingFromClass(ToolsProvider, {
         key: AiIntegrationBindings.Tools.key,
-      }).inScope(BindingScope.SINGLETON),
+      }).inScope(BindingScope.REQUEST),
     ];
 
     this.providers = hasPgVectorEnv()

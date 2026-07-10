@@ -11,22 +11,7 @@ import type {ToolStore} from '../types';
 
 const debug = require('debug')('ai-integration:mastra:tools');
 
-/**
- * Default Mastra tool registry. Tools are discovered DYNAMICALLY by tag
- * (`@graphTool()` stamps `isTOOL: true`) instead of being hardcoded — so a
- * consumer adds a tool simply by binding a `@graphTool()`-decorated class as a
- * service, with no edit to this provider (restores the v2 tag-based discovery).
- *
- * The four built-in tools (get-data, improve-dataset, ask-about-dataset,
- * generate-visualization) are registered the same way. A tool whose
- * dependencies are not bound (e.g. DbQueryComponent / VisualizerComponent not
- * mounted) fails to resolve and is skipped, so the store stays resolvable in
- * partial mounts.
- *
- * SINGLETON so the underlying tool instances (which carry their own DI) are
- * constructed once and re-used per request.
- */
-@injectable({scope: BindingScope.SINGLETON})
+@injectable({scope: BindingScope.REQUEST})
 export class ToolsProvider implements Provider<ToolStore> {
   constructor(
     @inject.context()

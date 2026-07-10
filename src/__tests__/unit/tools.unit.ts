@@ -2,6 +2,7 @@ import {expect, sinon} from '@loopback/testlab';
 import {Mastra} from '@mastra/core';
 import {RequestContext} from '@mastra/core/request-context';
 import type {Tool, ToolExecutionContext} from '@mastra/core/tools';
+import {AskAboutDatasetTool} from '../../components/db-query/tools/ask-about-dataset.tool';
 import {GetDataAsDatasetTool} from '../../components/db-query/tools/get-data-as-dataset.tool';
 import {ImproveDatasetTool} from '../../components/db-query/tools/improve-dataset.tool';
 import {GenerateVisualizationTool} from '../../components/visualization/tools/generate-visualization.tool';
@@ -382,6 +383,51 @@ describe('mastra tool wrappers (unit)', () => {
       await expect(
         executeFor(tool)({prompt: 'q'}, makeCtx(makeRc(writer))),
       ).to.be.rejectedWith(/visualizationGraph not registered/);
+    });
+  });
+
+  // ──────────────────────────────────────────────────────────────
+  // AskAboutDatasetTool
+  // ──────────────────────────────────────────────────────────────
+
+  describe('AskAboutDatasetTool', () => {
+    it('loads the dataset via its (request-scoped) store and answers via the agent resolved by registry key', async () => {
+      // The tool is REQUEST-scoped (ToolsProvider is REQUEST scope), so its
+      // tenant-scoped collaborators are constructor-injected. Two regressions
+      // guarded here: (1) the SINGLETON ToolsProvider used to skip this tool
+      // because those deps can't resolve at boot; (2) getAgent must use the
+      // registry key `askAboutDatasetAgent`, not the agent id.
+      const generate = sinon
+        .stub()
+        .resolves({text: 'It filters deals by their start date in July.'});
+      const getAgent = sinon
+        .stub()
+        .callsFake((k: string) =>
+          k === 'askAboutDatasetAgent' ? {generate} : undefined,
+        );
+      const mastra = {getAgent} as unknown as Mastra;
+      const findById = sinon
+        .stub()
+        .resolves({query: 'SELECT * FROM deals ...', tables: ['deals']});
+
+      const tool = new AskAboutDatasetTool(
+        mastra,
+        {findById} as never, // store
+        undefined, // checks (GlobalContext, optional)
+        {getTablesContext: () => []} as never, // schemaHelper
+        {filteredSchema: () => ({})} as never, // schemaStore
+      ).build();
+      const result = await executeFor(tool)(
+        {datasetId: 'ds-1', question: 'which column did you filter on?'},
+        makeCtx(
+          makeRc(() => undefined),
+          'call-1',
+        ),
+      );
+
+      sinon.assert.calledWith(getAgent, 'askAboutDatasetAgent');
+      sinon.assert.calledOnceWithExactly(findById, 'ds-1');
+      expect(result).to.equal('It filters deals by their start date in July.');
     });
   });
 });
