@@ -1,90 +1,116 @@
-import {PromptTemplate} from '@langchain/core/prompts';
-import {RunnableSequence, RunnableToolLike} from '@langchain/core/runnables';
-import {StructuredToolInterface, tool} from '@langchain/core/tools';
-import {inject} from '@loopback/context';
-import {service} from '@loopback/core';
-import {AnyObject} from '@loopback/repository';
-import z from 'zod';
+import {inject} from '@loopback/core';
+import {createTool} from '@mastra/core/tools';
+import type {Tool} from '@mastra/core/tools';
+import {z} from 'zod';
+import {IGraphTool, ToolStatus} from '../../../graphs/types';
+import {LLMStreamEventType} from '../../../graphs/event.types';
+import {asEventWriter} from '../../../graphs/tool-event.util';
 import {graphTool} from '../../../decorators';
-import {IGraphTool} from '../../../graphs';
-import {AiIntegrationBindings} from '../../../keys';
-import {LLMProvider} from '../../../types';
 import {stripThinkingTokens} from '../../../utils';
 import {DbQueryAIExtensionBindings} from '../keys';
 import {DbSchemaHelperService} from '../services';
 import {SchemaStore} from '../services/schema.store';
-import {IDataSetStore} from '../types';
+import {getCheapLlm, tracedGenerateText, type MastraRc} from '../_helpers';
+import type {IDataSetStore} from '../types';
 
+/**
+ * Mastra-shaped dataset Q&A tool. Read-only: load the saved dataset, build a
+ * single-turn prompt from its query + compressed schema + context, and make ONE
+ * cheap-tier LLM call to phrase the answer.
+ *
+ * This mirrors the LangGraph version exactly — v2 ran a
+ * `RunnableSequence([prompt, CheapLLM, stripThinkingTokens])`; the Mastra
+ * equivalent is a single `tracedGenerateText` call on the cheap-tier model
+ * resolved from the RequestContext. No dedicated agent is needed: a one-shot
+ * completion has no tools/memory, and `tracedGenerateText` already emits a
+ * MODEL_GENERATION span (the same tracing every db-query node gets).
+ */
 @graphTool()
 export class AskAboutDatasetTool implements IGraphTool {
+  needsReview = false;
+  key = 'ask-about-dataset';
   constructor(
     @inject(DbQueryAIExtensionBindings.DatasetStore)
     private readonly store: IDataSetStore,
-    @inject(AiIntegrationBindings.CheapLLM)
-    private readonly sqlllm: LLMProvider,
-    @service(DbSchemaHelperService)
-    private readonly dbSchemaHelper: DbSchemaHelperService,
-    @service(SchemaStore)
-    private readonly schemaStore: SchemaStore,
     @inject(DbQueryAIExtensionBindings.GlobalContext, {optional: true})
-    private readonly checks?: string[],
+    private readonly checks: string[] | undefined,
+    @inject('services.DbSchemaHelperService')
+    private readonly schemaHelper: DbSchemaHelperService,
+    @inject('services.SchemaStore')
+    private readonly schemaStore: SchemaStore,
   ) {}
 
-  key = 'ask-about-dataset';
-  needsReview = false;
-
-  private readonly prompt =
-    PromptTemplate.fromTemplate(`You are an AI assistant that answers questions about a query, without revealing any technical details, you need to answer the question the user's question.
-  Make sure you don't reveal the original query to the user, just answer the question based on the query.
-  Here is the query that the question was for -
-  {query}
-
-  and here is the schema the query was generated for -
-  {schema}
-
-  and here is the context that was provided for the query - 
-  {context}
-
-  and here is the user's question -
-  {question}`);
-
-  async build(): Promise<StructuredToolInterface | RunnableToolLike> {
-    const chain = RunnableSequence.from([
-      this.prompt,
-      this.sqlllm,
-      stripThinkingTokens,
-    ]);
-
-    const schema = z.object({
-      datasetId: z
-        .string()
-        .describe('uuid ID of the dataset to answer the question for'),
-      question: z
-        .string()
-        .describe('The question that the user asked about the query.'),
-    }) as AnyObject[string];
-
-    return tool(
-      async (args: {datasetId: string; question: string}) => {
-        const {query, tables} = await this.store.findById(args.datasetId);
-        const compressedSchema = this.schemaStore.filteredSchema(tables);
-        const response = await chain.invoke({
-          query,
-          question: args.question,
-          schema: compressedSchema,
-          context: [
-            ...(this.checks ?? []),
-            ...this.dbSchemaHelper.getTablesContext(compressedSchema),
-          ].join('\n'),
+  build(): Tool {
+    return createTool({
+      id: this.key,
+      description:
+        "Answer a follow-up question about a dataset you already generated in this conversation (you have its id) — INCLUDING which columns, filters, date/month conditions, sort orders, or joins were applied and how the data was selected. It reads the dataset's stored query, so it knows the real answer — use it instead of saying you lack visibility or guessing. Requires a valid dataset ID.",
+      inputSchema: z.object({
+        datasetId: z
+          .string()
+          .describe('uuid ID of the dataset to answer the question for'),
+        question: z
+          .string()
+          .describe('The question that the user asked about the query.'),
+      }),
+      execute: async ({datasetId, question}, ctx) => {
+        // Emit the Running → Completed/Failed tool-status lifecycle so the UI
+        // shows this tool's progress like the other db-query tools (and like
+        // the v2 tool events which carried `status: 'running'`).
+        const writer = asEventWriter(ctx?.requestContext?.get('eventWriter'));
+        const toolCallId = ctx?.agent?.toolCallId ?? this.key;
+        writer?.({
+          type: LLMStreamEventType.ToolStatus,
+          data: {id: toolCallId, status: ToolStatus.Running},
         });
-        return response;
+        try {
+          // Cheap-tier model from the request context (v2 injected CheapLLM).
+          // Read at execute time — resolved tiers are bound late, per request.
+          const model = getCheapLlm(
+            ctx?.requestContext as MastraRc | undefined,
+          );
+          if (!model) {
+            writer?.({
+              type: LLMStreamEventType.ToolStatus,
+              data: {id: toolCallId, status: ToolStatus.Failed},
+            });
+            return "I couldn't reach a model to explain that dataset. Please try again.";
+          }
+          const {query, tables} = await this.store.findById(datasetId);
+          const compressedSchema = this.schemaStore.filteredSchema(tables);
+          const context = [
+            ...(this.checks ?? []),
+            ...this.schemaHelper.getTablesContext(compressedSchema),
+          ].join('\n');
+          const prompt = [
+            'You are an AI assistant that answers questions about a query, without revealing any technical details, you need to answer the question the users question.',
+            'Make sure you dont reveal the original query to the user, just answer the question based on the query.',
+            `Here is the query that the question was for - ${query}`,
+            `and here is the schema the query was generated for - ${JSON.stringify(compressedSchema)}`,
+            `and here is the context that was provided for the query - ${context}`,
+            `and here is the user's question - ${question}`,
+          ].join('\n');
+
+          const result = await tracedGenerateText({
+            model,
+            prompt,
+            tracing: ctx?.tracing,
+            label: 'ask-about-dataset',
+            resultType: 'response_generation',
+          });
+          writer?.({
+            type: LLMStreamEventType.ToolStatus,
+            data: {id: toolCallId, status: ToolStatus.Completed},
+          });
+          return stripThinkingTokens(result.text);
+        } catch (err) {
+          writer?.({
+            type: LLMStreamEventType.ToolStatus,
+            data: {id: toolCallId, status: ToolStatus.Failed},
+          });
+          throw err;
+        }
       },
-      {
-        name: this.key,
-        description:
-          'Tool for answering questions about an existing dataset, note that it can only answer questions about the dataset definition, not the data it contains. Call this only if you have a valid dataset ID available.',
-        schema,
-      },
-    );
+    });
   }
 }

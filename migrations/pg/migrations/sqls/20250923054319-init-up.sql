@@ -20,7 +20,6 @@ CREATE TABLE chatbot.chats (
 	deleted_on timestamptz DEFAULT CURRENT_TIMESTAMP NOT NULL,
 	modified_by uuid NULL,
 	modified_on timestamptz DEFAULT CURRENT_TIMESTAMP NOT NULL,
-	metadata jsonb NOT NULL,
 	CONSTRAINT pk_chats_id PRIMARY KEY (id)
 );
 

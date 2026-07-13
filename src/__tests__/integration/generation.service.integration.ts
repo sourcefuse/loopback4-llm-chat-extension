@@ -1,4 +1,3 @@
-import {IterableReadableStream} from '@langchain/core/utils/stream';
 import {Request, Response} from '@loopback/rest';
 import {
   createStubInstance,
@@ -7,7 +6,8 @@ import {
   StubbedInstanceWithSinonAccessor,
 } from '@loopback/testlab';
 import {PassThrough} from 'stream';
-import {ChatGraph, LLMStreamEvent} from '../../graphs';
+import {LLMStreamEvent} from '../../graphs';
+import {ChatGraph} from '../../graphs/chat/chat.graph';
 import {GenerationService} from '../../services';
 import {HttpTransport, SSETransport} from '../../transports';
 
@@ -34,8 +34,8 @@ describe(`GenerationService Integration`, () => {
     });
     it('should handle generation request and return response', async () => {
       const dummyStream = new PassThrough({objectMode: true});
-      graph.stubs.execute.callsFake(async () => {
-        return dummyStream as unknown as IterableReadableStream<LLMStreamEvent>;
+      graph.stubs.execute.callsFake(() => {
+        return dummyStream as unknown as AsyncIterable<LLMStreamEvent>;
       });
       dummyStream.push({
         type: 'text',
@@ -85,10 +85,10 @@ describe(`GenerationService Integration`, () => {
       expect(endCalls.length).to.be.eql(1);
     });
 
-    it('should handle error gracyfully', async () => {
+    it('should handle error gracefully', async () => {
       const dummyStream = new PassThrough({objectMode: true});
-      graph.stubs.execute.callsFake(async () => {
-        return dummyStream as unknown as IterableReadableStream<LLMStreamEvent>;
+      graph.stubs.execute.callsFake(() => {
+        return dummyStream as unknown as AsyncIterable<LLMStreamEvent>;
       });
       dummyStream.push({
         type: 'text',
@@ -154,8 +154,8 @@ describe(`GenerationService Integration`, () => {
     });
     it('should handle generation request and return response', async () => {
       const dummyStream = new PassThrough({objectMode: true});
-      graph.stubs.execute.callsFake(async () => {
-        return dummyStream as unknown as IterableReadableStream<LLMStreamEvent>;
+      graph.stubs.execute.callsFake(() => {
+        return dummyStream as unknown as AsyncIterable<LLMStreamEvent>;
       });
       dummyStream.push({
         type: 'text',
@@ -199,10 +199,10 @@ describe(`GenerationService Integration`, () => {
       expect(endCalls.length).to.be.eql(1);
     });
 
-    it('should handle error gracyfully', async () => {
+    it('should handle error gracefully', async () => {
       const dummyStream = new PassThrough({objectMode: true});
-      graph.stubs.execute.callsFake(async () => {
-        return dummyStream as unknown as IterableReadableStream<LLMStreamEvent>;
+      graph.stubs.execute.callsFake(() => {
+        return dummyStream as unknown as AsyncIterable<LLMStreamEvent>;
       });
       dummyStream.push({
         type: 'text',

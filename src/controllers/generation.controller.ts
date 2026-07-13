@@ -1,4 +1,4 @@
-import {service} from '@loopback/core';
+import {inject} from '@loopback/core';
 import {post} from '@loopback/rest';
 import {OPERATION_SECURITY_SPEC} from '@sourceloop/core';
 import {multipartRequestBody} from '@sourceloop/file-utils';
@@ -10,7 +10,7 @@ import {GenerationService} from '../services';
 
 export class GenerationController {
   constructor(
-    @service(GenerationService)
+    @inject('services.GenerationService')
     private readonly generationService: GenerationService,
   ) {}
   @authenticate(STRATEGY.BEARER, {

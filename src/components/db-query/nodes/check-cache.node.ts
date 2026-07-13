@@ -1,201 +1,183 @@
-import {DocumentInterface} from '@langchain/core/documents';
-import {PromptTemplate} from '@langchain/core/prompts';
-import {BaseRetriever} from '@langchain/core/retrievers';
-import {RunnableSequence} from '@langchain/core/runnables';
-import {inject, service} from '@loopback/core';
+import {inject} from '@loopback/core';
+import type {TracingContext} from '@mastra/core/observability';
+import type {LanguageModel} from 'ai';
 import {graphNode} from '../../../decorators';
-import {
-  IGraphNode,
-  LLMStreamEventType,
-  RunnableConfig,
-  ToolStatus,
-} from '../../../graphs';
+import type {IGraphNode, GraphNodeCtx} from '../../../graphs/types';
 import {AiIntegrationBindings} from '../../../keys';
-import {LLMProvider} from '../../../types';
-import {stripThinkingTokens} from '../../../utils';
 import {DbQueryAIExtensionBindings} from '../keys';
+import type {DataSetHelper} from '../services';
+import type {CacheDoc, CacheOut, QueryCache} from '../types';
+import {
+  emitToolStatus,
+  idToString,
+  tracedGenerateText,
+  type Rc,
+} from '../_helpers';
 import {DbQueryNodes} from '../nodes.enum';
-import {DataSetHelper} from '../services';
-import {DbQueryState} from '../state';
-import {CacheResults, QueryCacheMetadata} from '../types';
-import {DatasetActionType} from '../constant';
 
+const MISS: CacheOut = {cacheHit: false};
+
+/**
+ * Semantic-cache gate (the successor of the LangGraph CheckCacheNode). A
+ * DI-resolved `@graphNode` class with constructor-injected collaborators (query
+ * cache, dataset helper, cheap LLM tier).
+ *
+ * All the judge/resolve logic lives on the class as `protected` methods so a
+ * host app can `extends CheckCacheNode` and override a single step (e.g. swap
+ * the judge prompt or the AsIs reuse rules) without rewriting `execute`, then
+ * rebind its subclass with `@graphNode(DbQueryNodes.CheckCache)`.
+ */
 @graphNode(DbQueryNodes.CheckCache)
-export class CheckCacheNode implements IGraphNode<DbQueryState> {
+export class CheckCacheNode implements IGraphNode<{prompt?: string}, CacheOut> {
   constructor(
-    @inject(DbQueryAIExtensionBindings.QueryCache)
-    private readonly cache: BaseRetriever<QueryCacheMetadata>,
-    @inject(AiIntegrationBindings.CheapLLM)
-    private readonly smartLLM: LLMProvider,
-    @service(DataSetHelper)
-    private readonly dataSetHelper: DataSetHelper,
+    @inject(DbQueryAIExtensionBindings.QueryCache, {optional: true})
+    protected readonly queryCache?: QueryCache,
+    @inject('services.DataSetHelper', {optional: true})
+    protected readonly dataSetHelper?: DataSetHelper,
+    @inject(AiIntegrationBindings.ChatModel, {optional: true})
+    protected readonly chatModel?: LanguageModel,
+    @inject(AiIntegrationBindings.CheapModel, {optional: true})
+    protected readonly cheapModel?: LanguageModel,
   ) {}
-  prompt = PromptTemplate.fromTemplate(`
-<instructions>
-You are an expert Semantic analyser, you will be given a prompt from the user and a list of past prompts that were handled successfully, along with description of the sql generated from those prompts.
-You need to return the most relevant prompt from the list and in which of the following ways is it relevant -
-- return '${CacheResults.AsIs}' if the prompt's result would contain the information the user is looking for without any changes in the result, and can be used as it is.
-- return '${CacheResults.Similar}' if the prompt's result would be similar to the question in the new prompt but not exactly, and can be modified to get the data user needs.
-- return '${CacheResults.NotRelevant}' if the prompt is not relevant to the new prompt at all.
-Remember that if the cached prompt has extra information, then still the old prompt could be considered exactly same as long as it does not contradict the new prompt.
-</instructions>
-<user-prompt>
-{prompt}
-</user-prompt>
-<queries>
-{queries}
-</queries>
-<output-format>
-format -
-relevant index-of-query-starting-from-1
-examples -
-${CacheResults.AsIs} 2
 
-${CacheResults.Similar} 1
+  async execute({
+    inputData,
+    requestContext,
+    tracingContext,
+  }: GraphNodeCtx<{prompt?: string}>): Promise<CacheOut> {
+    const data = inputData;
+    if (!data.prompt) return MISS;
+    const cache = this.queryCache;
+    const chatLlm = this.cheapModel ?? this.chatModel;
+    if (!cache || !chatLlm) return MISS;
 
-${CacheResults.NotRelevant}
-
-</output-format>
-<output-instructions>
-Do not return any other text or explanation, just the output in the above format.
-If no queries are relevant, return '${CacheResults.NotRelevant}' and nothing else.
-</output-instructions>`);
-  async execute(
-    state: DbQueryState,
-    config: RunnableConfig,
-  ): Promise<Partial<DbQueryState>> {
-    if (state.sampleSql) {
-      return {};
+    let docs: CacheDoc[] = [];
+    try {
+      docs = await cache.invoke(data.prompt);
+    } catch {
+      return MISS;
     }
-    const relevantDocs = await this.cache.invoke(state.prompt, config);
-    if (relevantDocs.length === 0) {
-      return {};
-    }
-    const chain = RunnableSequence.from([
-      this.prompt,
-      this.smartLLM,
-      stripThinkingTokens,
-    ]);
+    if (docs.length === 0) return MISS;
 
-    const response = await chain.invoke(
-      {
-        queries: relevantDocs
-          .map(
-            (doc, index) =>
-              `<query-${index + 1}>\n<prompt>\n${doc.pageContent}\n</prompt>\n<description>${doc.metadata.description}</description></query-${index + 1}>`,
-          )
-          .join('\n'),
-        prompt: state.prompt,
-      },
-      config,
+    return this.judgeCache(
+      docs,
+      data.prompt,
+      chatLlm,
+      requestContext,
+      tracingContext,
     );
-
-    const [relevance, index] = response.split(' ');
-    const indexNum = parseInt(index, 10) - 1; // Convert to 0-based index
-    if (relevance === CacheResults.NotRelevant) {
-      config.writer?.({
-        type: LLMStreamEventType.Log,
-        data: `No relevant queries found in cache for this prompt`,
-      });
-      return {};
-    }
-    if (indexNum >= relevantDocs.length || indexNum < 0 || isNaN(indexNum)) {
-      config.writer?.({
-        type: LLMStreamEventType.Log,
-        data: `Index ${index} is out of bounds for the list of relevant queries.
-          Available queries: ${this._buildCacheLog(relevantDocs)}`,
-      });
-      return {};
-    }
-    if (relevance === CacheResults.AsIs) {
-      const missingPermissions = await this.dataSetHelper.checkPermissions(
-        relevantDocs[indexNum].metadata.datasetId,
-      );
-      if (missingPermissions.length > 0) {
-        config.writer?.({
-          type: LLMStreamEventType.Log,
-          data: `Found relevant query in cache, but missing permissions: ${missingPermissions.join(
-            ', ',
-          )} so generating new query`,
-        });
-        return {};
-      }
-      config.writer?.({
-        type: LLMStreamEventType.Log,
-        data: `Found relevant query in cache, using it as is`,
-      });
-      config.writer?.({
-        type: LLMStreamEventType.ToolStatus,
-        data: {
-          status: `Found relevant query in cache`,
-        },
-      });
-      const [dataset] = await this.dataSetHelper.find({
-        where: {
-          id: relevantDocs[indexNum].metadata.datasetId,
-        },
-        include: [{relation: 'actions'}],
-      });
-      if (
-        !dataset ||
-        (dataset.actions?.length &&
-          dataset.actions?.some(a => a.action === DatasetActionType.Disliked))
-      ) {
-        config.writer?.({
-          type: LLMStreamEventType.Log,
-          data: `Found relevant query in cache, but the dataset was not found or was disliked by the user, so generating new query`,
-        });
-        return {};
-      }
-      const datasetId = relevantDocs[indexNum].metadata.datasetId;
-      if (!state.directCall) {
-        config.writer?.({
-          type: LLMStreamEventType.ToolStatus,
-          data: {
-            status: ToolStatus.Completed,
-            data: {
-              datasetId,
-            },
-          },
-        });
-      }
-
-      return {
-        fromCache: true,
-        datasetId,
-        replyToUser: `I found this dataset in the cache - ${relevantDocs[indexNum].pageContent}`,
-      };
-    }
-    if (relevance === CacheResults.Similar) {
-      config.writer?.({
-        type: LLMStreamEventType.Log,
-        data: `Found similar query in cache, using it as example`,
-      });
-      config.writer?.({
-        type: LLMStreamEventType.ToolStatus,
-        data: {
-          status: `Found similar query in cache, using it as example`,
-        },
-      });
-      config.writer?.({
-        type: LLMStreamEventType.ToolStatus,
-        data: {
-          status: `Found relevant query in cache`,
-        },
-      });
-      return {
-        sampleSql: relevantDocs[indexNum].metadata.query,
-        sampleSqlPrompt: relevantDocs[indexNum].pageContent,
-      };
-    }
-    return {};
   }
 
-  private _buildCacheLog(
-    relevantDocs: DocumentInterface<QueryCacheMetadata>[],
-  ) {
-    return relevantDocs
-      .map((doc, i) => `${i + 1}. ${doc.pageContent}`)
-      .join('\n');
+  protected buildJudgePrompt(prompt: string, docs: CacheDoc[]): string {
+    const queries = docs.map((d, i) => `${i + 1}. ${d.pageContent}`).join('\n');
+    return `You are a semantic analyser. Given a user's prompt and a list of past prompts that were handled, return the most relevant past prompt and how it relates.
+- Return 'AsIs <index>' when the past prompt's result fully answers the new prompt without changes.
+- Return 'Similar <index>' when it is close but needs modification.
+- Return 'NotRelevant' when nothing fits.
+
+User prompt: ${prompt}
+Past prompts:
+${queries}
+
+Return ONLY the verdict, no other text.`;
+  }
+
+  protected docAt(
+    docs: CacheDoc[],
+    match: RegExpMatchArray,
+  ): CacheDoc | undefined {
+    return docs[Number.parseInt(match[1], 10) - 1];
+  }
+
+  // "Similar" → still regenerate (cacheHit:false), but seed SQL gen with the
+  // matched query as a worked example (v2 sampleSql/sampleSqlPrompt).
+  protected async resolveSimilar(
+    docs: CacheDoc[],
+    match: RegExpMatchArray,
+    rc: Rc,
+  ): Promise<CacheOut> {
+    emitToolStatus(
+      rc,
+      DbQueryNodes.CheckCache,
+      'Found similar query in cache, using it as example',
+    );
+    const doc = this.docAt(docs, match);
+    if (!doc?.metadata?.id) return MISS;
+    const sample = await this.dataSetHelper?.loadSampleQuery(
+      idToString(doc.metadata.id),
+      doc.pageContent,
+    );
+    return sample ? {cacheHit: false, ...sample} : MISS;
+  }
+
+  // "AsIs" → reuse the cached dataset, unless it was disliked or vanished
+  // (restores v2 CheckCacheNode dislike filtering) in which case regenerate.
+  protected async resolveAsIs(
+    docs: CacheDoc[],
+    match: RegExpMatchArray,
+    rc: Rc,
+  ): Promise<CacheOut> {
+    emitToolStatus(
+      rc,
+      DbQueryNodes.CheckCache,
+      'Found relevant query in cache',
+    );
+    const doc = this.docAt(docs, match);
+    if (!doc?.metadata?.id) return MISS;
+    const datasetId = idToString(doc.metadata.id);
+
+    // Re-check table permissions on the cached dataset before reusing it (v2
+    // CheckCacheNode parity). A semantic-cache hit can surface another user's
+    // dataset in the same tenant; if THIS user lacks permission on its tables,
+    // regenerate instead of serving it. The read-time ACL would block delivery
+    // anyway, but skipping here gives the user a fresh, answerable query rather
+    // than an Unauthorized error. Fail-open when no DataSetHelper is bound.
+    const dataSetHelper = this.dataSetHelper;
+    if (dataSetHelper) {
+      const missing = await dataSetHelper.checkPermissions(datasetId);
+      if (missing.length > 0) {
+        emitToolStatus(
+          rc,
+          DbQueryNodes.CheckCache,
+          'Cached result needs tables you cannot access — generating a fresh query',
+        );
+        return MISS;
+      }
+      if (!(await dataSetHelper.isCachedDatasetUsable(datasetId))) {
+        emitToolStatus(
+          rc,
+          DbQueryNodes.CheckCache,
+          'Cached result was disliked — generating a fresh query',
+        );
+        return MISS;
+      }
+    }
+    return {cacheHit: true, datasetId};
+  }
+
+  protected async judgeCache(
+    docs: CacheDoc[],
+    prompt: string,
+    chatLlm: LanguageModel,
+    rc: Rc,
+    tracing: TracingContext | undefined,
+  ): Promise<CacheOut> {
+    try {
+      const verdict = await tracedGenerateText({
+        model: chatLlm,
+        prompt: this.buildJudgePrompt(prompt, docs),
+        tracing,
+        label: 'cache-judge',
+        resultType: 'reasoning',
+      });
+      const text = verdict.text.trim();
+      const similar = text.match(/Similar\s+(\d+)/i);
+      if (similar) return await this.resolveSimilar(docs, similar, rc);
+      const asIs = text.match(/AsIs\s+(\d+)/i);
+      if (asIs) return await this.resolveAsIs(docs, asIs, rc);
+    } catch {
+      // degrade to a cache miss on judge failure
+    }
+    return MISS;
   }
 }

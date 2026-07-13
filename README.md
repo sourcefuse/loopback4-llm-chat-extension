@@ -25,7 +25,37 @@
 
 ### Overview
 
-A Loopack4 based component to integrate a basic Langgraph.js based endpoint in your application which can use any tool that you register using the provided decorator.
+A Loopback4 based component to integrate an LLM chat endpoint (powered by [Mastra](https://mastra.ai)) into your application, with pluggable tools, model providers, storage, and observability.
+
+### Upgrading from 3.x to 4.0 (Breaking changes)
+
+`4.0.0` replaces the LangChain/LangGraph runtime with [Mastra](https://mastra.ai) + the Vercel AI SDK. The dependency-injection **binding keys are unchanged**, but the value types behind several of them changed. If you consume `3.x`, review the following:
+
+- **LLM provider value type.** `AiIntegrationBindings.{ChatLLM, CheapLLM, SmartLLM, SmartNonThinkingLLM, FileLLM}` now resolve to an AI-SDK `LanguageModelV2` instead of a LangChain `BaseChatModel`. Code that injects these and calls LangChain APIs (`.invoke()`, `.pipe()`, etc.) must migrate to the AI-SDK surface (or call the model through the component's tools/workflows instead of directly). There is no LangChain compatibility shim.
+- **Embedding provider value type.** `AiIntegrationBindings.EmbeddingModel` now resolves to an AI-SDK embedding model rather than a LangChain `Embeddings`.
+- **`RunnableConfig` and the LangGraph types are no longer exported** (`@langchain/langgraph` was removed). Tools no longer receive a `LangGraphRunnableConfig`; the Mastra tool/step context replaces it.
+- **`db-query` exports — what changed.** The node classes and enum are **still exported** (`./nodes`, `./nodes.enum`), and each node remains a DI-resolvable `@graphNode` seam (see "Overriding node behaviour" below). What was removed is the LangGraph-only `./state` module. The compiled `DbQueryGraph` class's successor is `dbQueryGraph` (exported from the `db-query` barrel) — the single graph both the `get-data-as-dataset` and `improve-dataset` tools call, which dispatches at its entry node on `datasetId` (absent → generate, present → improve), mirroring v3's one `DbQueryGraph` with its `IsImprovement` entry. The two paths it dispatches to are also exported (`generateQueryGraph` / `improveQueryGraph`) for composition. The relevant-table selection seam is the overridable `GetColumnsNode.selectRelevantTables()` (the underlying `pickRelevantTables` helper is also exported).
+- **`IDataSetStore` gained required methods.** `deleteById` and `deleteAll` are now required members; existing implementations must add them.
+- **Node.js.** The supported engines are now `22 || 24` (Node 18/20 dropped).
+- **Provider inference knobs.** `CLAUDE_THINKING`/`CLAUDE_THINKING_BUDGET` and the `*_TEMPERATURE` env vars **are honoured** — the AI-SDK providers are stateless, so these are applied at call time via `providerOptions` / `temperature` on every LLM call (Anthropic, Bedrock, and OpenRouter reasoning shapes are all emitted). The only knobs not yet re-wired are Cerebras-specific `CEREBRAS_TOP_P` / `CEREBRAS_MAX_TOKENS`; set those via a custom provider if you depend on them.
+
+#### Backward-compatibility aliases (no code change required)
+
+These `3.x` symbols/paths were preserved so existing imports keep resolving:
+
+- **`TokenCounter`** — re-exported as an alias of its Mastra successor `UsageAccumulator` (same per-request token-accounting role).
+- **`IGraphTool.needsReview`** — retained as an optional field (currently inert; the Agent drives tool calls). The human-in-the-loop successor `requireApproval` lands in a later release.
+- **Observability subpaths** — `lb4-llm-chat-component/langfuse`, `/langsmith`, and `/observability` still resolve (alongside the newer `/mastra-*` aliases).
+
+#### Overriding node behaviour
+
+Every node is DI-resolved per request from a `@graphNode(key)` class, exactly as in `3.x`. To customise behaviour, `extends` the node, override a method, and rebind the subclass under the same `@graphNode` key. The prompt/selection logic is exposed as small overridable seams so you don't have to re-implement `execute`:
+
+- `SqlGenerationNode.buildPrompt()` — the SQL-generation prompt (dialect, house style, guard rules).
+- `FixQueryNode.buildPrompt()` — the SQL-repair prompt.
+- `GetColumnsNode.selectRelevantTables()` — table-relevance selection + the "unanswerable" gate.
+- `SelectVisualizationNode.buildSelectionPrompt()` / `parseSelection()` — visualizer choice for custom chart types.
+- `RenderVisualizationNode.pickVisualizer()` / `CallQueryGenerationNode.pickVisualizer()` — the unknown-chart-type fallback policy.
 
 ### Installation
 
@@ -47,7 +77,7 @@ export class MyApplication extends BootMixin(
   ServiceMixin(RepositoryMixin(RestApplication)),
 ) {
   constructor(options: ApplicationConfig = {}) {
-    // could be any LLM provider or your own LangGraph supported LLM provider
+    // could be any bundled LLM provider or your own AI-SDK (Mastra) compatible provider
     // you can also have different LLM for different LLM type - cheap, smart and multimodal
     this.bind(AiIntegrationBindings.CheapLLM).toProvider(Ollama);
     this.bind(AiIntegrationBindings.SmartLLM).toProvider(Ollama);
@@ -131,7 +161,24 @@ this.bind(AiIntegrationBindings.SmartLLM).toProvider(Bedrock);
 this.bind(AiIntegrationBindings.FileLLM).toProvider(Bedrock);
 ```
 
-This binding would add an endpoint `/generate` in your service, that can answer user's query using the registered tools. By default, the module gives one set of tools through the `DbQueryComponent`
+This binding adds a `POST /reply` endpoint in your service that answers a user's query using the registered tools (streaming SSE; bind `HttpTransport` or set `DISABLE_STREAMING=true` for a buffered JSON array). By default, the module gives one set of tools through the `DbQueryComponent`.
+
+## Chat history API
+
+Chat history lives in Mastra Memory (threads + messages in the bound storage). Three read endpoints expose it, scoped to the authenticated user and shaped like the v2 `Chat`/`Message` model:
+
+| Route | Returns |
+|-------|---------|
+| `GET /chats` | the user's threads — `id`, `title`, `tenantId`, `userId`, `inputTokens`/`outputTokens`, `createdOn`/`modifiedOn` |
+| `GET /chats/{id}` | one thread **with** its `messages` |
+| `GET /chats/{id}/messages` | just that thread's messages |
+
+Each Mastra message is flattened into v2-style `user` / `ai` / `tool` messages. A `tool` message carries the metadata a UI needs to **re-run from history**:
+
+- `metadata.existingDatasetId` + `toolName` + `args` → re-run / “Load Dataset”.
+- `metadata.visualization` + `metadata.config` → re-render the chart (visualization tool).
+
+`title` defaults to the first prompt (`New Chat` if empty). All three require the `ViewChat` permission.
 
 ## Limiters
 
@@ -376,7 +423,12 @@ this.bind(DbQueryAIExtensionBindings.Config).to({
   },
   readAccessForAI: false // give access of the query result to the llm
   maxRowsForAI: 0 // number of rows from the result that are passed to the LLM
-  columnSelection: false // add a column selection step in generation in case you have tables with a lot of columns.
+  // Relevant-table/column narrowing before SQL generation (wire from an env
+  // var, e.g. process.env.COLUMN_SELECTION === 'true'):
+  //   true  -> pass only the LLM-selected subset of tables to SQL generation
+  //            (use for WIDE schemas to keep the prompt small)
+  //   false -> (default) pass ALL upstream tables (safer for joins, larger prompt)
+  columnSelection: false
 });
 ```
 
@@ -462,35 +514,336 @@ this.bind(DbQueryAIExtensionBindings.DefaultConditions).to(
 );
 ```
 
-## Writing Your Own Tool
+# Extending the component
 
-You can register your own tools by simply using the `@graphTool()` decorator and implementing the `IGraphTool` interface. Any such class would be automatically registered with the `/generate` endpoint and the LLM would be able to use it as a tool.
+The chat agent, its tools, the model tiers, storage, and the db-query
+workflows are all resolved through LoopBack bindings, so each can be customized
+or replaced from your application without forking the package. Building blocks
+for the advanced cases (steps, workflows, the `MastraProvider`) are exported
+from the `lb4-llm-chat-component/mastra` subpath; everything else from the
+package root.
+
+## Tools
+
+A tool is a [Mastra `createTool`](https://mastra.ai) wrapper that implements
+`IGraphTool` — a `key` plus a `build()` that returns the tool. Optional
+`getValue(result)` / `getMetadata(result)` shape what the agent and the SSE
+stream receive after the tool runs.
+
+Tools are **discovered automatically by tag** — the default registry
+(`DefaultToolsProvider`, bound at `AiIntegrationBindings.Tools`) collects every
+class decorated with `@graphTool()` via `findByTag`. The four built-in tools are
+registered this way, and so is yours: decorate it and bind it as a service — no
+custom registry, no editing a shared list, no need to reference the internal
+Tools binding. Adding a fifth tool later is just decorating it.
 
 ```ts
-import {tool} from '@langchain/core/tools';
-import z from 'zod';
+// my-add.tool.ts
+import {createTool} from '@mastra/core/tools';
+import {z} from 'zod';
 import {graphTool, IGraphTool} from 'lb4-llm-chat-component';
 
-...
-@graphTool()
+@graphTool() // ← stamps `isTOOL:true`; DefaultToolsProvider auto-discovers it
 export class AddTool implements IGraphTool {
-  needsReview = false;
+  key = 'add-tool';
 
   build() {
-    return tool((ob: {a: number, b: number}) => {
-        return ob.a + ob.b
-    },
-    {
-        name: 'add-tool',
-        description: 'a tool to add two numbers',
-        schema: z.object({
-            a: z.number(),
-            b: z.number()
-        })
+    return createTool({
+      id: this.key,
+      description: 'Add two numbers. Use when the user asks for a sum.',
+      inputSchema: z.object({a: z.number(), b: z.number()}),
+      outputSchema: z.object({sum: z.number()}),
+      execute: async ({a, b}) => ({sum: a + b}),
     });
+  }
+
+  // Optional: the short string the agent sees as the tool result.
+  getValue(result: Record<string, unknown>): string {
+    return `The sum is ${result.sum}.`;
   }
 }
 ```
+
+Bind it as a service — that is all. `DefaultToolsProvider` picks it up alongside
+the built-ins automatically:
+
+```ts
+// application.ts
+import {createBindingFromClass} from '@loopback/core';
+import {AddTool} from './my-add.tool';
+
+this.add(createBindingFromClass(AddTool));
+```
+
+> **Migrating from a hand-written `ToolStore` provider?** Earlier versions
+> required a custom provider that `@inject`-ed every built-in tool into a static
+> list and rebound `AiIntegrationBindings.Tools`. That is no longer needed —
+> delete it, decorate your tool with `@graphTool()`, and bind it as above. The
+> built-ins register themselves, so a static list only risks drifting out of
+> sync.
+
+**Full replacement (advanced).** To take over the registry entirely — e.g. to
+exclude a built-in tool — bind your own `Provider<ToolStore>` at
+`AiIntegrationBindings.Tools`. This opts out of tag discovery, so you own the
+complete list:
+
+```ts
+// application.ts
+import {AiIntegrationBindings} from 'lb4-llm-chat-component';
+this.bind(AiIntegrationBindings.Tools).toProvider(MyToolsProvider);
+```
+
+## Agents
+
+There is one chat agent (`ChatAgent`). It runs the ReAct loop and decides which
+tool to call. You usually customize it through bindings rather than rebuilding
+it:
+
+```ts
+// application.ts
+import {AiIntegrationBindings} from 'lb4-llm-chat-component';
+
+// 1. Model — the agent uses the ChatLLM binding (falls back to the
+//    MASTRA_DEFAULT_CHAT_MODEL env var when unbound).
+this.bind(AiIntegrationBindings.ChatLLM).toProvider(MyChatModelProvider);
+
+// 2. Instructions — these lines are appended to the agent's system prompt.
+//    Use this for domain rules ("salary is monthly", dialect hints, tone).
+this.bind(AiIntegrationBindings.SystemContext).to([
+  'You answer questions about the HR database only.',
+  'Always convert currency using the active exchange rate (end_date IS NULL).',
+]);
+
+// 3. Tools the agent may call — see the Tools section (override
+//    AiIntegrationBindings.Tools).
+```
+
+To replace the agent (or the whole Mastra instance) outright — e.g. add a
+second agent, change Memory options, or register custom workflows — provide your
+own `Provider<Mastra>` and rebind `AiIntegrationBindings.Mastra`. Use the
+exported `MastraProvider` as a reference implementation:
+
+```ts
+import {Provider, BindingScope, injectable} from '@loopback/core';
+import {Mastra} from '@mastra/core';
+import {Agent} from '@mastra/core/agent';
+import {AiIntegrationBindings} from 'lb4-llm-chat-component';
+
+@injectable({scope: BindingScope.SINGLETON})
+export class MyMastraProvider implements Provider<Mastra> {
+  value(): Mastra {
+    const supportAgent = new Agent({
+      id: 'support-agent',
+      name: 'SupportAgent',
+      instructions: 'You triage support tickets.',
+      model: process.env.MASTRA_DEFAULT_CHAT_MODEL!,
+    });
+    return new Mastra({agents: {supportAgent /*, chatAgent */}});
+  }
+}
+// this.bind(AiIntegrationBindings.Mastra).toProvider(MyMastraProvider);
+```
+
+## Nodes and graphs
+
+The db-query and visualization flows run on Mastra workflows, but — exactly as
+in the LangGraph version — each node is a DI-resolved LoopBack service: a
+`@graphNode(key)`-decorated class implementing `IGraphNode` (its `execute`
+receives a `GraphNodeCtx`). The Mastra graph only references a node by its `key`
+through a thin committed shell; the concrete implementation is resolved from the
+container at run time (by tag, exactly like the `@graphTool` tool registry). So
+**overriding one node is a single binding** — no need to recompose the graph.
+`graphNode`, `IGraphNode`, `GraphNodeCtx` and the key enums (`DbQueryNodes`,
+`VisualizationGraphNodes`, `ChatNodes`) are all exported from the package root.
+
+### Override one node (recommended)
+
+Bind your own `@graphNode(key)` class with the SAME key as the node you want to
+replace. Because the graph resolves nodes by tag, your class wins — the rest of
+the graph is untouched. Use the key enum so you can't mistype it (keys are
+snake_case, e.g. `DbQueryNodes.GetTables === 'get_tables'`).
+
+```ts
+import {
+  graphNode,
+  IGraphNode,
+  GraphNodeCtx,
+  DbQueryNodes,
+} from 'lb4-llm-chat-component';
+
+// `key` MUST match the node you're replacing. Keep the same output shape so the
+// downstream nodes still wire up.
+@graphNode(DbQueryNodes.GetTables) // 'get_tables'
+export class MyGetTablesNode
+  implements IGraphNode<{prompt?: string}, {tables: string[]}>
+{
+  async execute({inputData, requestContext}: GraphNodeCtx<{prompt?: string}>) {
+    // ...your table-selection logic; request-scoped collaborators (stores,
+    // helpers, the resolved LLM tiers) are read from `requestContext`...
+    return {tables: ['employees', 'currencies']};
+  }
+}
+```
+
+Register it as a service in your application. Exactly one binding may carry a
+given `@graphNode` key, so when you replace a **bundled** node you must unbind
+the default first — otherwise both bindings match the tag and the node resolver
+throws `Multiple nodes found with key get_tables` on the first request (a
+boot-clean but request-time failure):
+
+```ts
+this.unbind('services.GetTablesNode'); // drop the bundled node …
+this.service(MyGetTablesNode); //          … then register yours
+```
+
+The db-query node keys (values of `DbQueryNodes`) — generate path:
+`is_improvement`, `check_cache`, `get_tables`, `check_permissions`,
+`check_templates`, `get_columns`, `classify_change`, `generate_checklist`,
+`sql_generation`, `syntactic_validator`, `semantic_validator`,
+`generate_description`, `post_validation`, `verify_checklist`, `return_cached`,
+`save_dataset_from_template`, `post_cache_and_tables`, `save_dataset`, `failed`;
+improve path: `load_existing`, `fix_query`, `save_improved`, `improve_failed`.
+Visualization (`VisualizationGraphNodes`): `get_dataset_data`,
+`select_visualization`, `render_visualization`, `call_query_generation`. Chat
+(`ChatNodes`): `init_session`, `summarise_file`, `call_llm`, `run_tool`,
+`trim_messages`, `end_session`.
+
+Most nodes also expose a smaller override seam so you don't have to reimplement
+`execute` at all — see "Overriding node behaviour" above (e.g.
+`SqlGenerationNode.buildPrompt()`, `GetColumnsNode.selectRelevantTables()`).
+
+### Recompose a whole graph (advanced)
+
+When you need to change the DAG shape itself (add/remove nodes, change a
+branch), build a custom graph from the exported node shells and register it
+under the key it is resolved by. Both db-query tools call the single
+`dbQueryGraph`, whose entry node dispatches to `generateQueryGraph` /
+`improveQueryGraph` — so to change the generate DAG you rebind the
+`generateQueryGraph` key (to change dispatch/routing itself, rebind
+`dbQueryGraph`). The node shells and workflow schemas live on the `/mastra`
+subpath (NOT the package root):
+
+```ts
+import {createWorkflow} from '@mastra/core/workflows';
+import {
+  checkCacheNode,
+  getTablesNode,
+  // ...other node shells you keep...
+  generateQueryInputSchema,
+  generateQueryOutputSchema,
+} from 'lb4-llm-chat-component/mastra';
+
+export const myGenerateGraph = createWorkflow({
+  id: 'generate-query',
+  inputSchema: generateQueryInputSchema,
+  outputSchema: generateQueryOutputSchema,
+})
+  .parallel([checkCacheNode, getTablesNode /* , ... */])
+  // ...mirror the DAG in the package's db-query.graph.ts...
+  .commit();
+```
+
+Register it by building a custom Mastra instance that maps your graph to the
+`generateQueryGraph` key, then rebind `AiIntegrationBindings.Mastra` (the entry
+node resolves the sub-graph by that key via `mastra.getWorkflow(...)`):
+
+```ts
+import {Mastra} from '@mastra/core';
+import {myGenerateGraph} from './my-generate.graph';
+// new Mastra({ workflows: { generateQueryGraph: myGenerateGraph, ... }, ... })
+```
+
+## Storage and memory knobs
+
+Threads/messages persist in a zero-config LibSQL file (`file:./mastra.db`) by
+default. To use Postgres instead, set the `storage` field on the same
+`AiIntegrationBindings.Config` binding you already use for `writerDS`/`readerDS`
+— no separate component, no internal binding key:
+
+```ts
+import {AiIntegrationBindings} from 'lb4-llm-chat-component';
+
+this.bind(AiIntegrationBindings.Config).to({
+  ...existingConfig,
+  storage: {
+    type: 'postgres',
+    connectionString: process.env.MASTRA_PG_CONNECTION_STRING,
+    // schema (default "mastra") and ssl are optional
+  },
+});
+```
+
+Env-only setups keep working: a bare `MASTRA_PG_CONNECTION_STRING` (with no
+`storage.type`) also selects Postgres, and `MASTRA_STORAGE_URL` overrides the
+LibSQL file path.
+
+<details><summary>Manual binding (advanced — discrete host fields)</summary>
+
+To use the discrete `MASTRA_PG_HOST`/`PORT`/`DATABASE`/`USER`/`PASSWORD` fields
+instead of a connection string, bind the standalone provider yourself:
+
+```ts
+import {AiIntegrationBindings, PostgresStorageProvider} from 'lb4-llm-chat-component';
+this.bind(AiIntegrationBindings.Storage).toProvider(PostgresStorageProvider);
+```
+
+</details>
+
+Memory env knobs: `MASTRA_DEFAULT_CHAT_MODEL` (required chat model),
+`MASTRA_SEMANTIC_RECALL=true` to enable cross-thread recall (default off; needs
+a vector store + embedder), `MAX_TOKEN_COUNT` to cap history length.
+
+### Token streaming
+
+`MASTRA_STREAM_TOKENS=true` streams the assistant reply token-by-token: the
+extension emits one SSE `message` event per text delta as the model produces
+it, so the UI renders the reply progressively instead of after the full
+generation completes. **Default off** — when off, the reply is coalesced into a
+single `message` event (the original contract, matching the v2 LangGraph
+behaviour, and what existing consumers already expect: one `message` event =
+one finished bubble). When you enable it, your client MUST treat `message`
+events as **append** chunks (concatenate `data.message` onto the *current*
+assistant bubble), not as full-message snapshots and not as a new bubble per
+event — otherwise a single reply fragments into many bubbles. The bundled
+sandbox UI already appends. Leave it **off** for any consumer that renders one
+bubble per `message` event until that UI is updated to append.
+
+## Activity logs (debugging)
+
+Every workflow step emits its status (e.g. `Extracting relevant tables`,
+`Generating SQL query from the prompt`, `Validating generated SQL query`,
+`Reselecting tables…`) to the [`debug`](https://www.npmjs.com/package/debug)
+channel — off by default so production stays quiet. Turn it on in the consumer
+app to watch progress on the server console:
+
+```sh
+DEBUG=ai-integration:* npm start        # all activity
+DEBUG=ai-integration:steps npm start    # just workflow step statuses
+```
+
+These mirror the step/activity logs the v2 LangGraph extension surfaced. The
+same statuses are also streamed to the client as `ToolStatus` SSE events.
+
+### Streaming-event volume vs the LangGraph version
+
+The Mastra build emits **fewer SSE events per `/reply`** than the v2 LangGraph
+extension, and this is intentional. v2 emitted a verbose `Log` event at almost
+every node (≈45+ per request: "No relevant queries in cache", "Template
+matched: …", "Classifying the level of change", "Fixed SQL query: …", etc.).
+Those were **server-side narration** — a typical chat UI registers no handler
+for the `log` event type and silently drops them. This build routes that same
+narration to the `debug` channel above (`DEBUG=ai-integration:steps`) instead
+of the SSE wire, so it no longer competes with the events the UI actually
+renders and never spams `console`.
+
+Every **client-rendered** event type is preserved and emitted on the same wire
+contract: `init`, `message`, `tool`, `tool-status`, `token-count`, `status`,
+`error`. Per-step progress is carried by `tool-status` (one per workflow step:
+get-tables, get-columns, sql-and-validate, …) rather than by `log`. So a
+consumer that renders `tool`/`tool-status`/`message` sees equivalent progress;
+only the unrendered `log` firehose moved off the wire. If you want the verbose
+narration on the wire (e.g. to drive a step drawer), add a `log`-event handler
+in your UI — the events are still available via the `debug` channel server-side.
 
 # Observability
 
@@ -610,6 +963,8 @@ export LANGFUSE_BASE_URL="https://cloud.langfuse.com"
 
 The `generation.acceptance.builder.ts` file provides a utility to run acceptance tests for the `llm-chat-component`. These tests validate the functionality of the `/reply` endpoint and ensure that the generated SQL queries and their results align with expectations.
 
+> **Post-migration validation (host apps).** This is the recommended way to confirm report generation still works after upgrading to the Mastra build. The harness is **endpoint-driven** — it drives `POST /reply` and diffs the generated SQL against a golden query — so it is **unchanged by the LangGraph → Mastra migration**: the same `generationAcceptanceBuilder`, the same `GenerationAcceptanceTestCase` shape, and the SSE wire contract are all preserved. A host application that ran this suite against the LangGraph version (e.g. its own `generation.acceptance.ts`) can run the **identical** suite against the Mastra version with no change beyond importing from the `lb4-llm-chat-component/testing` subpath (below). The graph-coupled builders (`db-query.graph.builder`, `get-table.node.builder`) are intentionally not shipped — they targeted the deleted LangGraph internals and are not needed for endpoint-driven validation.
+
 ## Overview
 
 This builder facilitates the execution of multiple test cases, each defined with specific prompts, expected results, and configurations. It also generates detailed reports to analyze the performance and correctness of the tests.
@@ -625,8 +980,10 @@ This builder facilitates the execution of multiple test cases, each defined with
 
 ### Importing the Builder
 
+From a host application, import from the package's `testing` subpath:
+
 ```typescript
-import {generationAcceptanceBuilder} from './generation.acceptance.builder';
+import {generationAcceptanceBuilder} from 'lb4-llm-chat-component/testing';
 ```
 
 ### Running Tests
@@ -652,8 +1009,9 @@ const result = await generationAcceptanceBuilder(
   testCases,
   client,
   app,
-  1,
-  true,
+  {testDeal: process.env.SAMPLE_DEAL_NAME ?? ''}, // placeholder substitutions
+  1, // countPerPrompt
+  true, // writeReport
 );
 console.log(result);
 ```
@@ -663,6 +1021,7 @@ console.log(result);
 - `cases`: An array of test cases to execute.
 - `client`: The LoopBack test client.
 - `app`: The LoopBack application instance.
+- `params`: A `Record<string, string>` of placeholder substitutions applied to each prompt (e.g. `<testDeal>` → a real deal name).
 - `countPerPrompt`: Number of iterations per test case (default: 1).
 - `writeReport`: Whether to generate a markdown report (default: false).
 

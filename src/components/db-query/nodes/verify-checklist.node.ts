@@ -1,194 +1,98 @@
-import {AIMessage} from '@langchain/core/messages';
-import {PromptTemplate} from '@langchain/core/prompts';
-import {RunnableSequence} from '@langchain/core/runnables';
-import {LangGraphRunnableConfig} from '@langchain/langgraph';
-import {inject, service} from '@loopback/core';
+import {inject} from '@loopback/core';
+import type {LanguageModel} from 'ai';
 import {graphNode} from '../../../decorators';
-import {IGraphNode, LLMStreamEventType} from '../../../graphs';
+import type {IGraphNode, GraphNodeCtx} from '../../../graphs/types';
 import {AiIntegrationBindings} from '../../../keys';
-import {LLMProvider} from '../../../types';
-import {stripThinkingTokens} from '../../../utils';
 import {DbQueryAIExtensionBindings} from '../keys';
+import type {DbSchemaHelperService} from '../services';
+import type {SchemaStore} from '../services/schema.store';
+import type {DbQueryConfig} from '../types';
 import {DbQueryNodes} from '../nodes.enum';
-import {DbSchemaHelperService} from '../services';
-import {DbQueryState} from '../state';
-import {DbQueryConfig} from '../types';
+import {
+  CHECKLIST_MIN_TABLES,
+  type checklistStateSchema,
+} from '../checklist.shared';
+import {ChecklistHelper} from '../services/checklist-helper.service';
+import type {z} from 'zod';
 
+type ChecklistState = z.infer<typeof checklistStateSchema>;
+
+/**
+ * Second checklist pass (the Mastra-named successor of the LangGraph
+ * VerifyChecklistNode). Re-evaluates GlobalContext + per-table domain rules
+ * with the smart tier and merges them in; self-gates and is otherwise a
+ * pass-through. DI-resolved `@step` class.
+ */
 @graphNode(DbQueryNodes.VerifyChecklist)
-export class VerifyChecklistNode implements IGraphNode<DbQueryState> {
+export class VerifyChecklistNode implements IGraphNode<
+  ChecklistState,
+  ChecklistState
+> {
   constructor(
-    @inject(AiIntegrationBindings.SmartLLM)
-    private readonly smartLlm: LLMProvider,
-    @inject(DbQueryAIExtensionBindings.Config)
-    private readonly config: DbQueryConfig,
-    @service(DbSchemaHelperService)
-    private readonly schemaHelper: DbSchemaHelperService,
+    // ponytail: optional + default instance keeps the step zero-arg
+    // constructible (the step registry's `new () =>` contract); DI injects the
+    // bound (rebindable) service when the component is mounted.
+    @inject('services.ChecklistHelper', {optional: true})
+    private readonly checklistHelper: ChecklistHelper = new ChecklistHelper(),
+    @inject(DbQueryAIExtensionBindings.Config, {optional: true})
+    private readonly config?: DbQueryConfig,
     @inject(DbQueryAIExtensionBindings.GlobalContext, {optional: true})
-    private readonly checks?: string[],
-    @inject(AiIntegrationBindings.SmartNonThinkingLLM, {optional: true})
-    private readonly smartNonThinkingLlm?: LLMProvider,
+    private readonly globalContext: string[] = [],
+    @inject('services.SchemaStore', {optional: true})
+    private readonly schemaStore?: SchemaStore,
+    @inject('services.DbSchemaHelperService', {optional: true})
+    private readonly schemaHelper?: DbSchemaHelperService,
+    @inject(AiIntegrationBindings.ChatModel, {optional: true})
+    private readonly chatModel?: LanguageModel,
+    @inject(AiIntegrationBindings.SmartModel, {optional: true})
+    private readonly smartModel?: LanguageModel,
+    @inject(AiIntegrationBindings.SmartNonThinkingModel, {optional: true})
+    private readonly smartNonThinkingModel?: LanguageModel,
   ) {}
 
-  private get llm(): LLMProvider {
-    return this.smartNonThinkingLlm ?? this.smartLlm;
-  }
+  async execute({
+    inputData,
+    tracingContext,
+  }: GraphNodeCtx<ChecklistState>): Promise<ChecklistState> {
+    const data = inputData;
+    const config = this.config;
+    const disabled = config?.nodes?.verifyChecklistNode?.enabled === false;
 
-  basePrompt = `
-<instructions>
-You are given a user question, the tables selected for SQL generation, the relevant database schema, and a numbered list of rules/checks.
-Return ONLY the indexes of the rules that are relevant to the user's question, the selected tables, and the given schema.
-
-A rule is relevant if:
-- It directly affects how a correct SQL query should be written for this question.
-- It is a dependency of another relevant rule (e.g. if rule 3 requires a currency conversion, and rule 5 defines how currency conversion works, both must be included).
-- It applies to any of the selected tables or their relationships.
-
-Ensure:
-- Any rule that is referenced by, or is a prerequisite for, another selected rule is also included.
-- Do not include rules that are completely unrelated to the question, schema, or selected tables.
-</instructions>
-
-<user-question>
-{prompt}
-</user-question>
-
-<selected-tables>
-{tables}
-</selected-tables>
-
-<database-schema>
-{schema}
-</database-schema>
-
-<rules>
-{indexedChecks}
-</rules>
-
-`;
-
-  evaluationOutputInstructions = `<output-instructions>
-First, evaluate each rule inside an evaluation tag. For each rule, repeat the full rule text exactly as given, followed by " — Include" or " — Exclude" with a brief reason.
-Then, return only the comma-separated list of included rule indexes inside a result tag.
-
-Example:
-<evaluation>
-1. When matching names, use ilike with wildcards — Include, query involves name matching
-2. Format dates using to_char — Exclude, no date fields in this query
-3. Always exclude lost deals — Include, query involves deals
-</evaluation>
-<result>1,3</result>
-
-If no rules are relevant: <result>none</result>
-</output-instructions>`;
-
-  simpleOutputInstructions = `<output-instructions>
-Return ONLY the comma-separated list of relevant rule indexes inside a result tag.
-Do NOT include any reasoning, analysis, or explanation — only the result tag.
-Example: 
-<result>1,3,5</result>
-If no rules are relevant:
-<result>none</result>
-</output-instructions>`;
-
-  async execute(
-    state: DbQueryState,
-    config: LangGraphRunnableConfig,
-  ): Promise<DbQueryState> {
-    const empty = {} as DbQueryState;
-
-    if (this.config.nodes?.verifyChecklistNode?.enabled === false) {
-      return empty;
+    if (
+      disabled ||
+      data.cached === true ||
+      data.unanswerable === true ||
+      data.tables.length <= CHECKLIST_MIN_TABLES
+    ) {
+      return data;
     }
 
-    if (state.feedbacks?.length) {
-      return empty;
-    }
+    // Prefer the non-thinking smart model (thinking chunks pollute the
+    // index-list parse), falling back to the smart tier (v2
+    // `smartNonThinkingLlm ?? smartLlm`).
+    const verifyLlm =
+      this.smartNonThinkingModel ?? this.smartModel ?? this.chatModel;
 
-    const tableCount = Object.keys(state.schema?.tables ?? {}).length;
-    if (tableCount <= 2) {
-      return empty;
-    }
-
-    const allChecks = [
-      ...(this.checks ?? []),
-      ...this.schemaHelper.getTablesContext(state.schema),
-    ];
-
-    if (allChecks.length === 0) {
-      return empty;
-    }
-
-    config.writer?.({
-      type: LLMStreamEventType.Log,
-      data: 'Verifying validation checklist with chain-of-thought.',
+    const verifiedRules = await this.checklistHelper.selectDomainRules({
+      globalContext: this.globalContext,
+      schemaStore: this.schemaStore,
+      schemaHelper: this.schemaHelper,
+      llm: verifyLlm,
+      prompt: data.prompt,
+      tables: data.tables,
+      label: 'verify-checklist',
+      evaluation: config?.nodes?.verifyChecklistNode?.evaluation ?? false,
+      tracing: tracingContext,
     });
 
-    const output = await this.invokeVerification(state, allChecks);
-    const verifiedIndexes = this.parseVerifiedIndexes(output, allChecks.length);
+    if (verifiedRules.length === 0) return data;
 
-    if (verifiedIndexes.length === 0) {
-      return empty;
-    }
-
-    const validationChecklist = this.mergeWithExisting(
-      state.validationChecklist,
-      verifiedIndexes,
-      allChecks,
-    );
-
-    return {validationChecklist} as DbQueryState;
-  }
-
-  private async invokeVerification(
-    state: DbQueryState,
-    allChecks: string[],
-  ): Promise<AIMessage> {
-    const indexedChecks = allChecks
-      .map((check, i) => `${i + 1}. ${check}`)
-      .join('\n');
-
-    const useEvaluation =
-      this.config.nodes?.verifyChecklistNode?.evaluation ?? false;
-    const promptTemplate = PromptTemplate.fromTemplate(
-      this.basePrompt +
-        (useEvaluation
-          ? this.evaluationOutputInstructions
-          : this.simpleOutputInstructions),
-    );
-
-    const chain = RunnableSequence.from([promptTemplate, this.llm]);
-    return chain.invoke({
-      prompt: state.prompt,
-      tables: Object.keys(state.schema?.tables ?? {}).join(', '),
-      schema: this.schemaHelper.asString(state.schema),
-      indexedChecks,
-    });
-  }
-
-  private parseVerifiedIndexes(output: AIMessage, maxIndex: number): number[] {
-    const response = stripThinkingTokens(output).trim();
-    const resultMatch = /<result>(.*?)<\/result>/s.exec(response);
-    const indexStr = resultMatch ? resultMatch[1].trim() : response;
-
-    if (!indexStr || indexStr === 'none') return [];
-
-    return indexStr
-      .split(',')
-      .map(s => Number.parseInt(s.trim(), 10))
-      .filter(n => !Number.isNaN(n) && n >= 1 && n <= maxIndex);
-  }
-
-  private mergeWithExisting(
-    existing: string | undefined,
-    verifiedIndexes: number[],
-    allChecks: string[],
-  ): string {
-    const existingChecks = new Set(
-      (existing ?? '').split('\n').filter(c => c.length > 0),
-    );
-    for (const check of verifiedIndexes.map(i => allChecks[i - 1])) {
-      existingChecks.add(check);
-    }
-    return Array.from(existingChecks).join('\n');
+    return {
+      ...data,
+      checklist: this.checklistHelper.mergeChecklist(
+        data.checklist,
+        verifiedRules,
+      ),
+    };
   }
 }

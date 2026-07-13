@@ -1,77 +1,43 @@
-import {HumanMessage, SystemMessage} from '@langchain/core/messages';
-import {LangGraphRunnableConfig} from '@langchain/langgraph';
-import {inject, service} from '@loopback/core';
+import {inject} from '@loopback/core';
 import {graphNode} from '../../../decorators';
-import {AiIntegrationBindings} from '../../../keys';
-import {Message} from '../../../models';
 import {LLMStreamEventType} from '../../event.types';
-import {ChatState} from '../../state';
-import {IGraphNode, SavedMessage} from '../../types';
+import type {ChatState, IChatNode} from '../../state';
 import {ChatStore} from '../chat.store';
 import {ChatNodes} from '../nodes.enum';
-const debug = require('debug')('ai-integration:chat:init-session.node');
-@graphNode(ChatNodes.InitSession)
-export class InitSessionNode implements IGraphNode<ChatState> {
-  constructor(
-    @service(ChatStore)
-    private readonly chatStore: ChatStore,
-    @inject(AiIntegrationBindings.SystemContext, {optional: true})
-    private readonly systemContext?: string[],
-  ) {}
-  async execute(
-    state: ChatState,
-    config: LangGraphRunnableConfig,
-  ): Promise<ChatState> {
-    const chat = await this.chatStore.init(state.prompt, state.id);
-    if (!state.id) {
-      debug(`New session created with ID: ${chat.id}`);
-      config.writer?.({
-        type: LLMStreamEventType.Init,
-        data: {
-          sessionId: chat.id,
-        },
-      });
-    }
-    const userMessage = new HumanMessage({
-      content: state.prompt,
-    });
-    const savedUserMessage = await this.chatStore.addHumanMessage(
-      chat.id,
-      userMessage,
-    );
-    return {
-      ...state,
-      id: chat.id,
-      userMessage: savedUserMessage,
-      messages: [
-        new SystemMessage({
-          content: [
-            `You are a helpful AI assistant. You MUST always use one of the available tools to handle the user's request. Never respond with just text on the first message — always call the closest matching tool, even if you are unsure. The tool will reject the request if it is not suitable.`,
-            `If you are not sure about the result, you can ask the user to review the result and provide feedback.`,
-            `Only use a single tool in a single message, but you can use multiple tools over subsequent messages if it could help with the user's requirements.`,
-            `If the user provides feedback, you can use that feedback to improve the result.`,
-            `Do not write any redundant messages before or after tool calls, be as concise as possible.`,
-            `Do not hallucinate details or make up information.`,
-            `Do not make assumptions about user's intent beyond what is explicitly provided in the prompt, and keep this in mind while calling tools.`,
-            `Do not use technical jargon in the response, show any internal IDs, or implementation details to the user.`,
-            `Current date is ${new Date().toDateString()}`,
-            ...(this.systemContext ?? []),
-          ].join('\n'),
-        }),
-        ...(await this._formatMessage(chat.messages)),
-      ],
-    };
-  }
 
-  private async _formatMessage(messages: Message[]): Promise<SavedMessage[]> {
-    if (!messages) {
-      return [];
-    }
-    const graphMessages = await Promise.all(
-      messages.map(message => this.chatStore.toMessage(message)),
+/**
+ * Open (or resume) the chat session — the LangGraph `InitSessionNode`. Resolves
+ * the requester's tenant-scoped identity, then the Memory thread via
+ * {@link ChatStore}: a fresh request creates a thread and emits Init; a resume
+ * loads + ownership-checks the existing thread. On any failure it sets `error`
+ * so ChatGraph surfaces it and stops. (LangGraph seeded the system prompt +
+ * message history into the state here; on Mastra that lives in the agent's
+ * instructions + Memory, so this node only establishes the thread.)
+ *
+ * A DI-resolved `@graphNode` class: `chatStore` is `@service`-injected and the
+ * work lives in `execute`, so a host overrides it by rebinding
+ * `@graphNode(ChatNodes.InitSession)`.
+ */
+@graphNode(ChatNodes.InitSession)
+export class InitSessionNode implements IChatNode {
+  constructor(
+    @inject('services.ChatStore') protected readonly chatStore: ChatStore,
+  ) {}
+
+  async execute(state: ChatState): Promise<Partial<ChatState>> {
+    const requesterResourceId =
+      await this.chatStore.resolveRequesterResourceId();
+    const resolved = await this.chatStore.resolveThread(
+      state.sessionId,
+      requesterResourceId,
+      id => state.push({type: LLMStreamEventType.Init, data: {sessionId: id}}),
+      state.query,
     );
-    return graphMessages.filter(
-      (message): message is SavedMessage => message !== undefined,
-    );
+    if ('error' in resolved) return {error: resolved.error};
+    return {
+      threadId: resolved.threadId,
+      resourceId: resolved.resourceId,
+      threadTitle: resolved.title,
+    };
   }
 }

@@ -1,12 +1,14 @@
-import {PromptTemplate} from '@langchain/core/prompts';
-import {IVisualizer} from '../types';
+import {IVisualizer, VisualizationGraphState} from '../types';
 import {AiIntegrationBindings} from '../../../keys';
-import {LLMProvider} from '../../../types';
 import {inject} from '@loopback/core';
 import {AnyObject} from '@loopback/repository';
-import {VisualizationGraphState} from '../state';
-import z from 'zod';
-import {RunnableSequence} from '@langchain/core/runnables';
+import z, {type ZodTypeAny} from 'zod';
+import {generateObject} from 'ai';
+import type {MastraModelConfig} from '@mastra/core/llm';
+import {
+  buildProviderOptions,
+  resolveEnvTemperature,
+} from '../../db-query/_helpers';
 import {visualizer} from '../decorators/visualizer.decorator';
 
 @visualizer()
@@ -17,26 +19,6 @@ export class LineVisualizer implements IVisualizer {
     `A line chart requires data with exactly 3 columns: one for the x-axis (typically time or sequential data), one for the y-axis (values), and one series type column to distinguish multiple lines/series in the chart. The series type column is important for grouping data into separate lines.`;
 
   description = `Renders the data in a line chart format. Best for showing trends and changes over time or continuous data.`;
-  renderPrompt = PromptTemplate.fromTemplate(`
-<instructions>
-You are an expert data visualization assistant. Your task is to create a line chart config based on the provided SQL query, it's description and user prompt. Follow these steps:
-1. Analyze the SQL query results to understand the data structure.
-2. Identify the x-axis column (typically time or sequential data) and y-axis column (values) for the line chart.
-3. Determine if there are multiple series to be plotted (multiple lines) with combination of multiple columns, or single series based on single column.
-4. Create a configuration object for the line chart using the identified columns.
-5. Return the line chart configuration object.
-</instructions>
-<inputs>
-<sql>
-{sql}
-</sql>
-<description>
-{description}
-</description>
-<user-prompt>
-{userPrompt}
-</user-prompt>
-</inputs>`);
 
   schema = z.object({
     xAxisColumn: z
@@ -56,29 +38,67 @@ You are an expert data visualization assistant. Your task is to create a line ch
       ),
   }) as z.AnyZodObject;
 
+  protected readonly callGen = generateObject as (o: {
+    model: unknown;
+    schema: unknown;
+    prompt: string;
+    providerOptions?: Record<string, Record<string, unknown>>;
+    temperature?: number;
+  }) => Promise<{object: AnyObject}>;
+
   constructor(
-    @inject(AiIntegrationBindings.SmartNonThinkingLLM)
-    private readonly llm: LLMProvider,
-  ) {}
+    // Line visualizer's schema has 3 required cols + arrays; structured-output
+    // strict mode misbehaves with "thinking" model chunks on some providers
+    // (this was main's exact reason for `SmartNonThinkingLLM` here).
+    // Prefer the non-thinking slot when bound; fall back to chat LLM.
+    @inject(AiIntegrationBindings.SmartNonThinkingLLM, {optional: true})
+    smartNonThinkingModel: MastraModelConfig | undefined,
+    @inject(AiIntegrationBindings.ChatLLM)
+    chatModel: MastraModelConfig,
+  ) {
+    this.model = smartNonThinkingModel ?? chatModel;
+  }
+  private readonly model: MastraModelConfig;
 
   async getConfig(state: VisualizationGraphState): Promise<AnyObject> {
     if (!state.sql || !state.queryDescription || !state.prompt) {
       throw new Error('Invalid State');
     }
-    const llmWithStructuredOutput = this.llm.withStructuredOutput<AnyObject>(
-      this.schema,
-    );
+    const prompt = `<instructions>
+You are an expert data visualization assistant. Your task is to create a line chart config based on the provided SQL query, it's description and user prompt. Follow these steps:
+1. Analyze the SQL query results to understand the data structure.
+2. Identify the x-axis column (typically time or sequential data) and y-axis column (values) for the line chart.
+3. Determine if there are multiple series to be plotted (multiple lines) with combination of multiple columns, or single series based on single column.
+4. Create a configuration object for the line chart using the identified columns.
+5. Return the line chart configuration object.
+</instructions>
+<inputs>
+<sql>
+${state.sql}
+</sql>
+<description>
+${state.queryDescription}
+</description>
+<user-prompt>
+${state.prompt}
+</user-prompt>
+</inputs>`;
 
-    const chain = RunnableSequence.from([
-      this.renderPrompt,
-      llmWithStructuredOutput,
-    ]);
-
-    const settings = await chain.invoke({
-      sql: state.sql!,
-      description: state.queryDescription!,
-      userPrompt: state.prompt!,
+    const schema: ZodTypeAny = this.schema;
+    // Force Anthropic/Bedrock thinking OFF for this call — line viz's
+    // strict structured-output schema misbehaves with reasoning chunks
+    // (same reason this visualizer historically used SmartNonThinkingLLM
+    // on the v2 LangGraph extension). No-op on non-Claude/Bedrock models.
+    const providerOptions = buildProviderOptions({forceThinkingOff: true});
+    const temperature = resolveEnvTemperature();
+    const {object} = await this.callGen({
+      model: this.model,
+      schema,
+      prompt,
+      ...(temperature === undefined ? {} : {temperature}),
+      ...(providerOptions ? {providerOptions} : {}),
     });
+    const settings = object as AnyObject;
     if (
       settings.seriesColumns === '' ||
       settings.seriesColumns === undefined ||
@@ -87,7 +107,9 @@ You are an expert data visualization assistant. Your task is to create a line ch
       settings.seriesColumns = null;
     } else {
       settings.seriesColumns =
-        settings.seriesColumns?.split(',').map((s: string) => s.trim()) ?? [];
+        (settings.seriesColumns as string)
+          ?.split(',')
+          .map((s: string) => s.trim()) ?? [];
     }
     return settings;
   }

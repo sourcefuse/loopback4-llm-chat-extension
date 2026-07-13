@@ -1,87 +1,195 @@
-import {Context, inject, service} from '@loopback/core';
-import {AnyObject} from '@loopback/repository';
+import {inject} from '@loopback/core';
+import {Mastra} from '@mastra/core';
+import {createTool} from '@mastra/core/tools';
+import type {Tool, ToolExecutionContext} from '@mastra/core/tools';
 import {z} from 'zod';
+import {LLMStreamEvent, LLMStreamEventType} from '../../../graphs/event.types';
+import {IGraphTool, ToolStatus} from '../../../graphs/types';
+import {
+  asEventWriter,
+  asRecord,
+  readString,
+} from '../../../graphs/tool-event.util';
+import {AiIntegrationBindings} from '../../../keys';
 import {graphTool} from '../../../decorators';
-import {IGraphTool, ToolStatus} from '../../../graphs';
-import {StructuredToolInterface} from '@langchain/core/tools';
-import {RunnableToolLike} from '@langchain/core/runnables';
-import {VisualizationGraph} from '../visualization.graph';
-import {VISUALIZATION_KEY} from '../keys';
-import {IVisualizer} from '../types';
 
+/**
+ * Mastra-shaped visualization tool. Final form — calls
+ * `mastra.getWorkflow('visualizationGraph').createRun().start()`.
+ * The visualizer-type enum is no longer generated dynamically from the
+ * legacy registry here; the renderVisualization step of the workflow
+ * dispatches to @visualizer() classes via RequestContext at run time.
+ */
 @graphTool()
 export class GenerateVisualizationTool implements IGraphTool {
   needsReview = false;
   key = 'generate-visualization';
   constructor(
-    @service(VisualizationGraph)
-    private readonly visualizationGraph: VisualizationGraph,
-    @inject.context()
-    private readonly context: Context,
+    @inject(AiIntegrationBindings.Mastra) private readonly mastra: Mastra,
   ) {}
 
-  getValue(result: Record<string, string>): string {
-    if (result.error) {
-      return `Visualization could not be generated. Reason: ${result.error}`;
-    }
-    return `Visualization rendered for the user with the following config: ${JSON.stringify(
-      result.visualizerConfig,
-      undefined,
-      2,
-    )}`;
-  }
-
-  getMetadata(result: Record<string, string>): AnyObject {
-    return {
-      status: result.done ? ToolStatus.Completed : ToolStatus.Failed,
-      existingDatasetId: result.datasetId,
-      config: result.visualizerConfig,
-      visualization: result.visualizerName,
-    };
-  }
-
-  async build(): Promise<StructuredToolInterface | RunnableToolLike> {
-    const visualizations = await this._getVisualizations();
-    const graph = await this.visualizationGraph.build();
-    const schema = z.object({
-      prompt: z
-        .string()
-        .describe(
-          `Prompt from the user that will be used for generating the visualization.`,
-        ),
-      datasetId: z
-        .string()
-        .optional()
-        .describe(
-          `ID of the dataset that needs to be visualized. Use the dataset ID from 'get-data-as-dataset' or 'improve-dataset' tool if available. If not provided, the tool will internally fetch the data.`,
-        ),
-      type: z
-        .string()
-        .optional()
-        .describe(
-          `Type of visualization to be generated. It can be one of the following: ${visualizations.map(v => v.name).join(', ')}. If not provided, the system will decide the best visualization based on the data and prompt.`,
-        ),
-    }) as AnyObject[string];
-    return graph.asTool({
-      name: this.key,
+  build(): Tool {
+    return createTool({
+      id: this.key,
       description: `Generates a visualization for the user's request. It takes in a prompt and an optional dataset ID.
 If the user's request involves trends, growth, decline, comparisons, distributions, patterns, correlations, or any analytical insight, ALWAYS use this tool instead of 'get-data-as-dataset'.
 No need to call 'get-data-as-dataset' tool before this — if the dataset ID is not provided, this tool will internally fetch the data to be visualized.
-It does not return anything, instead it fires an event internally that renders the visualization on the UI for the user to see.
-It supports the following types of visualizations: ${visualizations.map(v => v.name).join(', ')}.`,
-      schema,
+It does not return anything, instead it fires an event internally that renders the visualization on the UI for the user to see.`,
+      inputSchema: z.object({
+        prompt: z
+          .string()
+          .describe(
+            'Prompt from the user that will be used for generating the visualization.',
+          ),
+        datasetId: z
+          .string()
+          .optional()
+          .describe(
+            "ID of the dataset that needs to be visualized. Use the dataset ID from 'get-data-as-dataset' or 'improve-dataset' tool if available. If not provided, the tool will internally fetch the data.",
+          ),
+        type: z
+          .string()
+          .optional()
+          .describe(
+            'Type of visualization to be generated (bar, line, pie, etc.). If not provided, the system picks the best fit based on the data.',
+          ),
+      }),
+      execute: async (inputData, ctx) => {
+        const writer = asEventWriter(ctx.requestContext?.get('eventWriter'));
+        const toolCallId = ctx.agent?.toolCallId ?? this.key;
+        writer?.({
+          type: LLMStreamEventType.ToolStatus,
+          data: {id: toolCallId, status: ToolStatus.Running},
+        });
+        try {
+          return await this.runVisualizationGraph(
+            writer,
+            toolCallId,
+            inputData.datasetId ?? '',
+            inputData.prompt,
+            inputData.type,
+            ctx,
+          );
+        } catch (err) {
+          // Single Failed emit.
+          writer?.({
+            type: LLMStreamEventType.ToolStatus,
+            data: {id: toolCallId, status: ToolStatus.Failed},
+          });
+          throw err;
+        }
+      },
     });
   }
 
-  private async _getVisualizations() {
-    const bindings = this.context.findByTag({
-      [VISUALIZATION_KEY]: true,
-    });
-    if (bindings.length === 0) {
-      throw new Error(`Node with key ${VISUALIZATION_KEY} not found`);
+  private async runVisualizationGraph(
+    writer: ((e: LLMStreamEvent) => void) | undefined,
+    toolCallId: string,
+    datasetId: string,
+    userQuery: string,
+    requestedType: string | undefined,
+    ctx: ToolExecutionContext,
+  ): Promise<unknown> {
+    const workflow = this.mastra.getWorkflow('visualizationGraph');
+    if (!workflow) {
+      throw new Error(
+        'visualizationGraph not registered in Mastra — check Provider workflows config',
+      );
     }
-    return Promise.all(
-      bindings.map(binding => this.context.get<IVisualizer>(binding.key)),
-    );
+    const run = await workflow.createRun();
+    // Forward tool tracing context so the workflow nests under the agent's
+    // root span (one trace per /reply). See get-data-as-dataset for the
+    // long version of this rationale.
+    const result = await run.start({
+      inputData: {datasetId, userQuery, type: requestedType},
+      requestContext: ctx.requestContext,
+      tracing: ctx.tracing,
+    });
+    if (result.status === 'suspended') {
+      // HITL — emit AwaitingApproval, return empty. Resume in v3.1.
+      writer?.({
+        type: LLMStreamEventType.ToolStatus,
+        data: {id: toolCallId, status: ToolStatus.AwaitingApproval},
+      });
+      return {};
+    }
+    if (result.status !== 'success') {
+      throw new Error(`Visualization failed: ${result.status}`);
+    }
+    // visualizationGraph's final step is `.then(renderVisualizationNode)`
+    // (not a `.branch()`), so the result lands directly on the top level
+    // — no branch-key unwrap needed.
+    const root = asRecord(result);
+    const rawResult = asRecord(root.result);
+
+    // The selection step rejected every visualizer ("none" path) — surface the
+    // reason to the agent so it can explain why no chart was produced, and do
+    // NOT emit a chart Tool event.
+    const rejectionReason = readString(rawResult.error);
+    if (rejectionReason) {
+      writer?.({
+        type: LLMStreamEventType.ToolStatus,
+        data: {id: toolCallId, status: ToolStatus.Completed},
+      });
+      return {
+        error: rejectionReason,
+        message: `A visualization could not be generated for this request: ${rejectionReason}`,
+      };
+    }
+
+    const workflowResult = {
+      chartConfig: rawResult.chartConfig,
+      visualization: readString(rawResult.visualization),
+      datasetId: readString(rawResult.datasetId),
+      sql: readString(rawResult.sql),
+      description: readString(rawResult.description),
+    };
+    this.emitVisualizationResult(writer, toolCallId, workflowResult);
+    return workflowResult;
+  }
+
+  /**
+   * Emit the final Tool event the UI renders the chart from, then a
+   * Completed ToolStatus. The UI's renderVizFromToolEvent reads
+   * `data.visualization` as the chart TYPE and `data.config` as the
+   * chart settings (see sandbox app.js renderChart signature).
+   *
+   * Deliberately does NOT send `existingDatasetId`: that field is the
+   * history / re-run marker the UI keys the manual "Load Dataset" button off
+   * (README: `metadata.existingDatasetId` + toolName + args → re-run). On a
+   * live turn the chart must auto-render, so we send only `datasetId` (for the
+   * UI to fetch rows) + `visualization` + `config` — symmetric with the table
+   * tool's live event. History replay re-adds `existingDatasetId` in the
+   * controller (`toolPartToMessage`), so the button still appears there.
+   */
+  private emitVisualizationResult(
+    writer: ((e: LLMStreamEvent) => void) | undefined,
+    toolCallId: string,
+    workflowResult: {
+      chartConfig?: unknown;
+      visualization?: string;
+      datasetId?: string;
+      sql?: string;
+      description?: string;
+    },
+  ): void {
+    writer?.({
+      type: LLMStreamEventType.Tool,
+      data: {
+        id: toolCallId,
+        tool: this.key,
+        data: {
+          visualization: workflowResult.visualization ?? '',
+          config: workflowResult.chartConfig ?? {},
+          datasetId: workflowResult.datasetId ?? '',
+          sql: workflowResult.sql ?? '',
+          description: workflowResult.description ?? '',
+        },
+      },
+    });
+    writer?.({
+      type: LLMStreamEventType.ToolStatus,
+      data: {id: toolCallId, status: ToolStatus.Completed},
+    });
   }
 }

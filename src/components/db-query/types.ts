@@ -52,10 +52,7 @@ export enum RelationType {
 }
 
 export type Status =
-  | EvaluationResult
-  | DatasetFeedback
-  | Errors
-  | GenerationError;
+  EvaluationResult | DatasetFeedback | Errors | GenerationError;
 
 export type DatasetServiceConfig = {};
 
@@ -138,6 +135,23 @@ export type DbQueryConfig = {
       evaluation?: boolean;
     };
   };
+  /**
+   * Controls the relevant-table/column narrowing step (`getColumnsNode` /
+   * `pickRelevantTables`) before SQL generation.
+   *
+   * - `true`  — apply the LLM-selected subset of TABLES to the SQL-generation
+   *   prompt (narrowing is table-level only; column-level pruning is not done).
+   *   Use this when the schema is wide (many tables) so the prompt stays small.
+   * - `false` (default) — ignore the selected subset and pass ALL upstream
+   *   tables to SQL generation. Safer for joins (lookup tables like
+   *   `exchange_rates` are never dropped), but larger prompts → more tokens /
+   *   latency on wide schemas.
+   *
+   * The relevant-table LLM call still runs either way (it also powers the
+   * "unanswerable" gate); this flag only decides whether its narrowing is
+   * applied. Consumers typically wire this from an env var, e.g.
+   * `columnSelection: process.env.COLUMN_SELECTION === 'true'`.
+   */
   columnSelection?: boolean;
 };
 
@@ -158,6 +172,11 @@ export type IDataSet = {
   prompt: string;
   createdBy?: string;
   id?: string;
+  // Audit timestamps inherited from the persisted entity (BaseEntity).
+  // Surfaced so list/detail responses can show created + last-updated time
+  // (serialised as ISO strings over the wire). Clients parse for display.
+  createdOn?: Date;
+  modifiedOn?: Date;
 };
 
 export type IDatasetWithActions = IDataSet & {
@@ -176,6 +195,8 @@ export interface IDataSetStore {
     data: DataObject<IDataSet>,
     where?: Where<IDataSet>,
   ): Promise<Count>;
+  deleteById(id: string): Promise<void>;
+  deleteAll(where?: Where<IDataSet>): Promise<Count>;
   getData<T extends AnyObject>(
     id: string,
     limit?: number,
@@ -204,19 +225,28 @@ export type CachedKnowledgeGraph = {
 };
 
 export type QueryCacheMetadata = {
+  id?: string;
   datasetId: string;
   query: string;
   type: DbQueryStoredTypes.DataSet;
   description: string;
   votes: number;
+  tenantId: string;
 };
 
+export type SemanticCacheDocument<TMetadata extends Record<string, unknown>> = {
+  pageContent: string;
+  metadata: TMetadata;
+};
+
+export interface ISemanticCacheRetriever<
+  TMetadata extends Record<string, unknown>,
+> {
+  invoke(query: string): Promise<Array<SemanticCacheDocument<TMetadata>>>;
+}
+
 export type PlaceholderType =
-  | 'string'
-  | 'number'
-  | 'boolean'
-  | 'sql_expression'
-  | 'template_ref';
+  'string' | 'number' | 'boolean' | 'sql_expression' | 'template_ref';
 
 export type TemplatePlaceholder = {
   name: string;
@@ -242,9 +272,11 @@ export type QueryTemplate = {
 };
 
 export type QueryTemplateMetadata = {
+  id?: string;
   templateId: string;
   template: string;
   type: DbQueryStoredTypes.Template;
+  tenantId: string;
   description: string;
   votes: number;
   placeholders: string; // JSON-serialized TemplatePlaceholder[]
@@ -272,3 +304,47 @@ export interface IDbConnector {
   validate(query: string): Promise<void>;
   toDDL(dbSchema: DatabaseSchema): string;
 }
+
+// ---------------------------------------------------------------------------
+// Workflow node I/O types. Kept here (not inline in the `nodes/*.node.ts`
+// files) to match the LangGraph structure, where node input/output shapes lived
+// in this component `types.ts`. Node-output types derived from a colocated zod
+// schema (`z.infer<...>`) stay with their schema; the `Rc` alias lives in
+// `nodes/_helpers` (it derives from a helper there, which imports this file).
+// ---------------------------------------------------------------------------
+
+/** A semantic-cache candidate returned by the query cache retriever. */
+export type CacheDoc = {pageContent: string; metadata: {id?: string}};
+/** The query-cache retriever (CheckCacheNode). */
+export type QueryCache = {invoke(input: string): Promise<CacheDoc[]>};
+/** CheckCacheNode output. */
+export type CacheOut = {
+  cacheHit: boolean;
+  datasetId?: string;
+  sampleSql?: string;
+  samplePrompt?: string;
+};
+
+/** A query-template candidate returned by the template cache retriever. */
+export type TemplateDoc = {pageContent: string; metadata: {id?: string}};
+/** The template-cache retriever (CheckTemplatesNode). */
+export type TemplateCache = {invoke(input: string): Promise<TemplateDoc[]>};
+/** CheckTemplatesNode output. */
+export type TemplateMatchOut = {matched: boolean; templateId?: string};
+
+/** FailedNode output. */
+export type FailedOut = {datasetId: string; sql: string; replyToUser: string};
+/** ImproveFailedNode output. */
+export type ImproveOut = {datasetId: string; sql: string};
+/** LoadExistingNode input. */
+export type LoadIn = {datasetId: string; prompt: string};
+/** ReturnCachedNode output (the `cached` branch arm). */
+export type CachedOut = {kind: 'cached'; datasetId: string; sql: string};
+/** SaveDatasetFromTemplateNode output (the `template` branch arm). */
+export type TemplateBranchOut = {
+  kind: 'template';
+  datasetId: string;
+  sql: string;
+};
+/** SaveDataSetNode / SaveImprovedNode output. */
+export type SaveOut = {datasetId: string; sql: string};

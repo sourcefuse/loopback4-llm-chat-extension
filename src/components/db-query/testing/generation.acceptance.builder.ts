@@ -18,6 +18,7 @@ import {
 } from '../../../graphs';
 import {generateMarkdownTable, getModelNameFromEnv} from './utils';
 import {writeFileSync} from 'fs';
+import {setTimeout as sleep} from 'node:timers/promises';
 import {AnyObject} from '@loopback/repository';
 import {ILogger, LOGGER} from '@sourceloop/core';
 import {IDbConnector, DbQueryConfig, IDataSetStore} from '../types';
@@ -25,7 +26,7 @@ import {AuthenticationBindings} from 'loopback4-authentication';
 
 function parseData(prompt: string, data: Record<string, string>) {
   for (const key of Object.keys(data)) {
-    const value = data[key].split(' ').join('%').split('_').join('%');
+    const value = data[key].replaceAll(' ', '%').replaceAll('_', '%');
     prompt = prompt.replace(new RegExp(String.raw`\<${key}\>`, 'g'), value);
   }
   return prompt;
@@ -50,6 +51,36 @@ function userBuilder(tenantId: string, permissions: string[]) {
   };
 }
 
+/**
+ * De-noising knobs for flaky LLM/provider transients (e.g. OpenRouter
+ * rate-limiting under rapid sequential `/reply` calls, which surface as
+ * 0-generation "tool not called" / thrown-error results — NOT real
+ * wrong-SQL failures). Both default off, so behavior is unchanged unless set.
+ *   - `retries`  — re-run a case up to N times when it fails *transiently*
+ *                  (no SQL generated + a string error/no-tool result). Real
+ *                  failures (SQL generated, wrong rows) are never retried.
+ *   - `delayMs`  — throttle: wait between every `/reply` call (and before each
+ *                  retry) to stay under provider rate limits.
+ */
+export interface GenerationAcceptanceRunOptions {
+  retries?: number;
+  delayMs?: number;
+}
+
+/**
+ * A failure worth retrying: the workflow never generated SQL
+ * (`generationCount === 0`) and the result is a string (the "tool not called"
+ * marker or a thrown-error message), i.e. a provider/transport transient
+ * rather than a deterministic wrong-SQL result (which yields a row array).
+ */
+function isTransientFailure(result: GenerationAcceptanceTestResult): boolean {
+  return (
+    !result.success &&
+    result.generationCount === 0 &&
+    typeof result.actualResult === 'string'
+  );
+}
+
 export async function generationAcceptanceBuilder(
   cases: GenerationAcceptanceTestCase[],
   client: Client,
@@ -57,7 +88,9 @@ export async function generationAcceptanceBuilder(
   params: Record<string, string>,
   countPerPrompt = 1,
   writeReport = false,
+  options: GenerationAcceptanceRunOptions = {},
 ): Promise<GenerationAcceptanceSuiteResult> {
+  const {retries = 0, delayMs = 0} = options;
   // setup app
   const config = app.getSync<DbQueryConfig>(DbQueryAIExtensionBindings.Config);
   const permissions = [
@@ -80,35 +113,116 @@ export async function generationAcceptanceBuilder(
     DbQueryAIExtensionBindings.Connector,
   );
 
-  const results: GenerationAcceptanceTestResult[] = [];
   const anyOnly = cases.some(q => q.only);
   const queriesToRun = anyOnly
     ? cases.filter(q => q.only && !q.skip)
     : cases.filter(q => !q.skip);
 
-  for (const query of queriesToRun) {
-    const count = query.count ?? countPerPrompt;
+  const runOnce = (query: GenerationAcceptanceTestCase) =>
+    runSingleTestCase(
+      query,
+      client,
+      token,
+      params,
+      datasetStore,
+      connector,
+      logger,
+    );
+
+  const results = await runAllCases({
+    queriesToRun,
+    runOnce,
+    countPerPrompt,
+    retries,
+    delayMs,
+    writeReport,
+    logger,
+  });
+  return buildFinalResult(results);
+}
+
+/** Execute every case (× its iteration count) sequentially, with retry +
+ * throttle, writing the running report after each. Extracted from the builder
+ * to keep that function within Sonar's complexity limit. */
+async function runAllCases(args: {
+  queriesToRun: GenerationAcceptanceTestCase[];
+  runOnce: (
+    q: GenerationAcceptanceTestCase,
+  ) => Promise<GenerationAcceptanceTestResult>;
+  countPerPrompt: number;
+  retries: number;
+  delayMs: number;
+  writeReport: boolean;
+  logger: ILogger;
+}): Promise<GenerationAcceptanceTestResult[]> {
+  const results: GenerationAcceptanceTestResult[] = [];
+  for (const query of args.queriesToRun) {
+    const count = query.count ?? args.countPerPrompt;
     for (let i = 0; i < count; i++) {
-      logger.info(
-        `Running query: ${query.case} ${i > 0 ? `Iteration: ${i + 1}` : ''}`,
-      );
-      const result = await runSingleTestCase(
-        query,
-        client,
-        token,
-        params,
-        datasetStore,
-        connector,
-        logger,
-      );
-      results.push(result);
-      if (writeReport) {
-        writeResultSoFar(results);
-      }
+      await runIteration(args, query, i, results);
     }
   }
+  return results;
+}
 
-  return buildFinalResult(results);
+/** One iteration of one case: log, run-with-retry, append, optionally write the
+ * running report, and throttle. Split out of {@link runAllCases} so neither
+ * function exceeds Sonar's cognitive-complexity limit. */
+async function runIteration(
+  args: {
+    runOnce: (
+      q: GenerationAcceptanceTestCase,
+    ) => Promise<GenerationAcceptanceTestResult>;
+    retries: number;
+    delayMs: number;
+    writeReport: boolean;
+    logger: ILogger;
+  },
+  query: GenerationAcceptanceTestCase,
+  i: number,
+  results: GenerationAcceptanceTestResult[],
+): Promise<void> {
+  args.logger.info(
+    `Running query: ${query.case} ${i > 0 ? `Iteration: ${i + 1}` : ''}`,
+  );
+  results.push(
+    await runWithRetries(
+      args.runOnce,
+      query,
+      {retries: args.retries, delayMs: args.delayMs},
+      args.logger,
+    ),
+  );
+  if (args.writeReport) writeResultSoFar(results);
+  if (args.delayMs) await sleep(args.delayMs);
+}
+
+/**
+ * Run one case, re-running it up to `retries` times while it fails
+ * transiently (see {@link isTransientFailure}). Extracted from the main loop
+ * so the builder stays within complexity/nesting limits.
+ */
+async function runWithRetries(
+  runOnce: (
+    q: GenerationAcceptanceTestCase,
+  ) => Promise<GenerationAcceptanceTestResult>,
+  query: GenerationAcceptanceTestCase,
+  opts: Required<GenerationAcceptanceRunOptions>,
+  logger: ILogger,
+): Promise<GenerationAcceptanceTestResult> {
+  let result = await runOnce(query);
+  for (
+    let attempt = 1;
+    attempt <= opts.retries && isTransientFailure(result);
+    attempt++
+  ) {
+    logger.warn(
+      `Transient failure for ${query.case}; retry ${attempt}/${opts.retries}`,
+    );
+    if (opts.delayMs) await sleep(opts.delayMs);
+    result = await runOnce(query);
+  }
+  return result;
 }
 
 async function runSingleTestCase(
@@ -158,6 +272,21 @@ async function runSingleTestCase(
     result.inputTokens = tokenCount.data.inputTokens;
     result.outputTokens = tokenCount.data.outputTokens;
 
+    // Diagnostic escape hatch: when a case fails ("tool did not complete" /
+    // "tool not called"), the report only records the terminal status — not
+    // the generated SQL, validation feedback, or a model refusal. Set
+    // ACCEPT_DEBUG=true to dump the full event stream for the case so the
+    // actual failure (refusal vs invalid SQL vs wrong filter) is visible.
+    if (process.env.ACCEPT_DEBUG === 'true') {
+      // Diagnostic dump for a failing acceptance case — straight to the
+      // terminal via stdout (not console.*, which trips SonarQube S106).
+      process.stdout.write(
+        `\n[ACCEPT_DEBUG] ${query.case} full event body:\n` +
+          JSON.stringify(body, null, 2) +
+          '\n[/ACCEPT_DEBUG]\n',
+      );
+    }
+
     if (!lastStatus) {
       result.actualResult =
         'LLM did not call the query tool. No tool status events were received.';
@@ -168,13 +297,17 @@ async function runSingleTestCase(
     }
 
     populateStreamMetrics(result, body);
-    if (lastStatus.data.status === ToolStatus.Completed) {
-      await populateCompletedResult(result, lastStatus, query, {
+    // Mastra emits the datasetId on the final `Tool` event (v2 put it on the
+    // last ToolStatus). Read it from there.
+    const datasetId = extractDatasetId(body);
+    if (lastStatus.data.status === ToolStatus.Completed && datasetId) {
+      await populateCompletedResult(result, query, {
         client,
         token,
         params,
         datasetStore,
         connector,
+        datasetId,
       });
     } else {
       result.actualResult = JSON.stringify(lastStatus);
@@ -197,10 +330,9 @@ function populateStreamMetrics(
       v.data.status?.startsWith('DESCRIPTION:'),
   );
   const lastDescription = finalDescription.at(-1) as
-    | LLMStreamToolStatusEvent
-    | undefined;
+    LLMStreamToolStatusEvent | undefined;
   if (lastDescription) {
-    result.description = lastDescription.data.status.replace(
+    result.description = (lastDescription.data.status ?? '').replace(
       'DESCRIPTION:',
       '',
     );
@@ -223,9 +355,17 @@ function populateStreamMetrics(
   );
 }
 
+function extractDatasetId(body: LLMStreamEvent[]): string | undefined {
+  const toolEvents = body.filter(
+    (v: LLMStreamEvent) => v.type === LLMStreamEventType.Tool,
+  );
+  const last = toolEvents.at(-1) as
+    {data?: {data?: {datasetId?: string}}} | undefined;
+  return last?.data?.data?.datasetId;
+}
+
 async function populateCompletedResult(
   result: GenerationAcceptanceTestResult,
-  lastStatus: LLMStreamToolStatusEvent,
   query: GenerationAcceptanceTestCase,
   ctx: {
     client: Client;
@@ -233,12 +373,11 @@ async function populateCompletedResult(
     params: Record<string, string>;
     datasetStore: {findById: (id: string) => Promise<AnyObject>};
     connector: IDbConnector;
+    datasetId: string;
   },
 ) {
-  const {client, token, params, datasetStore, connector} = ctx;
-  const dataset = await datasetStore.findById(
-    lastStatus.data.data?.['datasetId'],
-  );
+  const {client, token, params, datasetStore, connector, datasetId} = ctx;
+  const dataset = await datasetStore.findById(datasetId);
   result.query = parseData(dataset.query, params);
   const {body: actualData} = await client
     .get(`/datasets/${dataset.id}/execute`)

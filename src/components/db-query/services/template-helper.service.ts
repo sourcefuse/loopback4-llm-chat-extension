@@ -1,5 +1,4 @@
-import {PromptTemplate} from '@langchain/core/prompts';
-import {RunnableSequence} from '@langchain/core/runnables';
+import {generateText} from 'ai';
 import {inject} from '@loopback/core';
 import {AiIntegrationBindings} from '../../../keys';
 import {LLMProvider} from '../../../types';
@@ -10,7 +9,8 @@ import {
   QueryTemplateMetadata,
   TemplatePlaceholder,
 } from '../types';
-import {RunnableConfig} from '../../../graphs';
+import type {IQueryTemplateStore} from '../types';
+import type {SchemaStore} from './schema.store';
 
 const MAX_TEMPLATE_RECURSION_DEPTH = 3;
 
@@ -25,7 +25,7 @@ export class TemplateHelper {
     private readonly llm: LLMProvider,
   ) {}
 
-  extractionPrompt = PromptTemplate.fromTemplate(`
+  private readonly extractionPromptTemplate = `
 <instructions>
 You are an expert at extracting parameter values from natural language prompts.
 Given a user prompt, a SQL template, and a list of placeholders with their descriptions and types, extract the value for each placeholder from the prompt.
@@ -51,21 +51,36 @@ Rules per type:
 - sql_expression: Return a complete, valid SQL fragment with proper SQL syntax including quotes where needed. Example: <date_filter>created_at > '2024-01-01'</date_filter>
 
 Do not return any other text or explanation, just the XML tags.
-</output-format>`);
+</output-format>`;
+
+  private _buildExtractionPrompt(
+    prompt: string,
+    template: string,
+    placeholders: string,
+  ): string {
+    // Single-pass replacement to prevent order-dependent injection:
+    // sequential .replace('{prompt}', ...) then .replace('{template}', ...)
+    // would substitute INTO already-inserted content if the prompt itself
+    // contained the literal text `{template}` or `{placeholders}`.
+    // A single regex pass replaces each marker exactly once, in order,
+    // without ever re-scanning replaced content.
+    const slots: Record<string, string> = {
+      '{prompt}': prompt,
+      '{template}': template,
+      '{placeholders}': placeholders,
+    };
+    return this.extractionPromptTemplate.replace(
+      /\{prompt\}|\{template\}|\{placeholders\}/g,
+      match => slots[match] ?? match,
+    );
+  }
 
   async extractPlaceholderValues(
     placeholders: TemplatePlaceholder[],
     prompt: string,
     sqlTemplate: string,
-    config: RunnableConfig,
     schema?: DatabaseSchema,
   ): Promise<Record<string, string | null>> {
-    const chain = RunnableSequence.from([
-      this.extractionPrompt,
-      this.llm,
-      stripThinkingTokens,
-    ]);
-
     const placeholderDescriptions = placeholders
       .map(p => {
         let desc = `- ${p.name} (type: ${p.type}): ${p.description}`;
@@ -76,16 +91,23 @@ Do not return any other text or explanation, just the XML tags.
       })
       .join('\n');
 
-    const response = await chain.invoke(
-      {
+    const response = await generateText({
+      model: this.llm,
+      prompt: this._buildExtractionPrompt(
         prompt,
-        template: sqlTemplate,
-        placeholders: placeholderDescriptions,
-      },
-      config,
-    );
+        sqlTemplate,
+        placeholderDescriptions,
+      ),
+    });
 
-    return this._parseXmlValues(response, placeholders);
+    // Strip <think>…</think> chunks before XML parsing — a reasoning model
+    // bound to CheapLLM would otherwise leak thinking content into the
+    // placeholder values (the v2 RunnableSequence applied stripThinkingTokens
+    // here for exactly this reason).
+    return this._parseXmlValues(
+      stripThinkingTokens(response.text),
+      placeholders,
+    );
   }
 
   private _getColumnContext(
@@ -167,10 +189,57 @@ Do not return any other text or explanation, just the XML tags.
     return result;
   }
 
+  /**
+   * Fetch a template by id and resolve it against the prompt + current schema.
+   * Returns the resolved SQL, description, and the template's AUTHORITATIVE
+   * table list (so the caller persists dataset.tables the read-ACL can gate on,
+   * not just the get-tables guess). Returns null when the template store is
+   * unbound, the template resolves to empty SQL, or resolution throws.
+   */
+  async resolveById(args: {
+    templateStore: IQueryTemplateStore | undefined;
+    schemaStore: SchemaStore | undefined;
+    templateId: string;
+    prompt: string;
+  }): Promise<{sql: string; description?: string; tables: string[]} | null> {
+    const {templateStore, schemaStore, templateId, prompt} = args;
+    if (!templateStore) return null;
+    try {
+      const template = await templateStore.findById(templateId);
+      const schema = (() => {
+        try {
+          return schemaStore?.get();
+        } catch {
+          return undefined;
+        }
+      })();
+      const resolved = await this.resolveTemplate(
+        template,
+        prompt,
+        schema,
+        async id => {
+          try {
+            return await templateStore.findById(id);
+          } catch {
+            return undefined;
+          }
+        },
+      );
+      return resolved.sql
+        ? {
+            sql: resolved.sql,
+            description: resolved.description,
+            tables: template.tables ?? [],
+          }
+        : null;
+    } catch {
+      return null;
+    }
+  }
+
   async resolveTemplate(
     template: QueryTemplate,
     prompt: string,
-    config: RunnableConfig,
     schema?: DatabaseSchema,
     templateFetcher?: (id: string) => Promise<QueryTemplate | undefined>,
     depth = 0,
@@ -185,7 +254,6 @@ Do not return any other text or explanation, just the XML tags.
     let sql = await this._resolveTemplateRefs(
       template,
       prompt,
-      config,
       schema,
       templateFetcher,
       depth,
@@ -202,7 +270,6 @@ Do not return any other text or explanation, just the XML tags.
         extractablePlaceholders,
         prompt,
         sql,
-        config,
         schema,
       );
     }
@@ -219,11 +286,9 @@ Do not return any other text or explanation, just the XML tags.
   private async _resolveTemplateRefs(
     template: QueryTemplate,
     prompt: string,
-    config: RunnableConfig,
     schema: DatabaseSchema | undefined,
     templateFetcher:
-      | ((id: string) => Promise<QueryTemplate | undefined>)
-      | undefined,
+      ((id: string) => Promise<QueryTemplate | undefined>) | undefined,
     depth: number,
   ): Promise<string> {
     let sql = template.template;
@@ -249,7 +314,6 @@ Do not return any other text or explanation, just the XML tags.
       const resolved = await this.resolveTemplate(
         refTemplate,
         prompt,
-        config,
         schema,
         templateFetcher,
         depth + 1,
@@ -264,25 +328,40 @@ Do not return any other text or explanation, just the XML tags.
     placeholders: TemplatePlaceholder[],
     values: Record<string, string | null>,
   ): string {
+    // Single-pass substitution: build a map of every known marker to its
+    // replacement text, then replace all markers in one regex scan.
+    // Sequential .replace() is order-dependent and injectable — if a resolved
+    // value contains `{{another_placeholder}}`, a later iteration would
+    // substitute INTO it; with one pass, already-replaced content is never
+    // re-scanned.
+    const optionalBlanks = new Set<string>();
+    const replacements = new Map<string, string>();
+
     for (const placeholder of placeholders) {
       const value = values[placeholder.name] ?? placeholder.default ?? null;
-      const marker = `{{${placeholder.name}}}`;
-
-      if (!sql.includes(marker)) {
-        continue;
-      }
-
       if (placeholder.optional && !value) {
-        sql = sql.replace(
-          new RegExp(String.raw`\s*${this._escapeRegex(marker)}\s*`),
-          ' ',
+        optionalBlanks.add(placeholder.name);
+      } else {
+        replacements.set(
+          placeholder.name,
+          this._formatValue(placeholder.type, value),
         );
-        continue;
       }
-
-      sql = sql.replace(marker, this._formatValue(placeholder.type, value));
     }
-    return sql;
+
+    // Build a single regex matching all known {{name}} markers.
+    const allNames = placeholders.map(p => this._escapeRegex(p.name));
+    if (!allNames.length) return sql;
+    const pattern = new RegExp(
+      String.raw`\s*\{\{(${allNames.join('|')})\}\}\s*`,
+      'g',
+    );
+
+    return sql.replace(pattern, (fullMatch, name: string) => {
+      if (optionalBlanks.has(name)) return ' ';
+      const rep = replacements.get(name);
+      return rep ?? fullMatch;
+    });
   }
 
   private _formatValue(type: string, value: string | null): string {

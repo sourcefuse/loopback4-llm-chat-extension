@@ -1,153 +1,182 @@
-import {PromptTemplate} from '@langchain/core/prompts';
-import {RunnableSequence} from '@langchain/core/runnables';
-import {LangGraphRunnableConfig} from '@langchain/langgraph';
-import {inject, service} from '@loopback/core';
+import {inject} from '@loopback/core';
+import type {TracingContext} from '@mastra/core/observability';
+import type {LanguageModel} from 'ai';
 import {graphNode} from '../../../decorators';
-import {IGraphNode, LLMStreamEventType} from '../../../graphs';
+import type {IGraphNode, GraphNodeCtx} from '../../../graphs/types';
 import {AiIntegrationBindings} from '../../../keys';
-import {LLMProvider} from '../../../types';
-import {stripThinkingTokens} from '../../../utils';
-import {AIMessage} from '@langchain/core/messages';
 import {DbQueryAIExtensionBindings} from '../keys';
+import type {DbSchemaHelperService} from '../services';
+import type {SchemaStore} from '../services/schema.store';
+import type {DbQueryConfig} from '../types';
+import {idToString, tracedGenerateText} from '../_helpers';
+import type {BranchResult} from '../constants';
 import {DbQueryNodes} from '../nodes.enum';
-import {DbSchemaHelperService} from '../services';
-import {DbQueryState} from '../state';
-import {DbQueryConfig} from '../types';
+import {CHECKLIST_MIN_TABLES} from '../checklist.shared';
+import {ChecklistHelper} from '../services/checklist-helper.service';
 
+/**
+ * First checklist pass (the successor of the LangGraph GenerateChecklistNode). A
+ * DI-resolved `@graphNode` class. The normalise/extract/generate/envelope
+ * helpers live on the class as `protected` methods so a host can `extends
+ * GenerateChecklistNode` and override a single step (e.g. the checklist prompt),
+ * then rebind under `@graphNode(DbQueryNodes.GenerateChecklist)`.
+ */
 @graphNode(DbQueryNodes.GenerateChecklist)
-export class GenerateChecklistNode implements IGraphNode<DbQueryState> {
+export class GenerateChecklistNode implements IGraphNode {
   constructor(
-    @inject(AiIntegrationBindings.CheapLLM)
-    private readonly llm: LLMProvider,
-    @inject(DbQueryAIExtensionBindings.Config)
-    private readonly config: DbQueryConfig,
-    @service(DbSchemaHelperService)
-    private readonly schemaHelper: DbSchemaHelperService,
+    // ponytail: optional + default instance keeps the node zero-arg
+    // constructible (the node registry's `new () =>` contract); DI injects the
+    // bound (rebindable) service when the component is mounted.
+    @inject('services.ChecklistHelper', {optional: true})
+    protected readonly checklistHelper: ChecklistHelper = new ChecklistHelper(),
+    @inject(DbQueryAIExtensionBindings.Config, {optional: true})
+    protected readonly config?: DbQueryConfig,
     @inject(DbQueryAIExtensionBindings.GlobalContext, {optional: true})
-    private readonly checks?: string[],
+    protected readonly globalContext: string[] = [],
+    @inject('services.SchemaStore', {optional: true})
+    protected readonly schemaStore?: SchemaStore,
+    @inject('services.DbSchemaHelperService', {optional: true})
+    protected readonly schemaHelper?: DbSchemaHelperService,
+    @inject(AiIntegrationBindings.ChatModel, {optional: true})
+    protected readonly chatModel?: LanguageModel,
+    @inject(AiIntegrationBindings.CheapModel, {optional: true})
+    protected readonly cheapModel?: LanguageModel,
   ) {}
 
-  prompt = PromptTemplate.fromTemplate(`
-<instructions>
-You are given a user question, the tables selected for SQL generation, the relevant database schema, and a numbered list of rules/checks.
-Return ONLY the indexes of the rules that are relevant to the user's question, the selected tables, and the given schema.
+  async execute({inputData, tracingContext}: GraphNodeCtx) {
+    const wrapped = inputData as Record<string, unknown>;
+    const branchResult = this.extractBranchResult(wrapped);
 
-A rule is relevant if:
-- It directly affects how a correct SQL query should be written for this question.
-- It is a dependency of another relevant rule (e.g. if rule 3 requires a currency conversion, and rule 5 defines how currency conversion works, both must be included).
-- It applies to any of the selected tables or their relationships.
-
-After selecting relevant rules, review your selection and ensure:
-- Any rule that is referenced by, or is a prerequisite for, another selected rule is also included.
-- Do not include rules that are completely unrelated to the question, schema, or selected tables.
-</instructions>
-
-<user-question>
-{prompt}
-</user-question>
-
-<selected-tables>
-{tables}
-</selected-tables>
-
-<database-schema>
-{schema}
-</database-schema>
-
-<rules>
-{indexedChecks}
-</rules>
-
-<output-instructions>
-Return only a comma-separated list of the relevant rule indexes.
-Do not include any other text, explanation, or formatting.
-Example: 1,3,5
-If no rules are relevant, return: none
-</output-instructions>`);
-
-  async execute(
-    state: DbQueryState,
-    config: LangGraphRunnableConfig,
-  ): Promise<DbQueryState> {
-    const empty = {} as DbQueryState;
-    if (this.config.nodes?.generateChecklistNode?.enabled === false) {
-      return empty;
-    }
-    if (state.validationChecklist) {
-      return empty;
+    if (branchResult.kind !== 'continue') {
+      return this.buildEnvelopeResult(branchResult);
     }
 
-    const tableCount = Object.keys(state.schema?.tables ?? {}).length;
-    if (tableCount <= 2) {
-      return empty;
+    // kind === 'continue'
+    const {prompt, tables, unanswerable, replyToUser, sampleSql, samplePrompt} =
+      branchResult;
+    const sample = {sampleSql, samplePrompt};
+
+    // The get-columns gate judged the question unanswerable — carry the
+    // verdict straight through so sql-and-validate skips SQL generation.
+    if (unanswerable) {
+      return {
+        prompt,
+        tables: [],
+        checklist: '',
+        attempts: 0,
+        unanswerable: true,
+        replyToUser: replyToUser ?? '',
+      };
     }
 
-    const allChecks = [
-      ...(this.checks ?? []),
-      ...this.schemaHelper.getTablesContext(state.schema),
-    ];
-
-    if (allChecks.length === 0) {
-      return empty;
+    // Gate the checklist LLM call (restores v2 generate-checklist.node):
+    //   - skip when the consumer disabled it (`enabled === false`), and
+    //   - skip on <=2 tables where the planning value doesn't pay for the
+    //     extra round-trip.
+    const config = this.config;
+    const checklistDisabled =
+      config?.nodes?.generateChecklistNode?.enabled === false;
+    if (checklistDisabled || tables.length <= CHECKLIST_MIN_TABLES) {
+      return {prompt, tables, checklist: '', attempts: 0, ...sample};
     }
 
-    config.writer?.({
-      type: LLMStreamEventType.Log,
-      data: 'Filtering validation checklist for semantic validation.',
-    });
+    const cheap = this.cheapModel ?? this.chatModel;
 
-    const mergedIndexes = await this.runParallelChecklist(state, allChecks);
+    // Two independent cheap-tier LLM passes — run concurrently:
+    //   1. user-stated explicit constraints (filters/sorts/limits), and
+    //   2. the GlobalContext + per-table domain rules relevant to this query
+    //      (v2 generate-checklist.node) — so validation ENFORCES domain rules,
+    //      not just the SQL-gen prompt.
+    const [userChecklist, domainRules] = await Promise.all([
+      this.generateChecklistText(cheap, prompt, tables, tracingContext),
+      this.checklistHelper.selectDomainRules({
+        globalContext: this.globalContext,
+        schemaStore: this.schemaStore,
+        schemaHelper: this.schemaHelper,
+        llm: cheap,
+        prompt,
+        tables,
+        label: 'generate-checklist-rules',
+        parallelism: config?.nodes?.generateChecklistNode?.parallelism ?? 1,
+        tracing: tracingContext,
+      }),
+    ]);
 
-    if (mergedIndexes.size === 0) {
-      return empty;
-    }
-
-    const validationChecklist = Array.from(mergedIndexes)
-      .sort((a, b) => a - b)
-      .map(i => allChecks[i - 1])
-      .join('\n');
-
-    return {validationChecklist} as DbQueryState;
-  }
-
-  private async runParallelChecklist(
-    state: DbQueryState,
-    allChecks: string[],
-  ): Promise<Set<number>> {
-    const indexedChecks = allChecks
-      .map((check, i) => `${i + 1}. ${check}`)
-      .join('\n');
-
-    const parallelism =
-      this.config.nodes?.generateChecklistNode?.parallelism ?? 1;
-
-    const chain = RunnableSequence.from([this.prompt, this.llm]);
-    const invokeArgs = {
-      prompt: state.prompt,
-      tables: Object.keys(state.schema?.tables ?? {}).join(', '),
-      schema: this.schemaHelper.asString(state.schema),
-      indexedChecks,
-    };
-
-    const results = await Promise.all(
-      Array.from({length: parallelism}, () => chain.invoke(invokeArgs)),
+    const checklist = this.checklistHelper.mergeChecklist(
+      userChecklist,
+      domainRules,
     );
 
-    const mergedIndexes = new Set<number>();
-    for (const output of results) {
-      this.parseIndexes(output, allChecks.length).forEach(n =>
-        mergedIndexes.add(n),
-      );
-    }
-    return mergedIndexes;
+    return {prompt, tables, checklist, attempts: 0, ...sample};
   }
 
-  private parseIndexes(output: AIMessage, maxIndex: number): number[] {
-    const response = stripThinkingTokens(output).trim();
-    if (!response || response === 'none') return [];
-    return response
-      .split(',')
-      .map(s => Number.parseInt(s.trim(), 10))
-      .filter(n => !Number.isNaN(n) && n >= 1 && n <= maxIndex);
+  protected normaliseChecklist(raw: string): string {
+    const trimmed = raw.trim();
+    if (/^(none|n\/?a|\(none\)|no constraints?\.?)$/i.test(trimmed)) return '';
+    return trimmed;
+  }
+
+  // Mastra wraps each branch arm's output as { [stepId]: stepOutput }, so we
+  // still resolve by step ID to unwrap the envelope — but we then dispatch on
+  // the shared `kind` discriminant instead of inferring shape from which key
+  // happened to be non-null.
+  protected extractBranchResult(
+    wrapped: Record<string, unknown>,
+  ): BranchResult {
+    const result = (wrapped[DbQueryNodes.ReturnCached] ??
+      wrapped[DbQueryNodes.SaveFromTemplate] ??
+      wrapped[DbQueryNodes.GetColumns]) as BranchResult | undefined;
+    // Fallback: treat unrecognised input as an empty continue pass
+    return result ?? {kind: 'continue', prompt: '', tables: []};
+  }
+
+  protected async generateChecklistText(
+    chatLlm: LanguageModel | undefined,
+    prompt: string,
+    tables: string[],
+    tracing?: TracingContext,
+  ): Promise<string> {
+    if (!chatLlm || !prompt) return '';
+    const llmPrompt = `You are a SQL planning assistant. List ONLY the constraints the user EXPLICITLY stated in their request — specific filters, sort orders, row limits, or named columns they asked for. Do NOT invent filters, exclusions, sort orders, joins, or columns the user did not mention. If the request states no explicit constraints beyond the data wanted, return nothing.
+
+User request: ${prompt}
+Available tables: ${tables.join(', ') || '(none)'}
+
+Return ONLY the explicit constraints as plain-text bullets, or an empty response if there are none.`;
+
+    try {
+      const result = await tracedGenerateText({
+        model: chatLlm,
+        prompt: llmPrompt,
+        tracing,
+        label: 'generate-checklist',
+        resultType: 'planning',
+      });
+      return this.normaliseChecklist(result.text);
+    } catch {
+      return '';
+    }
+  }
+
+  /**
+   * Cached/template branch arms carry an existing dataset id straight through
+   * (no SQL generation). Extracted from `execute` to keep it under the
+   * cyclomatic complexity cap (S1541).
+   */
+  protected buildEnvelopeResult(
+    branchResult: Extract<BranchResult, {kind: 'cached' | 'template'}>,
+  ) {
+    if (!branchResult.datasetId) {
+      return {prompt: '', tables: [], checklist: '', attempts: 0};
+    }
+    return {
+      prompt: '',
+      tables: [],
+      checklist: '',
+      attempts: 0,
+      cached: true,
+      datasetId: idToString(branchResult.datasetId),
+      sql: branchResult.sql ?? '',
+    };
   }
 }

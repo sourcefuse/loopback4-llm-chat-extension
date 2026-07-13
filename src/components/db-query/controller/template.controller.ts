@@ -1,4 +1,4 @@
-import {inject, service} from '@loopback/core';
+import {inject} from '@loopback/core';
 import {
   get,
   getModelSchemaRef,
@@ -7,7 +7,6 @@ import {
   post,
   requestBody,
 } from '@loopback/rest';
-import {BaseRetriever} from '@langchain/core/retrievers';
 import {
   CONTENT_TYPE,
   IAuthUserWithPermissions,
@@ -21,28 +20,28 @@ import {
   AuthenticationBindings,
 } from 'loopback4-authentication';
 import {authorize} from 'loopback4-authorization';
-import {VectorStore} from '@langchain/core/vectorstores';
-import {AiIntegrationBindings} from '../../../keys';
 import {PermissionKey} from '../../../permissions';
 import {QueryTemplateDTO, TemplatePlaceholderDTO} from '../models';
 import {
   DbQueryStoredTypes,
+  ISemanticCacheRetriever,
   IQueryTemplateStore,
   QueryTemplateMetadata,
 } from '../types';
 import {DbQueryAIExtensionBindings} from '../keys';
 import {SchemaStore} from '../services/schema.store';
+import {SemanticCacheService} from '../services';
 
 export class TemplateController {
   constructor(
-    @inject(AiIntegrationBindings.VectorStore)
-    private readonly vectorStore: VectorStore,
     @inject(AuthenticationBindings.CURRENT_USER)
     private readonly user: IAuthUserWithPermissions,
-    @service(SchemaStore)
+    @inject('services.SchemaStore')
     private readonly schemaStore: SchemaStore,
+    @inject('services.SemanticCacheService')
+    private readonly semanticCache: SemanticCacheService,
     @inject(DbQueryAIExtensionBindings.TemplateCache)
-    private readonly templateRetriever: BaseRetriever<QueryTemplateMetadata>,
+    private readonly templateRetriever: ISemanticCacheRetriever<QueryTemplateMetadata>,
     @inject(DbQueryAIExtensionBindings.TemplateStore, {optional: true})
     private readonly templateStore: IQueryTemplateStore | undefined,
   ) {}
@@ -94,22 +93,21 @@ export class TemplateController {
       .digest('hex')
       .slice(0, 16);
 
-    await this.vectorStore.addDocuments([
-      {
-        pageContent: body.prompt,
-        metadata: {
-          templateId,
-          template: body.template,
-          type: DbQueryStoredTypes.Template,
-          tenantId,
-          description: body.description,
-          votes: 0,
-          placeholders: JSON.stringify(body.placeholders),
-          tables: JSON.stringify(body.tables),
-          schemaHash,
-        },
+    await this.semanticCache.upsertDocument({
+      pageContent: body.prompt,
+      metadata: {
+        id: templateId,
+        templateId,
+        template: body.template,
+        type: DbQueryStoredTypes.Template,
+        tenantId,
+        description: body.description,
+        votes: 0,
+        placeholders: JSON.stringify(body.placeholders),
+        tables: JSON.stringify(body.tables),
+        schemaHash,
       },
-    ]);
+    });
 
     return {id: templateId};
   }
@@ -161,8 +159,11 @@ export class TemplateController {
         prompt: doc.pageContent,
         description: doc.metadata.description,
         template: doc.metadata.template,
-        tables: JSON.parse(doc.metadata.tables),
-        placeholders: JSON.parse(doc.metadata.placeholders),
+        tables: this._safeParseJson<string[]>(doc.metadata.tables, []),
+        placeholders: this._safeParseJson<TemplatePlaceholderDTO[]>(
+          doc.metadata.placeholders,
+          [],
+        ),
         schemaHash: doc.metadata.schemaHash,
         votes: doc.metadata.votes,
       }));
@@ -259,5 +260,14 @@ export class TemplateController {
         });
     }
     return hash.digest('hex');
+  }
+
+  private _safeParseJson<T>(input: unknown, fallback: T): T {
+    if (typeof input !== 'string') return fallback;
+    try {
+      return JSON.parse(input) as T;
+    } catch {
+      return fallback;
+    }
   }
 }

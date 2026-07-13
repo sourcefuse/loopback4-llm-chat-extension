@@ -1,80 +1,58 @@
-import {PromptTemplate} from '@langchain/core/prompts';
-import {RunnableSequence} from '@langchain/core/runnables';
-import {LangGraphRunnableConfig} from '@langchain/langgraph';
 import {inject} from '@loopback/core';
+import type {LanguageModel} from 'ai';
 import {graphNode} from '../../../decorators';
-import {IGraphNode, LLMStreamEventType} from '../../../graphs';
+import type {IGraphNode, GraphNodeCtx} from '../../../graphs/types';
 import {AiIntegrationBindings} from '../../../keys';
-import {LLMProvider} from '../../../types';
-import {stripThinkingTokens} from '../../../utils';
+import {tracedGenerateText} from '../_helpers';
 import {DbQueryNodes} from '../nodes.enum';
-import {DbQueryState} from '../state';
 import {ChangeType} from '../types';
+import type {SqlLoopState} from './sql-generation.node';
 
+/**
+ * Classify the level of change requested against a similar/prior query (the
+ * Mastra successor of the LangGraph `ClassifyChangeNode`). Runs before the
+ * generation loop; its `changeType` feeds `SqlGenerationNode`'s cheap-vs-smart
+ * tier choice (a `minor` change uses the cheap tier). No-op when there is no
+ * `sampleSql` to compare against. DI-resolved, overridable.
+ */
 @graphNode(DbQueryNodes.ClassifyChange)
-export class ClassifyChangeNode implements IGraphNode<DbQueryState> {
-  prompt = PromptTemplate.fromTemplate(`
-<instructions>
-You are given the original description of a SQL query and a new description that includes user feedback.
-Your task is to classify the level of change required to transform the original query into the new one.
-
-Classify as one of:
-- **minor**: Small tweaks such as changing a filter value, adjusting a limit, adding/removing a single condition, or renaming an alias.
-- **major**: Structural changes like adding/removing joins, changing grouping logic, adding subqueries, or significantly altering the WHERE clause.
-- **rewrite**: The intent of the query has fundamentally changed, requiring a completely new query from scratch.
-</instructions>
-
-<original-description>
-{originalDescription}
-</original-description>
-
-<new-description>
-{newDescription}
-</new-description>
-
-<output-instructions>
-Return ONLY one of: minor, major, rewrite
-Do not include any other text, explanation, or formatting.
-</output-instructions>`);
-
+export class ClassifyChangeNode implements IGraphNode {
   constructor(
-    @inject(AiIntegrationBindings.CheapLLM)
-    private readonly llm: LLMProvider,
+    @inject(AiIntegrationBindings.CheapModel, {optional: true})
+    protected readonly cheapModel?: LanguageModel,
+    @inject(AiIntegrationBindings.ChatModel, {optional: true})
+    protected readonly chatModel?: LanguageModel,
   ) {}
 
-  async execute(
-    state: DbQueryState,
-    config: LangGraphRunnableConfig,
-  ): Promise<DbQueryState> {
-    if (!state.sampleSql) {
-      return {} as DbQueryState;
+  async execute({inputData, tracingContext}: GraphNodeCtx) {
+    const data = inputData as SqlLoopState;
+    const llm = this.cheapModel ?? this.chatModel;
+    if (!data.samplePrompt || !llm) return {...data};
+
+    const prompt = `You are given the original description of a SQL query and a new description that includes user feedback. Classify the level of change required to transform the original into the new one.
+
+Original: ${data.samplePrompt}
+New: ${data.prompt ?? ''}
+
+Return ONLY one of: minor, major, rewrite. No other text.`;
+    try {
+      const result = await tracedGenerateText({
+        model: llm,
+        prompt,
+        tracing: tracingContext,
+        label: 'classify-change',
+        resultType: 'reasoning',
+      });
+      return {...data, changeType: this.parseChangeType(result.text)};
+    } catch {
+      return {...data};
     }
-
-    config.writer?.({
-      type: LLMStreamEventType.Log,
-      data: 'Classifying the level of change required for the query.',
-    });
-
-    const chain = RunnableSequence.from([this.prompt, this.llm]);
-    const output = await chain.invoke({
-      originalDescription: state.sampleSqlPrompt ?? '',
-      newDescription: state.prompt,
-    });
-
-    const response = stripThinkingTokens(output).trim().toLowerCase();
-    const changeType = this.parseChangeType(response);
-
-    config.writer?.({
-      type: LLMStreamEventType.Log,
-      data: `Change classified as: ${changeType}`,
-    });
-
-    return {changeType} as DbQueryState;
   }
 
-  private parseChangeType(response: string): ChangeType {
-    if (response.includes(ChangeType.Minor)) return ChangeType.Minor;
-    if (response.includes(ChangeType.Rewrite)) return ChangeType.Rewrite;
+  protected parseChangeType(response: string): ChangeType {
+    const text = response.trim().toLowerCase();
+    if (text.includes(ChangeType.Minor)) return ChangeType.Minor;
+    if (text.includes(ChangeType.Rewrite)) return ChangeType.Rewrite;
     return ChangeType.Major;
   }
 }

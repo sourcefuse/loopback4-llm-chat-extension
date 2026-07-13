@@ -2,10 +2,12 @@ import {
   Binding,
   BindingScope,
   Component,
+  Constructor,
   ControllerClass,
   CoreBindings,
   createBindingFromClass,
   inject,
+  LifeCycleObserver,
   ProviderMap,
   ServiceOrProviderClass,
 } from '@loopback/core';
@@ -32,6 +34,27 @@ import {
 } from './components';
 import {DEFAULT_FILE_SIZE, MAX_TOTAL_SIZE} from './constant';
 import {ChatController, GenerationController} from './controllers';
+import {WriterDB, AiIntegrationBindings, ReaderDB} from './keys';
+import {Chat, Message} from './models';
+import {CacheModel} from './providers';
+import {RedisCache, RedisCacheRepository} from './providers/cache/redis';
+import {ChatRepository, MessageRepository} from './repositories';
+import {
+  ChatCountStrategy,
+  ChatLedgerService,
+  GenerationService,
+  TokenCountPerUserStrategy,
+  TokenCountStrategy,
+} from './services';
+import {UsageAccumulator} from './services/usage-accumulator.service';
+import {SSETransport} from './transports';
+import {AIIntegrationConfig} from './types';
+import {PgVectorStore, hasPgVectorEnv} from './sub-modules/db/postgresql';
+import {DefaultStorageProvider} from './providers/mastra/storage.provider';
+import {MastraProvider} from './providers/mastra/mastra.provider';
+import {ToolsProvider} from './providers/tools.provider';
+import {InProcessRunRegistry} from './runtime/bridge/run-registry';
+import {RequestContextBuilder} from './runtime/request-context.builder';
 import {
   CallLLMNode,
   ChatGraph,
@@ -42,23 +65,10 @@ import {
   RunToolNode,
   SummariseFileNode,
 } from './graphs/chat';
-import {WriterDB, AiIntegrationBindings, ReaderDB} from './keys';
-import {Chat, Message} from './models';
-import {CacheModel, ToolsProvider} from './providers';
-import {RedisCache, RedisCacheRepository} from './providers/cache/redis';
-import {ChatRepository, MessageRepository} from './repositories';
-import {
-  ChatCountStrategy,
-  GenerationService,
-  TokenCountPerUserStrategy,
-  TokenCountStrategy,
-} from './services';
-import {TokenCounter} from './services/token-counter.service';
-import {SSETransport} from './transports';
-import {AIIntegrationConfig} from './types';
-import {PgVectorStore} from './sub-modules/db/postgresql';
+import {RuntimeLifecycleObserver} from './observers/mastra-lifecycle.observer';
 
 const debug = require('debug')('ai-integration:log-events:component');
+
 export class AiIntegrationsComponent implements Component {
   constructor(
     @inject(CoreBindings.APPLICATION_INSTANCE)
@@ -76,28 +86,56 @@ export class AiIntegrationsComponent implements Component {
       createBindingFromClass(RedisCache, {
         key: AiIntegrationBindings.Cache.key,
       }),
+      // Mastra v3 singletons — consumers can override MastraStorage with
+      // PostgresStore/MongoDBStore/etc. The defaults work zero-config.
+      createBindingFromClass(DefaultStorageProvider, {
+        key: AiIntegrationBindings.Storage.key,
+      }).inScope(BindingScope.SINGLETON),
+      createBindingFromClass(MastraProvider, {
+        key: AiIntegrationBindings.Mastra.key,
+      }).inScope(BindingScope.SINGLETON),
+      createBindingFromClass(InProcessRunRegistry, {
+        key: AiIntegrationBindings.RunRegistry.key,
+      }).inScope(BindingScope.SINGLETON),
+      // REQUEST-scoped (as in the LangGraph version) so each tool resolves
+      // per request with its request-scoped DI (e.g. ask-about-dataset's
+      // tenant DatasetStore). SINGLETON silently skipped those tools at boot.
+      createBindingFromClass(ToolsProvider, {
+        key: AiIntegrationBindings.Tools.key,
+      }).inScope(BindingScope.REQUEST),
     ];
 
-    this.providers = {
-      [AiIntegrationBindings.VectorStore.key]: PgVectorStore,
-      [AiIntegrationBindings.Tools.key]: ToolsProvider,
-    };
+    this.providers = hasPgVectorEnv()
+      ? {
+          [AiIntegrationBindings.VectorStore.key]: PgVectorStore,
+        }
+      : {};
 
     this.services = [
       // utils
-      TokenCounter,
       GenerationService,
-      ChatStore,
-      // graph
+      // mastra v3 services
+      UsageAccumulator,
+      ChatLedgerService,
+      // Chat graph + its persistence store, and the 6 chat nodes registered as
+      // tagged `@graphNode(key)` services exactly as in the LangGraph version —
+      // each discovered by tag and resolved per request (BaseGraph._getNodeFn),
+      // so a host overrides any node by rebinding its class.
       ChatGraph,
-      // nodes
-      CallLLMNode,
-      RunToolNode,
+      ChatStore,
+      RequestContextBuilder,
       InitSessionNode,
       SummariseFileNode,
+      CallLLMNode,
+      RunToolNode,
       ContextCompressionNode,
       EndSessionNode,
+      // Tools are registered by their own components (DbQueryComponent /
+      // VisualizerComponent), not here — so each rides with its module and is
+      // independently selectable/overridable. Discovered by tag (@graphTool).
     ];
+
+    this.lifeCycleObservers = [RuntimeLifecycleObserver];
 
     this.controllers = [GenerationController, ChatController];
     this.models = [Chat, Message, CacheModel];
@@ -196,6 +234,8 @@ export class AiIntegrationsComponent implements Component {
   bindings?: Binding[] = [];
 
   services: ServiceOrProviderClass[] | undefined;
+
+  lifeCycleObservers?: Constructor<LifeCycleObserver>[];
 
   /**
    * An optional list of Repository classes to bind for dependency injection

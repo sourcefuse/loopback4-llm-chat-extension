@@ -1,188 +1,161 @@
-import {PromptTemplate} from '@langchain/core/prompts';
-import {BaseRetriever} from '@langchain/core/retrievers';
-import {RunnableSequence} from '@langchain/core/runnables';
-import {inject, service} from '@loopback/core';
+import {inject} from '@loopback/core';
+import type {LanguageModel} from 'ai';
 import {graphNode} from '../../../decorators';
-import {IGraphNode, LLMStreamEventType, RunnableConfig} from '../../../graphs';
+import type {IGraphNode, GraphNodeCtx} from '../../../graphs/types';
 import {AiIntegrationBindings} from '../../../keys';
-import {LLMProvider} from '../../../types';
-import {stripThinkingTokens} from '../../../utils';
 import {DbQueryAIExtensionBindings} from '../keys';
+import type {PermissionHelper} from '../services';
+import type {
+  IQueryTemplateStore,
+  TemplateCache,
+  TemplateDoc,
+  TemplateMatchOut,
+} from '../types';
+import {
+  emitToolStatus,
+  logStepDetail,
+  tracedGenerateText,
+  type Rc,
+} from '../_helpers';
 import {DbQueryNodes} from '../nodes.enum';
-import {DbQueryState} from '../state';
-import {QueryTemplateMetadata} from '../types';
-import {PermissionHelper} from '../services/permission-helper.service';
-import {SchemaStore} from '../services/schema.store';
-import {TemplateHelper} from '../services/template-helper.service';
 
+/**
+ * Query-template gate (the successor of the LangGraph CheckTemplatesNode). A
+ * DI-resolved `@graphNode` class with constructor-injected collaborators
+ * (template cache, template store, permission helper, cheap LLM tier).
+ *
+ * The judge/authorise/resolve logic lives on the class as `protected` methods so
+ * a host can `extends CheckTemplatesNode` and override the ACL rule or the match
+ * resolution, then rebind under `@graphNode(DbQueryNodes.CheckTemplates)`.
+ */
 @graphNode(DbQueryNodes.CheckTemplates)
-export class CheckTemplatesNode implements IGraphNode<DbQueryState> {
+export class CheckTemplatesNode implements IGraphNode<
+  {prompt?: string},
+  TemplateMatchOut
+> {
   constructor(
-    @inject(DbQueryAIExtensionBindings.TemplateCache)
-    private readonly templateCache: BaseRetriever<QueryTemplateMetadata>,
-    @inject(AiIntegrationBindings.CheapLLM)
-    private readonly llm: LLMProvider,
-    @service(PermissionHelper)
-    private readonly permissionHelper: PermissionHelper,
-    @service(TemplateHelper)
-    private readonly templateHelper: TemplateHelper,
-    @service(SchemaStore)
-    private readonly schemaStore: SchemaStore,
+    @inject(DbQueryAIExtensionBindings.TemplateCache, {optional: true})
+    protected readonly templateCache?: TemplateCache,
+    @inject(DbQueryAIExtensionBindings.TemplateStore, {optional: true})
+    protected readonly templateStore?: IQueryTemplateStore,
+    @inject('services.PermissionHelper', {optional: true})
+    protected readonly permissionHelper?: PermissionHelper,
+    @inject(AiIntegrationBindings.ChatModel, {optional: true})
+    protected readonly chatModel?: LanguageModel,
+    @inject(AiIntegrationBindings.CheapModel, {optional: true})
+    protected readonly cheapModel?: LanguageModel,
   ) {}
 
-  matchPrompt = PromptTemplate.fromTemplate(`
-<instructions>
-You are an expert at matching user prompts to query templates.
-Given a user prompt and a list of query templates with their canonical prompts and placeholders, determine if any template can EXACTLY fulfill the user's request.
+  async execute({
+    inputData,
+    requestContext,
+    tracingContext,
+  }: GraphNodeCtx<{prompt?: string}>): Promise<TemplateMatchOut> {
+    const data = inputData;
+    if (!data.prompt) return {matched: false};
 
-A template is a match ONLY if ALL of the following are true:
-- The template produces exactly the data the user is asking for — not more, not less
-- The user's intent is identical to the template's purpose, just with different parameter values
-- All non-optional placeholders can be filled from the user's prompt or have defaults
-- The template does not include extra filters, columns, or logic that the user did not ask for
-- The template does not omit any filters, columns, or logic that the user is asking for
+    const cache = this.templateCache;
+    const chatLlm = this.cheapModel ?? this.chatModel;
+    if (!cache || !chatLlm) return {matched: false};
 
-Do NOT match if:
-- The template is only similar or partially relevant
-- The template would need structural changes beyond placeholder substitution to answer the question
-- The user is asking for something the template cannot express through its placeholders alone
-</instructions>
-<user-prompt>
-{prompt}
-</user-prompt>
-<templates>
-{templates}
-</templates>
-<output-format>
-If a template is an exact match, return: match <index-starting-from-1>
-If no template exactly matches, return: no_match
-
-Do not return any other text or explanation.
-</output-format>`);
-
-  async execute(
-    state: DbQueryState,
-    config: RunnableConfig,
-  ): Promise<Partial<DbQueryState>> {
-    const relevantDocs = await this.templateCache.invoke(state.prompt, config);
-    if (relevantDocs.length === 0) {
-      config.writer?.({
-        type: LLMStreamEventType.Log,
-        data: 'No templates found for this prompt',
-      });
-      return {};
-    }
-
-    const chain = RunnableSequence.from([
-      this.matchPrompt,
-      this.llm,
-      stripThinkingTokens,
-    ]);
-
-    const templatesText = relevantDocs
-      .map((doc, index) => {
-        const metadata = doc.metadata;
-        const placeholders = JSON.parse(metadata.placeholders);
-        const placeholderText = placeholders
-          .map(
-            (p: {name: string; type: string; description: string}) =>
-              `  - {{${p.name}}} (${p.type}): ${p.description}`,
-          )
-          .join('\n');
-        return `<template-${index + 1}>
-<prompt>${doc.pageContent}</prompt>
-<placeholders>
-${placeholderText}
-</placeholders>
-</template-${index + 1}>`;
-      })
-      .join('\n');
-
-    const response = await chain.invoke(
-      {
-        prompt: state.prompt,
-        templates: templatesText,
-      },
-      config,
-    );
-
-    const trimmed = response.trim();
-    if (trimmed === 'no_match') {
-      config.writer?.({
-        type: LLMStreamEventType.Log,
-        data: 'No matching template found for this prompt',
-      });
-      return {};
-    }
-
-    const matchResult = trimmed.match(/^match\s+(\d+)$/);
-    if (!matchResult) {
-      config.writer?.({
-        type: LLMStreamEventType.Log,
-        data: `Unexpected template match response: ${trimmed}`,
-      });
-      return {};
-    }
-
-    const matchIndex = Number.parseInt(matchResult[1], 10) - 1;
-    if (matchIndex < 0 || matchIndex >= relevantDocs.length) {
-      config.writer?.({
-        type: LLMStreamEventType.Log,
-        data: `Template match index ${matchResult[1]} out of bounds`,
-      });
-      return {};
-    }
-
-    const matchedDoc = relevantDocs[matchIndex];
-    const template = this.templateHelper.parseTemplateMetadata(
-      matchedDoc.metadata,
-    );
-
-    // Permission check
-    const missingPermissions = this.permissionHelper.findMissingPermissions(
-      template.tables,
-    );
-    if (missingPermissions.length > 0) {
-      config.writer?.({
-        type: LLMStreamEventType.Log,
-        data: `Template matched but missing permissions: ${missingPermissions.join(', ')}`,
-      });
-      return {};
-    }
-
-    // Resolve placeholders with column context from schema
+    let docs: Array<{pageContent: string; metadata: {id?: string}}> = [];
     try {
-      const schema = this.schemaStore.filteredSchema(template.tables);
-      const resolved = await this.templateHelper.resolveTemplate(
-        template,
-        state.prompt,
-        config,
-        schema,
-      );
-
-      config.writer?.({
-        type: LLMStreamEventType.Log,
-        data: `Template matched: ${template.description}`,
-      });
-      config.writer?.({
-        type: LLMStreamEventType.ToolStatus,
-        data: {
-          status: `Matched query template`,
-        },
-      });
-
-      return {
-        sql: resolved.sql,
-        description: resolved.description,
-        fromTemplate: true,
-        templateId: template.id,
-      };
-    } catch (error) {
-      config.writer?.({
-        type: LLMStreamEventType.Log,
-        data: `Template resolution failed: ${(error as Error).message}`,
-      });
-      return {};
+      docs = await cache.invoke(data.prompt);
+    } catch {
+      return {matched: false};
     }
+
+    if (docs.length === 0) return {matched: false};
+
+    const judgePrompt = this.buildJudgePrompt(data.prompt, docs);
+
+    try {
+      const verdict = await tracedGenerateText({
+        model: chatLlm,
+        prompt: judgePrompt,
+        tracing: tracingContext,
+        label: 'template-judge',
+        resultType: 'reasoning',
+      });
+      const resolved = await this.resolveMatchedTemplate(
+        requestContext,
+        verdict.text.trim(),
+        docs,
+      );
+      if (resolved) return resolved;
+    } catch {
+      // degrade to no match on judge failure
+    }
+
+    return {matched: false};
+  }
+
+  protected buildJudgePrompt(prompt: string, docs: TemplateDoc[]): string {
+    const templates = docs
+      .map((d, i) => `${i + 1}. ${d.pageContent}`)
+      .join('\n');
+    return `You are an expert at matching user prompts to query templates. A template matches ONLY when its purpose and result are EXACTLY what the user asked — no extra columns, no missing filters, only placeholder values differ.
+
+User prompt: ${prompt}
+Templates:
+${templates}
+
+Return 'match <index>' for an exact match or 'no_match'. No other text.`;
+  }
+
+  /**
+   * Table-level ACL gate (parity with v2 CheckTemplatesNode). A matched template
+   * the user lacks read permission for is treated as no-match so the run falls
+   * through to normal SQL generation (which enforces its own permissions) rather
+   * than serving the template's data. Returns true when the template is allowed
+   * (or when the gate can't run — fail-open here is safe because the read-time
+   * ACL in DataSetHelper.getDataFromDataset still guards delivery).
+   */
+  protected async isTemplateAuthorised(templateId: string): Promise<boolean> {
+    const {permissionHelper, templateStore} = this;
+    if (!permissionHelper || !templateStore) return true;
+    try {
+      const template = await templateStore.findById(templateId);
+      return (
+        permissionHelper.findMissingPermissions(template.tables).length === 0
+      );
+    } catch {
+      // Can't resolve the template's tables — let it fall through to the matcher
+      // result; the read-time ACL remains the backstop.
+      return true;
+    }
+  }
+
+  /**
+   * Resolve a `match <index>` judge verdict to a step result, applying the
+   * upfront permission gate. Returns undefined for a non-match (or an
+   * out-of-range / id-less doc) so the caller degrades to `{matched:false}`.
+   */
+  protected async resolveMatchedTemplate(
+    rc: Rc,
+    verdictText: string,
+    docs: TemplateDoc[],
+  ): Promise<TemplateMatchOut | undefined> {
+    const match = /match\s+(\d+)/i.exec(verdictText);
+    if (!match) return undefined;
+    const doc = docs[Number.parseInt(match[1], 10) - 1];
+    if (!doc?.metadata?.id) return undefined;
+    // Upfront table-permission check (v2 parity): skip an unauthorized template
+    // so the run falls through to normal generation rather than serving its data.
+    if (!(await this.isTemplateAuthorised(doc.metadata.id))) {
+      logStepDetail(
+        DbQueryNodes.CheckTemplates,
+        `Template matched but missing table permissions; skipping: ${doc.pageContent}`,
+      );
+      return {matched: false};
+    }
+    // Emit the client-facing match status only AFTER the ACL passes (v2 parity):
+    // a forbidden template falls through silently, so its existence never leaks.
+    emitToolStatus(rc, DbQueryNodes.CheckTemplates, 'Matched query template');
+    logStepDetail(
+      DbQueryNodes.CheckTemplates,
+      `Template matched: ${doc.pageContent}`,
+    );
+    return {matched: true, templateId: doc.metadata.id};
   }
 }

@@ -1,23 +1,56 @@
-import {ChatAnthropic} from '@langchain/anthropic';
-import {BedrockEmbeddings, ChatBedrockConverse} from '@langchain/aws';
-import {ChatCerebras} from '@langchain/cerebras';
-import {
-  ChatGoogleGenerativeAI,
-  GoogleGenerativeAIEmbeddings,
-} from '@langchain/google-genai';
-import {BaseCheckpointSaver} from '@langchain/langgraph';
-import {ChatOllama, OllamaEmbeddings} from '@langchain/ollama';
-import {ChatOpenAI, OpenAIEmbeddings} from '@langchain/openai';
-import {Provider} from '@loopback/core';
+import type {EmbeddingModel, LanguageModel} from 'ai';
 import {AnyObject} from '@loopback/repository';
-import {IGraphTool} from './graphs/types';
-import {ChatGroq} from '@langchain/groq';
-import {ChatOpenRouter} from '@langchain/openrouter';
+import type {IGraphTool} from './graphs/types';
+
+/**
+ * Registry shape consumed by ChatGraph, holding IGraphTool instances.
+ *
+ * `map` is keyed by each tool's `key` so consumers (and the runner) can look a
+ * tool up by name without scanning `list`. It is OPTIONAL so providers that
+ * build only `{list}` keep compiling; the bundled ToolsProvider populates it,
+ * and `toolMap()` derives it from `list` when absent.
+ */
+export type ToolStore = {
+  list: IGraphTool[];
+  map?: Record<string, IGraphTool>;
+};
+
+/**
+ * Resolve a tool registry's `key → tool` map, deriving it from `list` when a
+ * provider didn't supply one.
+ */
+export function toolMap(store: ToolStore): Record<string, IGraphTool> {
+  if (store.map) return store.map;
+  const map: Record<string, IGraphTool> = {};
+  for (const tool of store.list) {
+    if (tool?.key) map[tool.key] = tool;
+  }
+  return map;
+}
 
 export enum SupportedDBs {
   PostgreSQL = 'PostgreSQL',
   SQLite = 'SQLite',
 }
+
+/**
+ * Selects the Mastra storage backend (threads/messages persistence). Configured
+ * inline on {@link AIIntegrationConfig} — the same way `writerDS`/`readerDS` are
+ * — rather than through a separate component or the internal Storage binding.
+ * Defaults to LibSQL/SQLite when omitted, so zero-config stays the default.
+ */
+export type MastraStorageConfig = {
+  // 'libsql' (default) writes a local SQLite file; 'postgres' persists in
+  // Postgres via @mastra/pg.
+  type?: 'libsql' | 'postgres';
+  // libsql: file/url (falls back to MASTRA_STORAGE_URL, then `file:./mastra.db`).
+  // postgres: connection string (falls back to MASTRA_PG_CONNECTION_STRING).
+  connectionString?: string;
+  // postgres only — schema for the mastra_* tables (default `mastra`).
+  schema?: string;
+  // postgres only — enable TLS.
+  ssl?: boolean;
+};
 
 export type AIIntegrationConfig = {
   useCustomSequence?: boolean;
@@ -27,6 +60,8 @@ export type AIIntegrationConfig = {
   maxTokenCount?: number;
   writerDS?: string;
   readerDS?: string;
+  // Mastra storage backend (threads/messages). Omit for zero-config LibSQL.
+  storage?: MastraStorageConfig;
   tokenCounterConfig?: {
     chatLimit?: number;
     tokenLimit?: number;
@@ -37,32 +72,9 @@ export type AIIntegrationConfig = {
 
 export type FileMessageBuilder = (file: Express.Multer.File) => AnyObject;
 
-export type LLMProviderType =
-  | ChatOllama
-  | ChatCerebras
-  | ChatOpenAI
-  | ChatAnthropic
-  | ChatBedrockConverse
-  | ChatGoogleGenerativeAI
-  | ChatGroq
-  | ChatOpenRouter;
+export type LLMProvider = LanguageModel;
 
-export type LLMProvider = LLMProviderType & {
-  getFile?: FileMessageBuilder;
-};
-
-export type EmbeddingProvider =
-  | OpenAIEmbeddings
-  | OllamaEmbeddings
-  | BedrockEmbeddings
-  | GoogleGenerativeAIEmbeddings;
-
-export type CheckpointerProvider = Provider<BaseCheckpointSaver>;
-
-export type ToolStore = {
-  list: IGraphTool[];
-  map: Record<string, IGraphTool>;
-};
+export type EmbeddingProvider = EmbeddingModel;
 
 export enum ChannelType {
   Chat = 'chat',

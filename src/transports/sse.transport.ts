@@ -51,13 +51,13 @@ export class SSETransport implements ITransport {
   private async _handleChunk(chunk: LLMStreamEvent) {
     if (chunk.type === LLMStreamEventType.Log) {
       debug('Log event:', chunk.data);
-    } else {
-      this.response.write(
-        `data: ${JSON.stringify({
-          type: chunk.type,
-          data: chunk.data,
-        })}\n\n`,
-      );
+      return;
     }
+    this.response.write(
+      `data: ${JSON.stringify({
+        type: chunk.type,
+        data: chunk.data,
+      })}\n\n`,
+    );
   }
 }

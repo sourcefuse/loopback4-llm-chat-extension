@@ -1,136 +1,152 @@
-import {Context, inject} from '@loopback/context';
+import {inject} from '@loopback/core';
+import type {LanguageModel} from 'ai';
 import {graphNode} from '../../../decorators';
-import {IGraphNode, LLMStreamEventType, RunnableConfig} from '../../../graphs';
+import type {IGraphNode, GraphNodeCtx} from '../../../graphs/types';
 import {AiIntegrationBindings} from '../../../keys';
-import {LLMProvider} from '../../../types';
-import {VisualizationGraphState} from '../state';
-import {VisualizationGraphNodes} from '../nodes.enum';
-import {PromptTemplate} from '@langchain/core/prompts';
-import {stripThinkingTokens} from '../../../utils';
-import {RunnableSequence} from '@langchain/core/runnables';
+import {
+  DbQueryAIExtensionBindings,
+  POST_DATASET_TAG,
+} from '../../db-query/keys';
+import {emitToolStatus, tracedGenerateText} from '../../db-query/_helpers';
+import type {IDataSetStore} from '../../db-query/types';
 import {VISUALIZATION_KEY} from '../keys';
-import {IVisualizer} from '../types';
-import {POST_DATASET_TAG} from '../../db-query';
+import type {IVisualizer, SelectIn} from '../types';
+import {
+  buildVisualizerSelectionPrompt,
+  DEFAULT_CHART_TYPE,
+  fetchDatasetDescriptor,
+  parseVisualizerSelection,
+  type VisualizationDataContext,
+  type VisualizerSelection,
+} from '../shared';
+import {VisualizationGraphNodes} from '../nodes.enum';
 
+/**
+ * Visualizer selection (the successor of the LangGraph SelectVisualizationNode).
+ * DI-resolved `@graphNode` class. The LLM selection logic lives on the class
+ * (`selectViaLlm`) so a host can `extends SelectVisualizationNode` and override
+ * it, then rebind under `@graphNode(VisualizationGraphNodes.SelectVisualisation)`.
+ */
 @graphNode(VisualizationGraphNodes.SelectVisualisation, {
   [POST_DATASET_TAG]: true,
 })
-export class SelectVisualizationNode implements IGraphNode<VisualizationGraphState> {
-  prompt = PromptTemplate.fromTemplate(`
-<instructions>
-You are expert Data Analysis Agent whose job is to suggest visualisations that would be best suited to display the results for a particular user prompt and the data extracted based on that prompt.
-You are provided with 2 inputs -
-- user prompt
-- A list of visualization names with their descriptions that are supported.
-
-You need to suggest a visualisation from a list of visualisation that would best fit the user's request.
-</instructions>
-<inputs>
-<user-prompt>
-{prompt}
-</user-prompt>
-<generated-query>
-<sql>
-{sql}
-</sql>
-<description>
-{description}
-</description>
-</generated-query>
-<visualization-list>
-{visualizations}
-</visualization-list>
-</inputs>
-<output-format>
-<instructions>
-The output should be a single string that has the name from the visualizations list and nothing else.
-If none of the visualizations fit the requirement, return "none" followed by the changes required in the data to be able to render the visualization.
-Do not try to force fit the prompt to any visualization if it does not make sense. Prefer to returning none with appropriate reason instead.
-</instructions>
-<output-example-1>
-type-of-visualization
-</output-example-1>
-<output-example-2>
-none: reason why the visualization is not possible with the current prompt.
-</output-example-2>
-</output-format>
-`);
+export class SelectVisualizationNode implements IGraphNode<SelectIn> {
   constructor(
-    @inject(AiIntegrationBindings.CheapLLM)
-    private readonly llm: LLMProvider,
-    @inject.context()
-    private readonly context: Context,
+    @inject.tag(VISUALIZATION_KEY)
+    private readonly visualizers: IVisualizer[] = [],
+    @inject(DbQueryAIExtensionBindings.DatasetStore, {optional: true})
+    private readonly datasetStore?: IDataSetStore,
+    @inject(AiIntegrationBindings.ChatModel, {optional: true})
+    private readonly chatModel?: LanguageModel,
+    @inject(AiIntegrationBindings.CheapModel, {optional: true})
+    private readonly cheapModel?: LanguageModel,
   ) {}
 
-  async execute(
-    state: VisualizationGraphState,
-    config: RunnableConfig,
-  ): Promise<VisualizationGraphState> {
-    const visualizations = await this._getVisualizations();
-    if (state.type) {
-      const selected = visualizations.find(v => v.name === state.type);
-      if (!selected) {
-        throw new Error(
-          `No visualizer found with name ${state.type}, available visualizers are ${visualizations
-            .map(v => v.name)
-            .join(', ')}`,
-        );
-      }
-      return {
-        ...state,
-        visualizer: selected,
-        visualizerName: selected.name,
-      };
+  async execute({
+    inputData,
+    requestContext,
+    tracingContext,
+  }: GraphNodeCtx<SelectIn>) {
+    emitToolStatus(
+      requestContext,
+      VisualizationGraphNodes.SelectVisualisation,
+      'Selecting best visualization for the data',
+    );
+
+    const needsQuery = !inputData.datasetId;
+    const base = {
+      datasetId: inputData.datasetId,
+      needsQuery,
+      userQuery: inputData.userQuery,
+    };
+
+    // An explicit `type` from the caller wins — the user/agent has already
+    // chosen the chart, so skip the selection LLM call.
+    if (inputData.type) {
+      return {...base, chartType: inputData.type};
     }
-    const chain = RunnableSequence.from([
-      this.prompt,
-      this.llm,
-      stripThinkingTokens,
-    ]);
-    config.writer?.({
-      type: LLMStreamEventType.ToolStatus,
-      data: {
-        status: 'Selecting best visualization for the data',
-      },
-    });
-    const output = await chain.invoke({
-      prompt: state.prompt,
-      sql: state.sql,
-      description: state.queryDescription,
-      visualizations: visualizations
-        .map(v => `- ${v.name}: ${v.description}`)
-        .join('\n'),
-    });
-    if (output.trim().startsWith('none')) {
-      return {
-        ...state,
-        error: output.trim().substring(4).trim(),
-      };
+
+    const visualizers = this.visualizers;
+    if (visualizers.length === 0) {
+      return {...base, chartType: DEFAULT_CHART_TYPE};
     }
-    const selected = visualizations.find(v => v.name === output.trim());
-    if (!selected) {
-      throw new Error(
-        `No visualizer found with name ${output.trim()}, available visualizers are ${visualizations
-          .map(v => v.name)
-          .join(', ')}`,
+
+    // Charting an EXISTING dataset → feed its SQL + description so the model
+    // matches the chart to the data shape (v2 select-visualization.node). For a
+    // fresh request (no datasetId yet) the query hasn't run, so the model picks
+    // from the request text (the downstream query-gen then shapes the data).
+    let data: VisualizationDataContext = {};
+    if (inputData.datasetId) {
+      data = await fetchDatasetDescriptor(
+        this.datasetStore,
+        inputData.datasetId,
       );
     }
-    return {
-      ...state,
-      visualizer: selected,
-      visualizerName: selected.name,
-    };
+
+    const selection = await this.selectViaLlm(
+      inputData.userQuery,
+      visualizers,
+      this.cheapModel ?? this.chatModel,
+      tracingContext,
+      data,
+    );
+
+    if ('rejected' in selection) {
+      return {...base, chartType: '', rejected: true, reason: selection.reason};
+    }
+    return {...base, chartType: selection.chartType};
   }
 
-  private async _getVisualizations() {
-    const bindings = this.context.findByTag({
-      [VISUALIZATION_KEY]: true,
-    });
-    if (bindings.length === 0) {
-      throw new Error(`Node with key ${VISUALIZATION_KEY} not found`);
+  /**
+   * Ask the LLM to pick the best-fitting visualizer for the request AND the
+   * data it returns, or to reject when none fit. Restores the v2
+   * select-visualization.node behaviour. Infra failures fall back to the first
+   * visualizer so a flaky LLM never fails the whole run.
+   */
+  protected async selectViaLlm(
+    userQuery: string,
+    visualizers: IVisualizer[],
+    llm: Parameters<typeof tracedGenerateText>[0]['model'] | undefined,
+    tracing: Parameters<typeof tracedGenerateText>[0]['tracing'],
+    data: VisualizationDataContext,
+  ): Promise<VisualizerSelection> {
+    if (!llm) return {chartType: visualizers[0].name};
+    try {
+      const result = await tracedGenerateText({
+        model: llm,
+        prompt: this.buildSelectionPrompt(userQuery, visualizers, data),
+        tracing,
+        label: VisualizationGraphNodes.SelectVisualisation,
+        resultType: 'planning',
+      });
+      return this.parseSelection(result.text, visualizers);
+    } catch {
+      return {chartType: visualizers[0].name};
     }
-    return Promise.all(
-      bindings.map(binding => this.context.get<IVisualizer>(binding.key)),
-    );
+  }
+
+  /**
+   * Build the visualizer-selection prompt. Overridable seam restoring the v2
+   * `SelectVisualizationNode.prompt` field: a host adding custom chart types
+   * can override just the prompt (leaving `selectViaLlm` intact), then rebind
+   * under `@graphNode(VisualizationGraphNodes.SelectVisualisation)`.
+   */
+  protected buildSelectionPrompt(
+    userQuery: string,
+    visualizers: IVisualizer[],
+    data: VisualizationDataContext,
+  ): string {
+    return buildVisualizerSelectionPrompt(userQuery, visualizers, data);
+  }
+
+  /**
+   * Parse the selection LLM reply into a chart choice / rejection. Overridable
+   * seam restoring the v2 inline parse in `execute`.
+   */
+  protected parseSelection(
+    text: string,
+    visualizers: IVisualizer[],
+  ): VisualizerSelection {
+    return parseVisualizerSelection(text, visualizers);
   }
 }

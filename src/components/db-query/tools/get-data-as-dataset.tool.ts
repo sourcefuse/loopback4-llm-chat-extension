@@ -1,63 +1,169 @@
-import {inject, service} from '@loopback/core';
-import {AnyObject} from '@loopback/repository';
+import {inject} from '@loopback/core';
+import {Mastra} from '@mastra/core';
+import {createTool} from '@mastra/core/tools';
+import type {Tool, ToolExecutionContext} from '@mastra/core/tools';
 import {z} from 'zod';
+import {LLMStreamEvent, LLMStreamEventType} from '../../../graphs/event.types';
+import {IGraphTool, ToolStatus} from '../../../graphs/types';
+import {
+  asEventWriter,
+  asRecord,
+  readString,
+} from '../../../graphs/tool-event.util';
+import {AiIntegrationBindings} from '../../../keys';
 import {graphTool} from '../../../decorators';
-import {IGraphTool, ToolStatus} from '../../../graphs';
-import {DbQueryGraph} from '../db-query.graph';
-import {DbQueryConfig, Errors, GenerationError} from '../types';
-import {StructuredToolInterface} from '@langchain/core/tools';
-import {RunnableToolLike} from '@langchain/core/runnables';
-import {DbQueryAIExtensionBindings} from '../keys';
-import {DEFAULT_MAX_READ_ROWS_FOR_AI} from '../constant';
+import {buildDatasetReadout} from '../utils';
 
+/**
+ * Mastra-shaped NL2SQL tool. Calls the single
+ * `mastra.getWorkflow('dbQueryGraph').createRun().start()` (the same graph the
+ * improve-dataset tool uses); with no `datasetId` the graph's entry node routes
+ * to the generate path.
+ */
 @graphTool()
 export class GetDataAsDatasetTool implements IGraphTool {
   needsReview = false;
   key = 'get-data-as-dataset';
   constructor(
-    @service(DbQueryGraph)
-    private readonly queryPipeline: DbQueryGraph,
-    @inject(DbQueryAIExtensionBindings.Config)
-    private readonly config: DbQueryConfig,
+    @inject(AiIntegrationBindings.Mastra) private readonly mastra: Mastra,
   ) {}
 
-  getValue(result: Record<string, string>): string {
-    if (result.status === Errors.PermissionError) {
-      return `Can not get data: ${result.replyToUser ?? 'Unknown reason'}`;
-    }
-    if (result.status === GenerationError.Failed || !result.datasetId) {
-      return `Can not get data: ${result.replyToUser ?? 'Unknown reason'}`;
-    }
-    let resultSetString = '';
-    if (result.resultArray) {
-      resultSetString = ` First ${this.config.maxRowsForAI ?? DEFAULT_MAX_READ_ROWS_FOR_AI} results from the dataset are: ${JSON.stringify(result.resultArray)}`;
-    }
-    return `Dataset generated and has been rendered for the user. The dataset ID is ${result.datasetId}. Just tell the user that it is done.${resultSetString}`;
+  build(): Tool {
+    return createTool({
+      id: this.key,
+      description: `Query tool for generating SQL queries for a users request. Use it only when the user needs raw tabular data from the database.
+        Do not use this tool if the user's request involves trends, growth, decline, comparisons, distributions, patterns, or any form of analytical insight — use the 'generate-visualization' tool instead.
+        Note that it does not return the query, instead only a dataset ID that is not relevant to the user.
+        It internally fires an event that renders a grid for the dataset on the UI for the user to see.`,
+      inputSchema: z.object({
+        prompt: z
+          .string()
+          .describe(
+            'Prompt from the user that will be used for generating an SQL query and create a dataset from it.',
+          ),
+      }),
+      execute: async (inputData, ctx) => {
+        const writer = asEventWriter(ctx.requestContext?.get('eventWriter'));
+        const toolCallId = ctx.agent?.toolCallId ?? this.key;
+        // Emit a single tool-started status. The granular per-stage progress
+        // ('Generating SQL query…', 'Validating…') is emitted by the workflow
+        // steps themselves, so a pre-workflow 'Generating SQL' Log here would
+        // be premature (fires before generation) and redundant.
+        writer?.({
+          type: LLMStreamEventType.ToolStatus,
+          data: {id: toolCallId, status: ToolStatus.Running},
+        });
+        try {
+          return await this.runQueryGraph(writer, toolCallId, inputData, ctx);
+        } catch (err) {
+          // Single Failed emit. Status-not-success path throws above
+          // without emitting; this catch is the only Failed source.
+          writer?.({
+            type: LLMStreamEventType.ToolStatus,
+            data: {id: toolCallId, status: ToolStatus.Failed},
+          });
+          throw err;
+        }
+      },
+    });
   }
 
-  getMetadata(result: Record<string, string>): AnyObject {
+  private extractQueryResult(result: unknown): {
+    datasetId?: string;
+    sql?: string;
+    replyToUser?: string;
+  } {
+    // dbQueryGraph ends with `.then(isImprovementNode)` (not a `.branch()`), and
+    // that entry node already flattened the sub-graph's branch output — so the
+    // flat `{datasetId, sql, replyToUser?}` contract lands directly on the
+    // top-level result, no branch-key unwrap needed.
+    const out = asRecord(asRecord(result).result);
     return {
-      status: result.done ? ToolStatus.Completed : ToolStatus.Failed,
-      existingDatasetId: result.datasetId,
+      datasetId: readString(out.datasetId),
+      sql: readString(out.sql),
+      replyToUser: readString(out.replyToUser),
     };
   }
 
-  async build(): Promise<StructuredToolInterface | RunnableToolLike> {
-    const graph = await this.queryPipeline.build();
-    const schema = z.object({
-      prompt: z
-        .string()
-        .describe(
-          `Prompt from the user that will be used for generating an SQL query and create a dataset from it.`,
-        ),
-    }) as AnyObject[string];
-    return graph.asTool({
-      name: this.key,
-      description: `Query tool for generating SQL queries for a users request. Use it only when the user needs raw tabular data from the database.
-                Do not use this tool if the user's request involves trends, growth, decline, comparisons, distributions, patterns, or any form of analytical insight — use the 'generate-visualization' tool instead.
-                Note that it does not return the query, instead only a dataset ID that is not relevant to the user.
-                It internally fires an event that renders a grid for the dataset on the UI for the user to see.`,
-      schema,
+  private async runQueryGraph(
+    writer: ((e: LLMStreamEvent) => void) | undefined,
+    toolCallId: string,
+    inputData: {prompt: string},
+    ctx: ToolExecutionContext,
+  ): Promise<unknown> {
+    const workflow = this.mastra.getWorkflow('dbQueryGraph');
+    if (!workflow) {
+      throw new Error(
+        'dbQueryGraph not registered in Mastra — check Provider workflows config',
+      );
+    }
+    const run = await workflow.createRun();
+    // Forward the tool's tracing context (carrying the current TOOL span)
+    // into the workflow start so Mastra nests the workflow trace UNDER the
+    // agent's `invoke_agent` root span. Without this every tool call
+    // becomes a separate root trace in Langfuse/LangSmith — the v2
+    // LangGraph extension produced exactly one root per /reply via the
+    // CallbackHandler attached at `graph.stream()`, this preserves that
+    // UX for Mastra. `tracing` is the supported field on
+    // `WorkflowRunStartOptions extends Partial<ObservabilityContext>`.
+    const result = await run.start({
+      inputData,
+      requestContext: ctx.requestContext,
+      tracing: ctx.tracing,
+    });
+    if (result.status === 'suspended') {
+      // HITL — emit AwaitingApproval, return empty so the Agent pauses.
+      // Resume flow lands with the ApprovalController in v3.1.
+      writer?.({
+        type: LLMStreamEventType.ToolStatus,
+        data: {id: toolCallId, status: ToolStatus.AwaitingApproval},
+      });
+      return {};
+    }
+    if (result.status !== 'success') {
+      throw new Error(`Query generation failed: ${result.status}`);
+    }
+    const workflowResult = this.extractQueryResult(result);
+    const datasetId = workflowResult.datasetId ?? '';
+    // Emit final Tool event so the UI's chat bubble can attach the
+    // SQL/template badge and the like/dislike footer (app.js reads
+    // evtData.data.datasetId off the `tool` event). No row count is sent —
+    // the UI grid fetches and renders rows itself from the datasetId.
+    writer?.({
+      type: LLMStreamEventType.Tool,
+      data: {
+        id: toolCallId,
+        tool: this.key,
+        data: {
+          datasetId,
+          sql: workflowResult.sql ?? '',
+        },
+      },
+    });
+    writer?.({
+      type: LLMStreamEventType.ToolStatus,
+      data: {
+        id: toolCallId,
+        status: datasetId ? ToolStatus.Completed : ToolStatus.Failed,
+      },
+    });
+    const rc = ctx.requestContext;
+    // Unanswerable fast-fail: the workflow stopped at the get-columns gate
+    // because no table holds the requested data. Hand the agent the
+    // clarification so it asks the user to rephrase — instead of the
+    // generic "generated dataset" readout over an empty id.
+    if (!datasetId && workflowResult.replyToUser) {
+      return workflowResult.replyToUser;
+    }
+    // Hand the AI a "done + datasetId" acknowledgement, never the actual
+    // data (unless the consumer opted in via readAccessForAI). Returning a
+    // string — not {datasetId, sql, rowCount} — keeps the row count and
+    // result rows out of the model's context.
+    return buildDatasetReadout({
+      datasetId,
+      verb: 'generated',
+      store: rc?.get('datasetStore'),
+      config: rc?.get('config'),
     });
   }
 }

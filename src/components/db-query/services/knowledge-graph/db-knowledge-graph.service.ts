@@ -1,9 +1,8 @@
-import {RunnableSequence} from '@langchain/core/runnables';
+import {embedMany, generateText} from 'ai';
 import {BindingScope, inject, injectable} from '@loopback/core';
 import {AnyObject} from '@loopback/repository';
 import {AiIntegrationBindings} from '../../../../keys';
 import {EmbeddingProvider, LLMProvider} from '../../../../types';
-import {stripThinkingTokens} from '../../../../utils';
 import {DbQueryAIExtensionBindings} from '../../keys';
 import {DatabaseSchema, DbQueryConfig, TableSchema} from '../../types';
 import {
@@ -264,12 +263,15 @@ export class DbKnowledgeGraphService implements KnowledgeGraph<
   }
 
   private async generateEmbedding(text: string): Promise<number[]> {
-    return this.embeddingModel.embedDocuments([text]).then(embeddings => {
-      if (embeddings.length === 0 || !embeddings[0]) {
-        throw new Error('Failed to generate embedding');
-      }
-      return embeddings[0];
+    const result = await embedMany({
+      model: this.embeddingModel,
+      values: [text],
     });
+    const embedding = result.embeddings[0];
+    if (!embedding) {
+      throw new Error('Failed to generate embedding');
+    }
+    return embedding;
   }
 
   // Smart concept extraction using clustering
@@ -405,11 +407,17 @@ The output should be JUST a valid JSON and no other markdown or formatting text.
 Focus on the core business concept or data domain. AGAIN, ensure the output is a valid JSON object with no additional text or formatting that can be parsed directly.`;
 
     try {
-      const chain = RunnableSequence.from([this.llm, stripThinkingTokens]);
-      const response = await chain.invoke([{role: 'user', content: prompt}]);
+      const response = await generateText({model: this.llm, prompt});
+      const concept = this.parseConceptJson(response.text);
+      if (!concept) {
+        debug(
+          `Invalid concept JSON for cluster ${clusterIndex}:`,
+          response.text,
+        );
+        return;
+      }
 
-      debug(`Extracted concept for cluster ${clusterIndex}:`, response);
-      const concept = JSON.parse(response);
+      debug(`Extracted concept for cluster ${clusterIndex}:`, concept);
 
       if (concept.concept && concept.confidence > this.conceptThreshold) {
         await this.addConceptToGraph({
@@ -419,6 +427,27 @@ Focus on the core business concept or data domain. AGAIN, ensure the output is a
       }
     } catch (error) {
       debug(`Error extracting concept from cluster ${clusterIndex}:`, error);
+    }
+  }
+
+  private parseConceptJson(raw: string): Concept | null {
+    // Strip an optional ```json / ``` code fence. Uses anchored literals +
+    // string slicing rather than a `\s*```$` regex — the latter is prone to
+    // super-linear backtracking (DoS) on long whitespace runs.
+    let cleaned = raw
+      .trim()
+      .replace(/^```json/i, '')
+      .replace(/^```/, '')
+      .trimStart();
+    const fence = '```';
+    if (cleaned.endsWith(fence)) {
+      cleaned = cleaned.slice(0, -fence.length);
+    }
+    cleaned = cleaned.trim();
+    try {
+      return JSON.parse(cleaned) as Concept;
+    } catch {
+      return null;
     }
   }
 

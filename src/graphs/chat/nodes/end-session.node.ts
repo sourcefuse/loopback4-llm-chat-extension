@@ -1,43 +1,58 @@
-import {service} from '@loopback/core';
-import {HttpErrors} from '@loopback/rest';
-import {ChatStore} from '..';
+import {inject} from '@loopback/core';
 import {graphNode} from '../../../decorators';
-import {TokenCounter} from '../../../services';
 import {LLMStreamEventType} from '../../event.types';
-import {ChatState} from '../../state';
-import {IGraphNode, RunnableConfig} from '../../types';
+import type {ChatState, IChatNode} from '../../state';
+import {UsageAccumulator} from '../../../services/usage-accumulator.service';
+import {ChatStore} from '../chat.store';
 import {ChatNodes} from '../nodes.enum';
-const debug = require('debug')('ai-integration:chat:end-session.node');
+
+/**
+ * Close the session — the LangGraph `EndSessionNode`. Emits the terminal
+ * TokenCount event with the FULL request total (chat turn + file summaries, not
+ * just the chat stream) and persists cumulative counts via {@link ChatStore}.
+ * Skips both when the stream's usage did not resolve (error/abort), matching
+ * LangGraph's behaviour of only reporting counts on a clean finish.
+ *
+ * A DI-resolved `@graphNode` class: `chatStore` + `usage` are injected, so a
+ * host overrides it by rebinding `@graphNode(ChatNodes.EndSession)`.
+ */
 @graphNode(ChatNodes.EndSession)
-export class EndSessionNode implements IGraphNode<ChatState> {
+export class EndSessionNode implements IChatNode {
   constructor(
-    @service(ChatStore)
-    private readonly chatStore: ChatStore,
-    @service(TokenCounter)
-    private readonly tokenCounter: TokenCounter,
+    @inject('services.ChatStore') protected readonly chatStore: ChatStore,
+    @inject('services.UsageAccumulator', {optional: true})
+    protected readonly usage?: UsageAccumulator,
   ) {}
-  async execute(state: ChatState, config: RunnableConfig): Promise<ChatState> {
-    const tokenCounts = this.tokenCounter.getCounts();
-    config.writer?.({
+
+  async execute(state: ChatState): Promise<void> {
+    // usage rejected (error/abort) → no TokenCount, no persist.
+    if (!state.usageReady) return;
+    // FULL request total from the per-model accumulator (chat + file-summary),
+    // falling back to the raw stream usage when no accumulator is bound.
+    const {inputTokens, outputTokens} = this.usage
+      ? this.totalUsage()
+      : (state.rawUsage ?? {inputTokens: 0, outputTokens: 0});
+    state.push({
       type: LLMStreamEventType.TokenCount,
-      data: {
-        inputTokens: tokenCounts.inputs,
-        outputTokens: tokenCounts.outputs,
-      },
+      data: {inputTokens, outputTokens},
     });
-    if (!state.id) {
-      // If the chat ID is not defined, we cannot proceed with the session end.
-      debug('No chat ID found in state, this is unexpected');
-      throw new HttpErrors.InternalServerError();
-    }
     await this.chatStore.updateCounts(
-      state.id,
-      tokenCounts.inputs,
-      tokenCounts.outputs,
-      tokenCounts.map,
+      state.threadId ?? '',
+      state.threadTitle ?? '',
+      inputTokens,
+      outputTokens,
     );
-    // This node is used to end the session, so we can return the state as is.
-    // You might want to add any cleanup logic here if needed.
-    return state;
+  }
+
+  /** Sum the request-scoped per-model accumulator into request totals. */
+  protected totalUsage(): {inputTokens: number; outputTokens: number} {
+    const snap = this.usage?.snapshot() ?? {};
+    let inputTokens = 0;
+    let outputTokens = 0;
+    for (const m of Object.values(snap)) {
+      inputTokens += m.input;
+      outputTokens += m.output;
+    }
+    return {inputTokens, outputTokens};
   }
 }

@@ -12,38 +12,52 @@ import {
 import {AnyObject} from '@loopback/repository';
 import {DataSetController, TemplateController} from './controller';
 import {DatasetServiceComponent} from './dataset-service.component';
-import {DbQueryGraph} from './db-query.graph';
 import {DbQueryAIExtensionBindings} from './keys';
+import {TableSeedObserver} from './observers';
+import {DatasetRetriever, TemplateRetriever} from './providers';
+import {
+  DataSetHelper,
+  DbSchemaHelperService,
+  SemanticCacheService,
+  TemplateHelper,
+} from './services';
+import {ChecklistHelper} from './services/checklist-helper.service';
+import {PermissionHelper} from './services/permission-helper.service';
+import {SchemaStore} from './services/schema.store';
+import {SqlGenerationHelper} from './services/sql-generation.service';
+import {SqlValidatorService} from './services/sql-validator.service';
+import {TableSearchService} from './services/search/table-search.service';
+import {PgWithRlsConnector} from './connectors/pg';
 import {
   CheckCacheNode,
   CheckPermissionsNode,
-  ClassifyChangeNode,
-  FixQueryNode,
   CheckTemplatesNode,
+  ClassifyChangeNode,
+  FailedNode,
+  FixQueryNode,
   GenerateChecklistNode,
   GenerateDescriptionNode,
-  FailedNode,
   GetColumnsNode,
   GetTablesNode,
+  ImproveFailedNode,
   IsImprovementNode,
+  LoadExistingNode,
+  PostCacheAndTablesNode,
+  PostValidationNode,
+  ReturnCachedNode,
   SaveDataSetNode,
+  SaveDatasetFromTemplateNode,
+  SaveImprovedNode,
   SemanticValidatorNode,
   SqlGenerationNode,
   SyntacticValidatorNode,
   VerifyChecklistNode,
 } from './nodes';
-import {TableSeedObserver} from './observers';
-import {DatasetRetriever, TemplateRetriever} from './providers';
-import {DataSetHelper, DbSchemaHelperService, TemplateHelper} from './services';
-import {PermissionHelper} from './services/permission-helper.service';
-import {SchemaStore} from './services/schema.store';
-import {TableSearchService} from './services/search/table-search.service';
 import {
   AskAboutDatasetTool,
   GetDataAsDatasetTool,
   ImproveDatasetTool,
 } from './tools';
-import {PgWithRlsConnector} from './connectors/pg';
 
 export class DbQueryComponent implements Component {
   services: ServiceOrProviderClass[] | undefined;
@@ -66,36 +80,50 @@ export class DbQueryComponent implements Component {
     ];
     this.lifeCycleObservers = [TableSeedObserver];
     this.services = [
-      // db related
+      // db helpers — still consumed by generateQueryGraph / improveQueryGraph
+      // node bodies.
+      ChecklistHelper,
       DbSchemaHelperService,
       PermissionHelper,
       DataSetHelper,
       SchemaStore,
+      SemanticCacheService,
+      SqlGenerationHelper,
+      SqlValidatorService,
       TableSearchService,
       TemplateHelper,
-      // graph
-      DbQueryGraph,
-      // tools
-      AskAboutDatasetTool,
+      // db-query tools — registered here (not in the root component) so mounting
+      // DbQueryComponent brings its own tools and each is independently
+      // selectable/overridable. Discovered by tag (@graphTool).
       GetDataAsDatasetTool,
       ImproveDatasetTool,
-      // nodes
-      IsImprovementNode,
-      GetTablesNode,
-      CheckPermissionsNode,
-      SqlGenerationNode,
-      SyntacticValidatorNode,
-      SemanticValidatorNode,
-      FailedNode,
-      SaveDataSetNode,
+      AskAboutDatasetTool,
+      // workflow nodes — registered as tagged services exactly as in the
+      // LangGraph version; each `@graphNode(key)` class is discovered by tag and
+      // resolved per request (resolveNodeFromContext = BaseGraph._getNodeFn).
       CheckCacheNode,
+      CheckPermissionsNode,
+      CheckTemplatesNode,
       ClassifyChangeNode,
+      FailedNode,
       FixQueryNode,
       GenerateChecklistNode,
       GenerateDescriptionNode,
-      VerifyChecklistNode,
       GetColumnsNode,
-      CheckTemplatesNode,
+      GetTablesNode,
+      ImproveFailedNode,
+      IsImprovementNode,
+      LoadExistingNode,
+      PostCacheAndTablesNode,
+      PostValidationNode,
+      ReturnCachedNode,
+      SaveDataSetNode,
+      SaveDatasetFromTemplateNode,
+      SaveImprovedNode,
+      SemanticValidatorNode,
+      SqlGenerationNode,
+      SyntacticValidatorNode,
+      VerifyChecklistNode,
     ];
     this.components = [DatasetServiceComponent];
   }

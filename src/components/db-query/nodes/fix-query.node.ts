@@ -1,195 +1,130 @@
-import {PromptTemplate} from '@langchain/core/prompts';
-import {RunnableSequence} from '@langchain/core/runnables';
-import {LangGraphRunnableConfig} from '@langchain/langgraph';
-import {inject, service} from '@loopback/core';
+import {inject} from '@loopback/core';
+import type {LanguageModel} from 'ai';
 import {graphNode} from '../../../decorators';
-import {IGraphNode, LLMStreamEventType} from '../../../graphs';
+import type {IGraphNode, GraphNodeCtx} from '../../../graphs/types';
 import {AiIntegrationBindings} from '../../../keys';
-import {LLMProvider, SupportedDBs} from '../../../types';
-import {stripThinkingTokens} from '../../../utils';
 import {DbQueryAIExtensionBindings} from '../keys';
-import {DbQueryNodes} from '../nodes.enum';
-import {DbSchemaHelperService} from '../services';
-import {DbQueryState} from '../state';
+import type {PermissionHelper} from '../services';
+import type {SchemaStore} from '../services/schema.store';
+import {SqlGenerationHelper} from '../services/sql-generation.service';
+import type {IDbConnector} from '../types';
 import {
-  DatabaseSchema,
-  DbQueryConfig,
-  EvaluationResult,
-  GenerationError,
-} from '../types';
+  buildImproveSqlPrompt,
+  emitToolStatus,
+  type SqlGenInput,
+} from '../_helpers';
+import {DbQueryNodes} from '../nodes.enum';
+import {loadErrorShortCircuit} from '../improve.shared';
 
+/**
+ * Re-generate + validate an improved SQL query per dountil iteration (the
+ * Mastra-named successor of the LangGraph FixQueryNode). DI-resolved `@step`
+ * class.
+ */
 @graphNode(DbQueryNodes.FixQuery)
-export class FixQueryNode implements IGraphNode<DbQueryState> {
-  fixPrompt = PromptTemplate.fromTemplate(`
-<instructions>
-You are an expert AI assistant that fixes SQL query errors.
-You are given a SQL query that has validation errors related to specific tables.
-Your task is to fix ONLY the parts of the query related to the listed error tables.
-DO NOT change any part of the query that does not involve the error tables.
-Preserve the overall structure, logic, and all other table references exactly as they are.
-
-Rules:
-- Only modify clauses, joins, columns, or conditions that involve the error tables.
-- Do not add, remove, or reorder columns or tables that are not related to the error.
-- Do not change aliases, formatting, or logic for unrelated parts of the query.
-- **DO NOT make any DML statements** (INSERT, UPDATE, DELETE, DROP etc.) to the database.
-- Use the provided schema for the error-related tables to write correct SQL.
-- The dialect is {dialect}.
-</instructions>
-
-<user-question>
-{question}
-</user-question>
-
-<current-query>
-{currentQuery}
-</current-query>
-
-<error-tables-schema>
-{errorSchema}
-</error-tables-schema>
-
-<error-details>
-{errorFeedback}
-</error-details>
-
-{checks}
-
-{historicalErrors}
-
-<output-instructions>
-Output should only be a valid SQL query with no other special character or formatting.
-Contains the required valid SQL with the error fixed.
-It should have no other character or symbol or character that is not part of SQLs.
-</output-instructions>`);
-
+export class FixQueryNode implements IGraphNode {
   constructor(
-    @inject(AiIntegrationBindings.CheapLLM)
-    private readonly llm: LLMProvider,
-    @inject(DbQueryAIExtensionBindings.Config)
-    private readonly config: DbQueryConfig,
-    @service(DbSchemaHelperService)
-    private readonly schemaHelper: DbSchemaHelperService,
+    @inject('services.SchemaStore', {optional: true})
+    private readonly schemaStore?: SchemaStore,
+    @inject(DbQueryAIExtensionBindings.Connector, {optional: true})
+    private readonly dbConnector?: IDbConnector,
+    @inject(DbQueryAIExtensionBindings.GlobalContext, {optional: true})
+    private readonly globalContext: string[] = [],
+    @inject('services.PermissionHelper', {optional: true})
+    private readonly permissionHelper?: PermissionHelper,
+    @inject(AiIntegrationBindings.ChatModel, {optional: true})
+    private readonly chatModel?: LanguageModel,
+    @inject(AiIntegrationBindings.CheapModel, {optional: true})
+    private readonly cheapModel?: LanguageModel,
+    @inject(AiIntegrationBindings.SmartModel, {optional: true})
+    private readonly smartModel?: LanguageModel,
+    @inject('services.SqlGenerationHelper', {optional: true})
+    private readonly sqlGen: SqlGenerationHelper = new SqlGenerationHelper(),
   ) {}
 
-  async execute(
-    state: DbQueryState,
-    config: LangGraphRunnableConfig,
-  ): Promise<DbQueryState> {
-    config.writer?.({
-      type: LLMStreamEventType.ToolStatus,
-      data: {
-        status: 'Fixing SQL query based on validation errors',
-      },
-    });
-    config.writer?.({
-      type: LLMStreamEventType.Log,
-      data: `Fixing SQL query based on validation errors`,
-    });
-
-    const errorTables = [
-      ...(state.syntacticErrorTables ?? []),
-      ...(state.semanticErrorTables ?? []),
-    ];
-
-    const trimmedSchema = this.trimSchema(state.schema, errorTables);
-    const errorSchemaString = this.schemaHelper.asString(trimmedSchema);
-
-    const feedbacks = state.feedbacks ?? [];
-    const lastFeedback = feedbacks[feedbacks.length - 1] ?? '';
-    const historicalErrors = feedbacks.slice(0, -1);
-
-    const chain = RunnableSequence.from([this.fixPrompt, this.llm]);
-    const output = await chain.invoke({
-      dialect: this.config.db?.dialect ?? SupportedDBs.PostgreSQL,
-      question: state.prompt,
-      currentQuery: state.sql ?? '',
-      errorSchema: errorSchemaString,
-      errorFeedback: lastFeedback,
-      checks: this.buildChecks(state, trimmedSchema),
-      historicalErrors: historicalErrors.length
-        ? [
-            `<historical-errors>`,
-            `You already faced following issues in the past -`,
-            historicalErrors.join('\n'),
-            `</historical-errors>`,
-          ].join('\n')
-        : '',
-    });
-
-    const response = stripThinkingTokens(output);
-    const sql =
-      response
-        .replace(/^```(?:sql)?\s*/i, '')
-        .replace(/```\s*$/, '')
-        .trim() || undefined;
-
-    if (!sql) {
-      config.writer?.({
-        type: LLMStreamEventType.Log,
-        data: `SQL fix failed: ${response}`,
-      });
-      return {
-        status: GenerationError.Failed,
-        replyToUser:
-          'Failed to fix SQL query. Please try rephrasing your question or provide more details.',
-      } as DbQueryState;
-    }
-
-    config.writer?.({
-      type: LLMStreamEventType.Log,
-      data: `Fixed SQL query: ${sql}`,
-    });
-
-    return {
-      status: EvaluationResult.Pass,
-      sql,
-    } as DbQueryState;
+  /**
+   * Gather the SQL-gen schema inputs from the injected SchemaStore (fail-open
+   * when unbound). Extracted to keep `execute` under the complexity cap (S1541).
+   */
+  /**
+   * Build the SQL-repair prompt. Overridable seam restoring the v2
+   * `FixQueryNode.fixPrompt`: a host can `extends FixQueryNode` and override
+   * just this to change the repair instructions, then rebind under
+   * `@graphNode(DbQueryNodes.FixQuery)`. Delegates to the shared builder.
+   */
+  protected buildPrompt(input: SqlGenInput): string {
+    return buildImproveSqlPrompt(input);
   }
 
-  private trimSchema(
-    fullSchema: DatabaseSchema,
-    errorTables: string[],
-  ): DatabaseSchema {
-    const errorTableSet = new Set(errorTables);
-    const trimmedTables: DatabaseSchema['tables'] = {};
-
-    for (const tableName of Object.keys(fullSchema.tables)) {
-      if (errorTableSet.has(tableName)) {
-        trimmedTables[tableName] = fullSchema.tables[tableName];
-      }
-    }
-
-    const trimmedRelations = fullSchema.relations.filter(
-      rel =>
-        errorTableSet.has(rel.table) || errorTableSet.has(rel.referencedTable),
-    );
-
+  private resolveSchemaInputs(tables: string[]) {
+    const store = this.schemaStore;
     return {
-      tables: trimmedTables,
-      relations: trimmedRelations,
+      allTables: store?.allTableNames() ?? [],
+      columns: store?.tablesWithColumns(tables) ?? {},
+      schema: store?.schemaForPrompt(this.dbConnector, tables),
     };
   }
 
-  private buildChecks(
-    state: DbQueryState,
-    trimmedSchema: DatabaseSchema,
-  ): string {
-    if (state.validationChecklist) {
-      return [
-        '<must-follow-rules>',
-        'You must keep these additional details in mind while fixing the query -',
-        ...state.validationChecklist.split('\n').map(check => `- ${check}`),
-        '</must-follow-rules>',
-      ].join('\n');
-    }
-    const context = this.schemaHelper.getTablesContext(trimmedSchema);
-    if (context.length === 0) return '';
-    return [
-      '<must-follow-rules>',
-      'You must keep these additional details in mind while fixing the query -',
-      ...context.map(check => `- ${check}`),
-      '</must-follow-rules>',
-    ].join('\n');
+  async execute({inputData, requestContext, tracingContext}: GraphNodeCtx) {
+    emitToolStatus(
+      requestContext,
+      DbQueryNodes.FixQuery,
+      'Fixing SQL query based on validation errors',
+    );
+
+    const data = inputData as {
+      datasetId?: string;
+      prompt?: string;
+      originalSql?: string;
+      tables?: string[];
+      checklist?: string;
+      feedback?: string;
+      attempts?: number;
+      loadError?: boolean;
+    };
+
+    if (data.loadError) return loadErrorShortCircuit(data);
+
+    const prompt = data.prompt ?? '';
+    const tables = data.tables ?? [];
+    const {dbConnector} = this;
+    const {allTables, columns, schema} = this.resolveSchemaInputs(tables);
+
+    const attempt = await this.sqlGen.runAttempt({
+      chatLlm: this.smartModel ?? this.chatModel,
+      cheapLlm: this.cheapModel ?? this.chatModel,
+      allTables,
+      tracing: tracingContext,
+      dbConnector,
+      prompt,
+      tables,
+      columns,
+      schema,
+      checks: this.globalContext,
+      checklist: data.checklist,
+      feedback: data.feedback,
+      buildPrompt: input => this.buildPrompt(input),
+      initialSql: data.originalSql,
+      rc: requestContext,
+      permissionHelper: this.permissionHelper,
+      onReselectTables: () =>
+        emitToolStatus(
+          requestContext,
+          DbQueryNodes.FixQuery,
+          'Reselecting tables to resolve a missing table or column',
+        ),
+    });
+
+    return {
+      datasetId: data.datasetId ?? '',
+      sql: attempt.sql,
+      passed: attempt.passed,
+      attempts: (data.attempts ?? 0) + 1,
+      feedback: attempt.feedback,
+      description: undefined,
+      prompt,
+      tables: attempt.tables ?? tables,
+      checklist: data.checklist ?? '',
+    };
   }
 }

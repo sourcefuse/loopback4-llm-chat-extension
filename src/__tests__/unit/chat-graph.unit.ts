@@ -1,0 +1,485 @@
+import {expect, sinon} from '@loopback/testlab';
+import type {IAuthUserWithPermissions} from '@sourceloop/core';
+import {ChatGraph} from '../../graphs/chat/chat.graph';
+import {InProcessRunRegistry} from '../../runtime/bridge/run-registry';
+import {UsageAccumulator} from '../../services/usage-accumulator.service';
+import {LLMStreamEvent, LLMStreamEventType} from '../../graphs/event.types';
+import {ToolStatus} from '../../graphs/types';
+import {makeChatGraph} from '../fixtures/chat-graph-context';
+
+const DEFAULT_USER = {
+  id: 'user-1',
+  userTenantId: 'user-1',
+  tenantId: 'tenant-1',
+  permissions: ['*'],
+} as unknown as IAuthUserWithPermissions;
+
+// Set defensively; the unit suite drives a stubbed Mastra (getAgent returns
+// a stub agent whose getMemory/stream are sinon stubs), so the real model is
+// never resolved here.
+process.env.MASTRA_DEFAULT_CHAT_MODEL ??= 'mock/test-model';
+
+type Chunk =
+  | {type: 'text-delta'; payload: {text: string}}
+  | {
+      type: 'tool-call';
+      payload: {
+        toolCallId: string;
+        toolName: string;
+        args: Record<string, unknown>;
+      };
+    }
+  | {
+      type: 'tool-call-approval';
+      payload: {
+        toolCallId: string;
+        toolName: string;
+        args: Record<string, unknown>;
+      };
+    }
+  | {type: 'tripwire'; payload: {processorId: string; reason: string}}
+  | {type: 'error'; payload: {error: Error}}
+  | {type: 'finish'; payload: {output: {finishReason: string}; runId?: string}};
+
+async function* yieldChunks(chunks: Chunk[]): AsyncIterable<Chunk> {
+  for (const c of chunks) yield c;
+}
+
+async function collect(
+  iter: AsyncIterable<LLMStreamEvent>,
+): Promise<LLMStreamEvent[]> {
+  const out: LLMStreamEvent[] = [];
+  for await (const event of iter) out.push(event);
+  return out;
+}
+
+describe('ChatGraph Unit', () => {
+  let streamStub: sinon.SinonStub;
+  let getMemoryStub: sinon.SinonStub;
+  let createThread: sinon.SinonStub;
+  let getThreadById: sinon.SinonStub;
+  let memoryStub: {
+    createThread: sinon.SinonStub;
+    getThreadById: sinon.SinonStub;
+  };
+  let mastraStub: {getAgent: sinon.SinonStub};
+  let usage: UsageAccumulator;
+  let runRegistry: InProcessRunRegistry;
+
+  beforeEach(() => {
+    createThread = sinon.stub();
+    getThreadById = sinon.stub();
+    memoryStub = {createThread, getThreadById};
+    // run() now streams the agent returned by `mastra.getAgent('chatAgent')`
+    // (the registered, observability-bound agent) instead of a detached
+    // `new Agent()`. Stub that agent's getMemory + stream directly.
+    getMemoryStub = sinon.stub().resolves(memoryStub);
+    streamStub = sinon.stub();
+    mastraStub = {
+      getAgent: sinon
+        .stub()
+        .returns({getMemory: getMemoryStub, stream: streamStub}),
+    };
+    usage = new UsageAccumulator();
+    runRegistry = new InProcessRunRegistry();
+  });
+
+  afterEach(() => {
+    sinon.restore();
+  });
+
+  function makeRunner(
+    resourceIdValue?: string,
+    authUser: IAuthUserWithPermissions | null = DEFAULT_USER,
+  ): ChatGraph {
+    // Resolve ChatGraph from a real container with the chat nodes + store bound
+    // as tagged services — the production wiring — so the nodes' DI runs and
+    // BaseGraph._getNodeFn resolves them (never `new ChatGraph()`).
+    return makeChatGraph({
+      mastra: mastraStub,
+      usage,
+      resourceId: resourceIdValue,
+      authUser,
+    }).chatGraph;
+  }
+
+  function stubStreamWith(
+    chunks: Chunk[],
+    usageValue = {inputTokens: 11, outputTokens: 5},
+  ) {
+    streamStub.resolves({
+      fullStream: yieldChunks(chunks),
+      usage: Promise.resolve(usageValue),
+    });
+  }
+
+  it('emits Init then coalesces text-delta chunks into one Message and finishes with TokenCount', async () => {
+    createThread.resolves({id: 'thread-new'});
+    stubStreamWith([
+      {type: 'text-delta', payload: {text: 'Hello '}},
+      {type: 'text-delta', payload: {text: 'world'}},
+    ]);
+
+    const runner = makeRunner();
+    const abort = new AbortController();
+
+    const events = await collect(runner.execute('hi', undefined, abort.signal));
+
+    expect(events.map(e => e.type)).to.eql([
+      LLMStreamEventType.Init,
+      LLMStreamEventType.Message,
+      LLMStreamEventType.TokenCount,
+    ]);
+    expect((events[0] as {data: {sessionId: string}}).data.sessionId).to.equal(
+      'thread-new',
+    );
+    expect((events[1] as {data: {message: string}}).data.message).to.equal(
+      'Hello world',
+    );
+    expect(
+      (events[2] as {data: {inputTokens: number; outputTokens: number}}).data,
+    ).to.eql({
+      inputTokens: 11,
+      outputTokens: 5,
+    });
+    // Usage is now bucketed under the real model id (not a hardcoded
+    // 'chat-llm'); a no-file chat turn has exactly one bucket.
+    expect(Object.values(usage.flush())).to.eql([{input: 11, output: 5}]);
+  });
+
+  it('streams one Message per text-delta when MASTRA_STREAM_TOKENS=true', async () => {
+    createThread.resolves({id: 'thread-new'});
+    stubStreamWith([
+      {type: 'text-delta', payload: {text: 'Hello '}},
+      {type: 'text-delta', payload: {text: 'world'}},
+    ]);
+
+    // streamTokens is read at construction — set the env before makeRunner().
+    const prev = process.env.MASTRA_STREAM_TOKENS;
+    process.env.MASTRA_STREAM_TOKENS = 'true';
+    try {
+      const events = await collect(
+        makeRunner().execute('hi', undefined, new AbortController().signal),
+      );
+      // Two separate Message events (deltas), not one coalesced message.
+      expect(events.map(e => e.type)).to.eql([
+        LLMStreamEventType.Init,
+        LLMStreamEventType.Message,
+        LLMStreamEventType.Message,
+        LLMStreamEventType.TokenCount,
+      ]);
+      expect((events[1] as {data: {message: string}}).data.message).to.equal(
+        'Hello ',
+      );
+      expect((events[2] as {data: {message: string}}).data.message).to.equal(
+        'world',
+      );
+    } finally {
+      if (prev === undefined) delete process.env.MASTRA_STREAM_TOKENS;
+      else process.env.MASTRA_STREAM_TOKENS = prev;
+    }
+  });
+
+  it('reuses an existing thread when sessionId is provided and omits Init', async () => {
+    getThreadById.resolves({
+      id: 'thread-existing',
+      resourceId: 'tenant-1:user-1',
+    });
+    stubStreamWith([{type: 'text-delta', payload: {text: 'ok'}}]);
+
+    const events = await collect(
+      makeRunner().execute(
+        'cont',
+        undefined,
+        new AbortController().signal,
+        'thread-existing',
+      ),
+    );
+
+    expect(events.map(e => e.type)).to.eql([
+      LLMStreamEventType.Message,
+      LLMStreamEventType.TokenCount,
+    ]);
+    sinon.assert.calledOnce(getThreadById);
+    sinon.assert.notCalled(createThread);
+  });
+
+  it('emits Error and stops when resumed thread belongs to another resource owner', async () => {
+    getThreadById.resolves({
+      id: 'thread-existing',
+      resourceId: 'tenant-other:user-other',
+    });
+
+    const events = await collect(
+      makeRunner().execute(
+        'cont',
+        undefined,
+        new AbortController().signal,
+        'thread-existing',
+      ),
+    );
+
+    expect(events).to.have.length(1);
+    expect(events[0].type).to.equal(LLMStreamEventType.Error);
+    expect((events[0] as {data: {message: string}}).data.message).to.match(
+      /does not belong/,
+    );
+  });
+
+  it('emits Error and stops when resumed thread has no resourceId', async () => {
+    getThreadById.resolves({id: 'thread-existing'});
+
+    const events = await collect(
+      makeRunner().execute(
+        'cont',
+        undefined,
+        new AbortController().signal,
+        'thread-existing',
+      ),
+    );
+
+    expect(events).to.have.length(1);
+    expect(events[0].type).to.equal(LLMStreamEventType.Error);
+    expect((events[0] as {data: {message: string}}).data.message).to.match(
+      /missing resourceId/,
+    );
+  });
+
+  it('emits Error and stops when requester identity is unavailable on resume', async () => {
+    getThreadById.resolves({
+      id: 'thread-existing',
+      resourceId: 'tenant-1:user-1',
+    });
+
+    const events = await collect(
+      makeRunner(undefined, null).execute(
+        'cont',
+        undefined,
+        new AbortController().signal,
+        'thread-existing',
+      ),
+    );
+
+    expect(events).to.have.length(1);
+    expect(events[0].type).to.equal(LLMStreamEventType.Error);
+    expect((events[0] as {data: {message: string}}).data.message).to.match(
+      /resource identity is unavailable/,
+    );
+  });
+
+  it('emits Error and stops when sessionId thread is not found', async () => {
+    getThreadById.resolves(null);
+
+    const events = await collect(
+      makeRunner().execute(
+        'cont',
+        undefined,
+        new AbortController().signal,
+        'missing',
+      ),
+    );
+
+    expect(events).to.have.length(1);
+    expect(events[0].type).to.equal(LLMStreamEventType.Error);
+    expect((events[0] as {data: {message: string}}).data.message).to.match(
+      /missing/,
+    );
+  });
+
+  it('emits Error and stops when Memory is not configured', async () => {
+    getMemoryStub.resolves(null);
+
+    const events = await collect(
+      makeRunner().execute('hi', undefined, new AbortController().signal),
+    );
+
+    expect(events).to.have.length(1);
+    expect(events[0].type).to.equal(LLMStreamEventType.Error);
+    expect((events[0] as {data: {message: string}}).data.message).to.match(
+      /Memory/,
+    );
+  });
+
+  it('maps tool-call chunks to Tool events with the toolCallId from payload', async () => {
+    createThread.resolves({id: 't1'});
+    stubStreamWith([
+      {
+        type: 'tool-call',
+        payload: {
+          toolCallId: 'tc-123',
+          toolName: 'get-data',
+          args: {prompt: 'top customers'},
+        },
+      },
+      {type: 'text-delta', payload: {text: 'done'}},
+    ]);
+
+    const events = await collect(
+      makeRunner().execute('q', undefined, new AbortController().signal),
+    );
+
+    const toolEvent = events.find(e => e.type === LLMStreamEventType.Tool);
+    expect(toolEvent).to.not.be.undefined();
+    expect(
+      (toolEvent as {data: {id: string; tool: string; data: unknown}}).data,
+    ).to.eql({
+      id: 'tc-123',
+      tool: 'get-data',
+      data: {prompt: 'top customers'},
+    });
+  });
+
+  it('maps tool-call-approval chunks to ToolStatus.AwaitingApproval', async () => {
+    createThread.resolves({id: 't1'});
+    stubStreamWith([
+      {
+        type: 'tool-call-approval',
+        payload: {
+          toolCallId: 'tc-9',
+          toolName: 'delete-dataset',
+          args: {datasetId: 'd9'},
+        },
+      },
+    ]);
+
+    const events = await collect(
+      makeRunner().execute('q', undefined, new AbortController().signal),
+    );
+
+    const status = events.find(
+      e => e.type === LLMStreamEventType.ToolStatus,
+    ) as undefined | {data: {id: string; status: string}};
+    expect(status).to.not.be.undefined();
+    expect(status!.data.id).to.equal('tc-9');
+    expect(status!.data.status).to.equal(ToolStatus.AwaitingApproval);
+  });
+
+  it('maps tripwire chunks to Error events with the processor id and reason', async () => {
+    createThread.resolves({id: 't1'});
+    stubStreamWith([
+      {
+        type: 'tripwire',
+        payload: {processorId: 'pii-detector', reason: 'email leak'},
+      },
+    ]);
+
+    const events = await collect(
+      makeRunner().execute('q', undefined, new AbortController().signal),
+    );
+
+    const err = events.find(e => e.type === LLMStreamEventType.Error) as
+      undefined | {data: {message: string}};
+    expect(err).to.not.be.undefined();
+    expect(err!.data.message).to.match(/pii-detector/);
+    expect(err!.data.message).to.match(/email leak/);
+  });
+
+  it('does NOT write to RunRegistry on suspended finish (HITL resume lands in v3.1)', async () => {
+    // ApprovalController is scoped to v3.1 (Phase 4 of the migration
+    // plan). Writing to RunRegistry here without a consumer would
+    // accumulate unread TTL entries; the dead path is removed in v3.0.
+    createThread.resolves({id: 'thread-suspend'});
+    stubStreamWith([
+      {
+        type: 'finish',
+        payload: {output: {finishReason: 'suspended'}, runId: 'run-42'},
+      },
+    ]);
+
+    await collect(
+      makeRunner().execute('q', undefined, new AbortController().signal),
+    );
+
+    expect(await runRegistry.get('thread-suspend')).to.be.undefined();
+  });
+
+  it('emits Status events for each uploaded file before streaming', async () => {
+    createThread.resolves({id: 't1'});
+    stubStreamWith([{type: 'text-delta', payload: {text: '.'}}]);
+
+    const files = [
+      {originalname: 'a.pdf'} as Express.Multer.File,
+      {originalname: 'b.pdf'} as Express.Multer.File,
+    ];
+    const events = await collect(
+      makeRunner().execute('q', files, new AbortController().signal),
+    );
+
+    const statusMsgs = events
+      .filter(e => e.type === LLMStreamEventType.Status)
+      .map(e => (e as {data: string}).data);
+    // summariseAndMergeFiles emits one `Reading file: X` per attachment;
+    // when no model is bound or the summarisation call rejects (the unit
+    // suite has no live LLM) it follows up with a `Failed to read file: X`
+    // / `Skipped file: X` entry. Both shapes are valid; assert only on the
+    // ordered Reading events so the test stays decoupled from the
+    // failure-mode wording.
+    const readingMsgs = statusMsgs.filter(m => m.startsWith('Reading file:'));
+    expect(readingMsgs).to.eql(['Reading file: a.pdf', 'Reading file: b.pdf']);
+  });
+
+  it('uses the ResourceId binding when supplied and falls through to it as the memory resource', async () => {
+    createThread.resolves({id: 't1'});
+    stubStreamWith([{type: 'text-delta', payload: {text: '.'}}]);
+
+    await collect(
+      makeRunner('tenant-a:user-1').execute(
+        'q',
+        undefined,
+        new AbortController().signal,
+      ),
+    );
+
+    sinon.assert.calledWith(
+      createThread,
+      sinon.match({resourceId: 'tenant-a:user-1'}),
+    );
+    const streamOpts = streamStub.firstCall.args[1] as {
+      memory: {resource: string};
+    };
+    expect(streamOpts.memory.resource).to.equal('tenant-a:user-1');
+  });
+
+  it('forwards CheapLLM / SmartLLM / SmartNonThinkingLLM into the RequestContext when bound', async () => {
+    // Tier configs are injected into CallLLMNode (AiIntegrationBindings.CheapLLM
+    // etc). The node resolves each through resolveModelConfig before placing it
+    // on the RC (so workflow steps can hand it straight to generateText), hence
+    // the fixtures are minimal AI-SDK v2 model stubs, identified by modelId.
+    const fakeModel = (id: string) =>
+      ({
+        specificationVersion: 'v2',
+        provider: 'test',
+        modelId: id,
+        doGenerate: async () => ({}),
+        doStream: async () => ({}),
+      }) as never;
+    createThread.resolves({id: 't1'});
+    stubStreamWith([{type: 'text-delta', payload: {text: '.'}}]);
+
+    const {chatGraph: runner} = makeChatGraph({
+      mastra: mastraStub,
+      usage,
+      resourceId: 'tenant-a:user-1',
+      authUser: DEFAULT_USER,
+      cheapLlm: fakeModel('cheap'),
+      smartLlm: fakeModel('smart'),
+      smartNonThinkingLlm: fakeModel('snt'),
+    });
+
+    await collect(runner.execute('q', undefined, new AbortController().signal));
+
+    const streamOpts = streamStub.firstCall.args[1] as {
+      requestContext: {get: (k: string) => unknown};
+    };
+    const modelId = (m: unknown) => (m as {modelId?: string})?.modelId;
+    expect(modelId(streamOpts.requestContext.get('cheapLlm'))).to.equal(
+      'cheap',
+    );
+    expect(modelId(streamOpts.requestContext.get('smartLlm'))).to.equal(
+      'smart',
+    );
+    expect(
+      modelId(streamOpts.requestContext.get('smartNonThinkingLlm')),
+    ).to.equal('snt');
+  });
+});

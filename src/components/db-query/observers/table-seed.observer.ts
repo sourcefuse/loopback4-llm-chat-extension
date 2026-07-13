@@ -1,4 +1,4 @@
-import {inject, LifeCycleObserver, service} from '@loopback/core';
+import {LifeCycleObserver, inject} from '@loopback/core';
 import {DbQueryAIExtensionBindings} from '../keys';
 import {DbSchemaHelperService} from '../services';
 import {SchemaStore} from '../services/schema.store';
@@ -9,11 +9,11 @@ export class TableSeedObserver implements LifeCycleObserver {
   constructor(
     @inject(DbQueryAIExtensionBindings.Config)
     private readonly config: DbQueryConfig,
-    @service(DbSchemaHelperService)
+    @inject('services.DbSchemaHelperService')
     private readonly dbSchemaHelper: DbSchemaHelperService,
-    @service(SchemaStore)
+    @inject('services.SchemaStore')
     private readonly schemaStore: SchemaStore,
-    @service(TableSearchService)
+    @inject('services.TableSearchService')
     private readonly tableSearchService: TableSearchService,
   ) {}
   async start(): Promise<void> {

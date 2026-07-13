@@ -1,22 +1,16 @@
 import {expect, sinon} from '@loopback/testlab';
 import {BarVisualizer} from '../../../../components/visualization/visualizers/bar.visualizer';
-import {LLMProvider} from '../../../../types';
 import {fail} from 'assert';
 import {VisualizationGraphState} from '../../../../components';
-
 describe('BarVisualizer Unit', function () {
   let visualizer: BarVisualizer;
-  let llmProvider: sinon.SinonStubbedInstance<LLMProvider>;
-  let withStructuredOutputStub: sinon.SinonStub;
+  let generateObjectStub: sinon.SinonStub;
 
   beforeEach(() => {
-    // Create stub for LLM provider
-    withStructuredOutputStub = sinon.stub();
-    llmProvider = {
-      withStructuredOutput: withStructuredOutputStub,
-    } as sinon.SinonStubbedInstance<LLMProvider>;
-
-    visualizer = new BarVisualizer(llmProvider);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    visualizer = new BarVisualizer({} as any);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    generateObjectStub = sinon.stub(visualizer, 'callGen' as any);
   });
 
   afterEach(() => {
@@ -48,16 +42,25 @@ describe('BarVisualizer Unit', function () {
     }
   });
 
-  it('should validate schema with default orientation', () => {
+  it('requires orientation (no default — OpenAI strict structured output rejects optional fields)', () => {
     const schema = visualizer.schema;
+    // orientation is now a required field; omitting it must fail parse.
+    // The `.default('vertical')` was removed because AI SDK marks a
+    // defaulted field optional, which drops it from JSON-schema `required`
+    // and makes generateObject 400 under OpenAI strict mode.
     const dataWithoutOrientation = {
       categoryColumn: 'category',
       valueColumn: 'value',
     };
+    expect(schema.safeParse(dataWithoutOrientation).success).to.be.false();
 
-    const result = schema.safeParse(dataWithoutOrientation);
+    const dataWithOrientation = {
+      categoryColumn: 'category',
+      valueColumn: 'value',
+      orientation: 'vertical',
+    };
+    const result = schema.safeParse(dataWithOrientation);
     expect(result.success).to.be.true();
-
     if (result.success) {
       expect(result.data.orientation).to.equal('vertical');
     }
@@ -130,8 +133,7 @@ describe('BarVisualizer Unit', function () {
       orientation: 'vertical',
     };
 
-    const mockInvoke = sinon.stub().resolves(mockLLMResponse);
-    withStructuredOutputStub.returns(mockInvoke);
+    generateObjectStub.resolves({object: mockLLMResponse});
 
     const validState = {
       prompt: 'Show me a bar chart of salaries by department',
@@ -143,28 +145,26 @@ describe('BarVisualizer Unit', function () {
     const config = await visualizer.getConfig(validState);
 
     expect(config).to.deepEqual(mockLLMResponse);
-    expect(
-      withStructuredOutputStub.calledOnceWith(visualizer.schema),
-    ).to.be.true();
-    expect(mockInvoke.calledOnce).to.be.true();
+    expect(generateObjectStub.calledOnce).to.be.true();
 
-    // Check that the mock was called with a StringPromptValue containing our data
-    const invokeArgs = mockInvoke.getCall(0).args[0];
-    expect(invokeArgs).to.have.property('value');
+    // Check that generateObject was called with a prompt containing our data
+    const callArgs = generateObjectStub.getCall(0).args[0];
+    expect(callArgs.prompt).to.match(/<sql>/);
+    expect(callArgs.prompt).to.match(/<description>/);
+    expect(callArgs.prompt).to.match(/<user-prompt>/);
     // Escape special regex characters in SQL
     const escapedSQL =
       validState.sql?.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') ?? '';
-    expect(invokeArgs.value).to.match(new RegExp(escapedSQL));
-    expect(invokeArgs.value).to.match(
+    expect(callArgs.prompt).to.match(new RegExp(escapedSQL));
+    expect(callArgs.prompt).to.match(
       new RegExp(validState.queryDescription ?? ''),
     );
-    expect(invokeArgs.value).to.match(new RegExp(validState.prompt));
+    expect(callArgs.prompt).to.match(new RegExp(validState.prompt));
   });
 
   it('should handle LLM errors gracefully', async () => {
     const mockError = new Error('LLM processing failed');
-    const mockInvoke = sinon.stub().rejects(mockError);
-    withStructuredOutputStub.returns(mockInvoke);
+    generateObjectStub.rejects(mockError);
 
     const validState = {
       prompt: 'test prompt',
@@ -181,16 +181,31 @@ describe('BarVisualizer Unit', function () {
     }
   });
 
-  it('should contain proper prompt template structure', () => {
-    const promptTemplate = visualizer.renderPrompt;
-    expect(promptTemplate).to.be.ok();
+  it('should contain proper prompt template structure', async () => {
+    generateObjectStub.resolves({
+      object: {
+        categoryColumn: 'category',
+        valueColumn: 'value',
+        orientation: 'vertical',
+      },
+    });
 
-    const templateText = promptTemplate.template;
-    expect(templateText).to.match(/bar chart/);
-    expect(templateText).to.match(/\{sql\}/);
-    expect(templateText).to.match(/\{description\}/);
-    expect(templateText).to.match(/\{userPrompt\}/);
-    expect(templateText).to.match(/x-axis/);
-    expect(templateText).to.match(/y-axis/);
+    const validState = {
+      prompt: 'test prompt',
+      datasetId: 'test-dataset',
+      sql: 'SELECT * FROM test',
+      queryDescription: 'test description',
+    } as unknown as VisualizationGraphState;
+
+    await visualizer.getConfig(validState);
+
+    const callArgs = generateObjectStub.getCall(0).args[0];
+    const promptText: string = callArgs.prompt;
+    expect(promptText).to.match(/bar chart/);
+    expect(promptText).to.match(/<sql>/);
+    expect(promptText).to.match(/<description>/);
+    expect(promptText).to.match(/<user-prompt>/);
+    expect(promptText).to.match(/x-axis/);
+    expect(promptText).to.match(/y-axis/);
   });
 });

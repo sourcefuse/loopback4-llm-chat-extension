@@ -175,6 +175,7 @@ export async function seedDataset(appInstance: TestApp) {
   ctx.bind(AuthenticationBindings.CURRENT_USER).to({
     id: 'test-user',
     userTenantId: 'default',
+    tenantId: 'default',
   } as unknown as IAuthUserWithPermissions);
   const repo = await ctx.get<DataSetRepository>(
     `repositories.${DataSetRepository.name}`,
@@ -216,6 +217,10 @@ function setUpEnv() {
   process.env.JWT_SECRET = 'secret';
   process.env.JWT_ISSUER = 'issuer';
   process.env.JWT_EXPIRY = '180000';
+  // Required by Provider + WorkflowRunner fail-closed checks.
+  // Tests use a stub model id; real LLM calls are mocked via
+  // createMockModel or sinon stubs.
+  process.env.MASTRA_DEFAULT_CHAT_MODEL ??= 'mock/test-model';
 }
 
 export function buildNodeStub() {
@@ -252,6 +257,7 @@ export async function getRepo(app: Application, repo: string) {
   ctx.bind(AuthenticationBindings.CURRENT_USER).to({
     id: 'test-user',
     userTenantId: 'default-user-id',
+    tenantId: 'default',
     role: 'admin',
   } as unknown as IAuthUserWithPermissions);
   return ctx.get<DataSetRepository>(`repositories.${DataSetRepository.name}`);
