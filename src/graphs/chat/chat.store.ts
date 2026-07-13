@@ -87,20 +87,52 @@ export class ChatStore {
       return {error: 'Mastra Memory is required but not configured'};
     }
     if (!sessionId) {
-      const resourceId = requesterResourceId ?? randomUUID();
-      // Title from the first prompt (truncated), mirroring LangGraph main's
-      // ChatStore.init (`prompt.slice(0, 200)`). Without it threads have no
-      // title and the chat-history list shows blanks — Mastra only auto-titles
-      // when MASTRA_GENERATE_TITLE is on (an extra LLM call). Prompt-derived is
-      // free and matches main's behaviour.
-      const trimmed = prompt?.trim().slice(0, CHAT_TITLE_MAX_LENGTH);
-      // Empty prompt → undefined title (not ''); a plain `||`/`??` either trips
-      // prefer-nullish-coalescing or keeps '', so test for empty explicitly.
-      const title = trimmed === '' ? undefined : trimmed;
-      const thread = await memory.createThread({resourceId, title});
-      emitInit(thread.id);
-      return {threadId: thread.id, resourceId, title: title ?? ''};
+      return this.createNewThread(
+        memory,
+        requesterResourceId,
+        emitInit,
+        prompt,
+      );
     }
+    return this.resumeThread(memory, sessionId, requesterResourceId);
+  }
+
+  /**
+   * Fresh-request path: create a thread stamped with the requester identity +
+   * a prompt-derived title and emit Init. Extracted from `resolveThread` to
+   * keep it under the complexity cap (S1541).
+   */
+  protected async createNewThread(
+    memory: ThreadMemory,
+    requesterResourceId: string | undefined,
+    emitInit: (sessionId: string) => void,
+    prompt?: string,
+  ): Promise<ResolvedThread> {
+    const resourceId = requesterResourceId ?? randomUUID();
+    // Title from the first prompt (truncated), mirroring LangGraph main's
+    // ChatStore.init (`prompt.slice(0, 200)`). Without it threads have no
+    // title and the chat-history list shows blanks — Mastra only auto-titles
+    // when MASTRA_GENERATE_TITLE is on (an extra LLM call). Prompt-derived is
+    // free and matches main's behaviour.
+    const trimmed = prompt?.trim().slice(0, CHAT_TITLE_MAX_LENGTH);
+    // Empty prompt → undefined title (not ''); a plain `||`/`??` either trips
+    // prefer-nullish-coalescing or keeps '', so test for empty explicitly.
+    const title = trimmed === '' ? undefined : trimmed;
+    const thread = await memory.createThread({resourceId, title});
+    emitInit(thread.id);
+    return {threadId: thread.id, resourceId, title: title ?? ''};
+  }
+
+  /**
+   * Resume path: load the thread and enforce it exists, carries a resourceId,
+   * the requester identity is resolvable, and it matches the owner. Extracted
+   * from `resolveThread` to keep it under the complexity cap (S1541).
+   */
+  protected async resumeThread(
+    memory: ThreadMemory,
+    sessionId: string,
+    requesterResourceId: string | undefined,
+  ): Promise<ResolvedThread> {
     const thread = await memory.getThreadById({threadId: sessionId});
     if (!thread) return {error: `Thread ${sessionId} not found`};
     // A missing resourceId is an upstream invariant violation (corruption /

@@ -1,4 +1,5 @@
 import {inject, service} from '@loopback/core';
+import type {TracingContext} from '@mastra/core/observability';
 import type {LanguageModel} from 'ai';
 import {graphNode} from '../../../decorators';
 import type {IGraphNode, GraphNodeCtx} from '../../../graphs/types';
@@ -73,21 +74,11 @@ export class PostValidationNode implements IGraphNode {
       )?.description ?? '';
 
     const lastAttempt = (gen.attempts ?? 0) >= MAX_VALIDATION_ATTEMPTS;
-
-    // Syntactic failure is authoritative (the SQL won't run). Otherwise the
-    // semantic judge decides — except on the last attempt, where syntactically
-    // valid SQL is accepted regardless (v2 lastAttempt rule).
-    let verdict: Verdict;
-    let kind: 'syntactic' | 'semantic' | undefined;
-    if (!syntactic.passed) {
-      verdict = syntactic;
-      kind = 'syntactic';
-    } else if (lastAttempt) {
-      verdict = {passed: true};
-    } else {
-      verdict = semantic;
-      kind = 'semantic';
-    }
+    const {verdict, kind} = this.decideVerdict(
+      syntactic,
+      semantic,
+      lastAttempt,
+    );
 
     if (!verdict.passed) {
       emitToolStatus(
@@ -97,27 +88,63 @@ export class PostValidationNode implements IGraphNode {
       );
     }
 
-    // On a syntactic table_not_found, widen the allowed table set for the next
-    // iteration (v2 ReselectTables → GetTables). Delegates to the service.
-    const tables =
+    const tables = await this.reselectTables(
+      gen,
+      verdict,
+      kind,
+      tracingContext,
+    );
+
+    return this.finalState(
+      {...gen, tables, description},
+      verdict.passed,
+      verdict.feedback,
+    );
+  }
+
+  /**
+   * Pick the authoritative verdict: syntactic failure wins (the SQL won't run);
+   * otherwise the semantic judge decides — except on the last attempt, where
+   * syntactically-valid SQL is accepted regardless (v2 lastAttempt rule).
+   * Extracted from `execute` to keep it under the complexity cap (S1541).
+   */
+  protected decideVerdict(
+    syntactic: Verdict,
+    semantic: Verdict,
+    lastAttempt: boolean,
+  ): {verdict: Verdict; kind?: 'syntactic' | 'semantic'} {
+    if (!syntactic.passed) return {verdict: syntactic, kind: 'syntactic'};
+    if (lastAttempt) return {verdict: {passed: true}};
+    return {verdict: semantic, kind: 'semantic'};
+  }
+
+  /**
+   * On a syntactic table_not_found, widen the allowed table set for the next
+   * iteration (v2 ReselectTables → GetTables); delegates to the service.
+   * Extracted from `execute` to keep it under the complexity cap (S1541).
+   */
+  protected async reselectTables(
+    gen: SqlLoopState,
+    verdict: Verdict,
+    kind: 'syntactic' | 'semantic' | undefined,
+    tracing?: TracingContext,
+  ): Promise<string[]> {
+    return (
       (await this.sqlGen.resolveReselectedTables(
         {
           cheapLlm: this.cheapModel ?? this.chatModel,
           chatLlm: this.chatModel,
           tables: gen.tables ?? [],
           allTables: this.schemaStore?.allTableNames() ?? [],
-          tracing: tracingContext,
+          tracing,
           permissionHelper: this.permissionHelper,
         },
         {passed: verdict.passed, kind, feedback: verdict.feedback},
         gen.sql ?? '',
         this.sqlValidator,
-      )) ?? gen.tables;
-
-    return this.finalState(
-      {...gen, tables, description},
-      verdict.passed,
-      verdict.feedback,
+      )) ??
+      gen.tables ??
+      []
     );
   }
 
