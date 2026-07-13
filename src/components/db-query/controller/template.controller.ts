@@ -1,4 +1,4 @@
-import {inject, service} from '@loopback/core';
+import {inject} from '@loopback/core';
 import {
   get,
   getModelSchemaRef,
@@ -36,9 +36,9 @@ export class TemplateController {
   constructor(
     @inject(AuthenticationBindings.CURRENT_USER)
     private readonly user: IAuthUserWithPermissions,
-    @service(SchemaStore)
+    @inject('services.SchemaStore')
     private readonly schemaStore: SchemaStore,
-    @service(SemanticCacheService)
+    @inject('services.SemanticCacheService')
     private readonly semanticCache: SemanticCacheService,
     @inject(DbQueryAIExtensionBindings.TemplateCache)
     private readonly templateRetriever: ISemanticCacheRetriever<QueryTemplateMetadata>,

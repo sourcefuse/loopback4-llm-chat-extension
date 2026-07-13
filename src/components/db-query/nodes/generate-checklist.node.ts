@@ -1,4 +1,4 @@
-import {inject, service} from '@loopback/core';
+import {inject} from '@loopback/core';
 import type {TracingContext} from '@mastra/core/observability';
 import type {LanguageModel} from 'ai';
 import {graphNode} from '../../../decorators';
@@ -27,7 +27,7 @@ export class GenerateChecklistNode implements IGraphNode {
     // ponytail: optional + default instance keeps the node zero-arg
     // constructible (the node registry's `new () =>` contract); DI injects the
     // bound (rebindable) service when the component is mounted.
-    @service(ChecklistHelper, {optional: true})
+    @inject('services.ChecklistHelper', {optional: true})
     protected readonly checklistHelper: ChecklistHelper = new ChecklistHelper(),
     @inject(DbQueryAIExtensionBindings.Config, {optional: true})
     protected readonly config?: DbQueryConfig,

@@ -1,4 +1,4 @@
-import {inject, service} from '@loopback/core';
+import {inject} from '@loopback/core';
 import type {LanguageModel} from 'ai';
 import {graphNode} from '../../../decorators';
 import type {IGraphNode, GraphNodeCtx} from '../../../graphs/types';
@@ -21,7 +21,7 @@ export class LoadExistingNode implements IGraphNode<LoadIn> {
     // the generate path does in generate-checklist) so fix-query's semantic
     // validation actually runs; without it `checklist:''` makes validateSemantic
     // auto-pass and disliked/improved queries get syntactic validation only.
-    @service(ChecklistHelper, {optional: true})
+    @inject('services.ChecklistHelper', {optional: true})
     private readonly checklistHelper: ChecklistHelper = new ChecklistHelper(),
     @inject(DbQueryAIExtensionBindings.Config, {optional: true})
     private readonly config?: DbQueryConfig,

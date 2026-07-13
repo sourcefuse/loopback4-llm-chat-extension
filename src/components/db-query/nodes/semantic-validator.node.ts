@@ -1,4 +1,4 @@
-import {inject, service} from '@loopback/core';
+import {inject} from '@loopback/core';
 import type {LanguageModel} from 'ai';
 import {graphNode} from '../../../decorators';
 import type {IGraphNode, GraphNodeCtx} from '../../../graphs/types';
@@ -27,7 +27,7 @@ export class SemanticValidatorNode implements IGraphNode {
     protected readonly cheapModel?: LanguageModel,
     @inject(AiIntegrationBindings.SmartModel, {optional: true})
     protected readonly smartModel?: LanguageModel,
-    @service(SqlValidatorService, {optional: true})
+    @inject('services.SqlValidatorService', {optional: true})
     protected readonly sqlValidator: SqlValidatorService = new SqlValidatorService(),
   ) {}
 

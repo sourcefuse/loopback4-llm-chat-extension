@@ -1,4 +1,4 @@
-import {inject, service} from '@loopback/core';
+import {inject} from '@loopback/core';
 import {Mastra} from '@mastra/core';
 import type {MastraModelConfig} from '@mastra/core/llm';
 import {graphNode} from '../../../decorators';
@@ -46,11 +46,11 @@ export class CallLLMNode implements IChatNode {
 
   constructor(
     @inject(AiIntegrationBindings.Mastra) protected readonly mastra: Mastra,
-    @service(RequestContextBuilder)
+    @inject('services.RequestContextBuilder')
     protected readonly rcBuilder: RequestContextBuilder,
     @inject(AiIntegrationBindings.ChatLLM, {optional: true})
     protected readonly chatLlm?: MastraModelConfig,
-    @service(UsageAccumulator, {optional: true})
+    @inject('services.UsageAccumulator', {optional: true})
     protected readonly usage?: UsageAccumulator,
   ) {}
 

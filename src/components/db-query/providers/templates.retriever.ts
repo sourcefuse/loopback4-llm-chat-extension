@@ -1,4 +1,4 @@
-import {inject, Provider, service, ValueOrPromise} from '@loopback/core';
+import {Provider, ValueOrPromise, inject} from '@loopback/core';
 import {
   DbQueryStoredTypes,
   ISemanticCacheRetriever,
@@ -12,7 +12,7 @@ export class TemplateRetriever implements Provider<
   ISemanticCacheRetriever<QueryTemplateMetadata>
 > {
   constructor(
-    @service(SemanticCacheService)
+    @inject('services.SemanticCacheService')
     private readonly semanticCache: SemanticCacheService,
     @inject(AuthenticationBindings.CURRENT_USER)
     private readonly user: IAuthUserWithPermissions,

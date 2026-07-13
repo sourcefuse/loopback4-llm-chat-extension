@@ -1,4 +1,4 @@
-import {inject, service} from '@loopback/core';
+import {inject} from '@loopback/core';
 import type {TracingContext} from '@mastra/core/observability';
 import type {LanguageModel} from 'ai';
 import {graphNode} from '../../../decorators';
@@ -39,9 +39,9 @@ export class PostValidationNode implements IGraphNode {
     protected readonly chatModel?: LanguageModel,
     @inject(AiIntegrationBindings.CheapModel, {optional: true})
     protected readonly cheapModel?: LanguageModel,
-    @service(SqlGenerationHelper, {optional: true})
+    @inject('services.SqlGenerationHelper', {optional: true})
     protected readonly sqlGen: SqlGenerationHelper = new SqlGenerationHelper(),
-    @service(SqlValidatorService, {optional: true})
+    @inject('services.SqlValidatorService', {optional: true})
     protected readonly sqlValidator: SqlValidatorService = new SqlValidatorService(),
   ) {}
 

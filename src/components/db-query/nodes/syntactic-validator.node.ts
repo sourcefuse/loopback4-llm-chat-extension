@@ -1,4 +1,4 @@
-import {inject, service} from '@loopback/core';
+import {inject} from '@loopback/core';
 import {graphNode} from '../../../decorators';
 import type {IGraphNode, GraphNodeCtx} from '../../../graphs/types';
 import {DbQueryAIExtensionBindings} from '../keys';
@@ -20,7 +20,7 @@ export class SyntacticValidatorNode implements IGraphNode {
   constructor(
     @inject(DbQueryAIExtensionBindings.Connector, {optional: true})
     protected readonly dbConnector?: IDbConnector,
-    @service(SqlValidatorService, {optional: true})
+    @inject('services.SqlValidatorService', {optional: true})
     protected readonly sqlValidator: SqlValidatorService = new SqlValidatorService(),
   ) {}
 

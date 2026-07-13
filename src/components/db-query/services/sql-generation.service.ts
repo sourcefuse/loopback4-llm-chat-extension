@@ -1,4 +1,4 @@
-import {BindingScope, injectable, service} from '@loopback/core';
+import {BindingScope, inject, injectable} from '@loopback/core';
 import {SpanType} from '@mastra/core/observability';
 import type {TracingContext} from '@mastra/core/observability';
 import {streamText} from 'ai';
@@ -31,7 +31,7 @@ type SqlGenStage = {sql: string; description?: string; error?: string};
 @injectable({scope: BindingScope.TRANSIENT})
 export class SqlGenerationHelper {
   constructor(
-    @service(SqlValidatorService, {optional: true})
+    @inject('services.SqlValidatorService', {optional: true})
     private readonly sqlValidator: SqlValidatorService = new SqlValidatorService(),
   ) {}
 

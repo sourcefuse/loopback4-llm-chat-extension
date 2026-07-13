@@ -1,4 +1,4 @@
-import {BindingScope, inject, injectable, service} from '@loopback/core';
+import {BindingScope, inject, injectable} from '@loopback/core';
 import {ChatGraph} from '../graphs/chat/chat.graph';
 import {AiIntegrationBindings} from '../keys';
 import {ITransport} from '../transports/types';
@@ -7,7 +7,7 @@ import {ILimitStrategy} from './limit-strategies/types';
 @injectable({scope: BindingScope.REQUEST})
 export class GenerationService {
   constructor(
-    @service(ChatGraph)
+    @inject('services.ChatGraph')
     private readonly chatGraph: ChatGraph,
     @inject(AiIntegrationBindings.Transport)
     private readonly transport: ITransport,

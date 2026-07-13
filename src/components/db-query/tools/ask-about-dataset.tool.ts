@@ -1,4 +1,4 @@
-import {inject, service} from '@loopback/core';
+import {inject} from '@loopback/core';
 import {createTool} from '@mastra/core/tools';
 import type {Tool} from '@mastra/core/tools';
 import {z} from 'zod';
@@ -34,9 +34,9 @@ export class AskAboutDatasetTool implements IGraphTool {
     private readonly store: IDataSetStore,
     @inject(DbQueryAIExtensionBindings.GlobalContext, {optional: true})
     private readonly checks: string[] | undefined,
-    @service(DbSchemaHelperService)
+    @inject('services.DbSchemaHelperService')
     private readonly schemaHelper: DbSchemaHelperService,
-    @service(SchemaStore)
+    @inject('services.SchemaStore')
     private readonly schemaStore: SchemaStore,
   ) {}
 

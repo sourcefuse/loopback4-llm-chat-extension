@@ -1,4 +1,4 @@
-import {inject, service} from '@loopback/core';
+import {inject} from '@loopback/core';
 import type {LanguageModel} from 'ai';
 import {graphNode} from '../../../decorators';
 import type {IGraphNode, GraphNodeCtx} from '../../../graphs/types';
@@ -20,7 +20,7 @@ import {Errors} from '../types';
 @graphNode(DbQueryNodes.CheckPermissions)
 export class CheckPermissionsNode implements IGraphNode {
   constructor(
-    @service(PermissionHelper, {optional: true})
+    @inject('services.PermissionHelper', {optional: true})
     protected readonly permissions?: PermissionHelper,
     @inject(AiIntegrationBindings.CheapModel, {optional: true})
     protected readonly cheapModel?: LanguageModel,

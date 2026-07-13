@@ -79,13 +79,15 @@ export function makeChatGraph(deps: ChatGraphDeps): {
   // step-resolver.ts).
   ctx.add(
     createBindingFromClass(ChatStore, {
+      key: 'services.ChatStore',
       defaultScope: BindingScope.TRANSIENT,
-    }).tag({[CoreTags.SERVICE_INTERFACE]: ChatStore}),
+    }),
   );
   ctx.add(
     createBindingFromClass(RequestContextBuilder, {
+      key: 'services.RequestContextBuilder',
       defaultScope: BindingScope.TRANSIENT,
-    }).tag({[CoreTags.SERVICE_INTERFACE]: RequestContextBuilder}),
+    }),
   );
   const nodeClasses: Array<Constructor<object>> = [...CHAT_NODE_CLASSES];
   for (const cls of nodeClasses) {

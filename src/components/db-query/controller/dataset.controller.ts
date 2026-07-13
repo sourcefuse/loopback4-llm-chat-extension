@@ -1,4 +1,4 @@
-import {service} from '@loopback/core';
+import {inject} from '@loopback/core';
 import {Filter, FilterExcludingWhere} from '@loopback/repository';
 import {
   del,
@@ -28,7 +28,7 @@ const DATASET_BY_ID_PATH = '/datasets/{id}';
 
 export class DataSetController {
   constructor(
-    @service(DataSetHelper)
+    @inject('services.DataSetHelper')
     private readonly datasetHelper: DataSetHelper,
   ) {}
 

@@ -1,4 +1,4 @@
-import {inject, service} from '@loopback/core';
+import {inject} from '@loopback/core';
 import type {LanguageModel} from 'ai';
 import {graphNode} from '../../../decorators';
 import type {IGraphNode, GraphNodeCtx} from '../../../graphs/types';
@@ -32,7 +32,7 @@ export class VerifyChecklistNode implements IGraphNode<
     // ponytail: optional + default instance keeps the step zero-arg
     // constructible (the step registry's `new () =>` contract); DI injects the
     // bound (rebindable) service when the component is mounted.
-    @service(ChecklistHelper, {optional: true})
+    @inject('services.ChecklistHelper', {optional: true})
     private readonly checklistHelper: ChecklistHelper = new ChecklistHelper(),
     @inject(DbQueryAIExtensionBindings.Config, {optional: true})
     private readonly config?: DbQueryConfig,

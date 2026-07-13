@@ -1,5 +1,5 @@
 import debugFactory from 'debug';
-import {inject, service} from '@loopback/core';
+import {inject} from '@loopback/core';
 import {Mastra} from '@mastra/core';
 import type {MastraModelConfig} from '@mastra/core/llm';
 import {generateText, type LanguageModel} from 'ai';
@@ -74,7 +74,7 @@ export class SummariseFileNode implements IChatNode {
     protected readonly fileLlm?: MastraModelConfig,
     @inject(AiIntegrationBindings.ChatLLM, {optional: true})
     protected readonly chatLlm?: MastraModelConfig,
-    @service(UsageAccumulator, {optional: true})
+    @inject('services.UsageAccumulator', {optional: true})
     protected readonly usage?: UsageAccumulator,
     @inject(AiIntegrationBindings.FileMessageBuilder, {optional: true})
     protected readonly fileMessageBuilder?: FileMessageBuilder,

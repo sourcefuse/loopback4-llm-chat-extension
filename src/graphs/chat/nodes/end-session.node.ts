@@ -1,4 +1,4 @@
-import {service} from '@loopback/core';
+import {inject} from '@loopback/core';
 import {graphNode} from '../../../decorators';
 import {LLMStreamEventType} from '../../event.types';
 import type {ChatState, IChatNode} from '../../state';
@@ -19,8 +19,8 @@ import {ChatNodes} from '../nodes.enum';
 @graphNode(ChatNodes.EndSession)
 export class EndSessionNode implements IChatNode {
   constructor(
-    @service(ChatStore) protected readonly chatStore: ChatStore,
-    @service(UsageAccumulator, {optional: true})
+    @inject('services.ChatStore') protected readonly chatStore: ChatStore,
+    @inject('services.UsageAccumulator', {optional: true})
     protected readonly usage?: UsageAccumulator,
   ) {}
 

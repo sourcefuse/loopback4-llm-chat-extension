@@ -1,4 +1,4 @@
-import {inject, service} from '@loopback/core';
+import {inject} from '@loopback/core';
 import type {LanguageModel} from 'ai';
 import {graphNode} from '../../../decorators';
 import type {IGraphNode, GraphNodeCtx} from '../../../graphs/types';
@@ -27,7 +27,7 @@ export class GenerateDescriptionNode implements IGraphNode {
     protected readonly cheapModel?: LanguageModel,
     @inject(AiIntegrationBindings.ChatModel, {optional: true})
     protected readonly chatModel?: LanguageModel,
-    @service(SqlGenerationHelper, {optional: true})
+    @inject('services.SqlGenerationHelper', {optional: true})
     protected readonly sqlGen: SqlGenerationHelper = new SqlGenerationHelper(),
   ) {}
 

@@ -1,4 +1,4 @@
-import {inject, service} from '@loopback/core';
+import {inject} from '@loopback/core';
 import type {LanguageModel} from 'ai';
 import {graphNode} from '../../../decorators';
 import type {IGraphNode, GraphNodeCtx} from '../../../graphs/types';
@@ -38,7 +38,7 @@ export class FixQueryNode implements IGraphNode {
     private readonly cheapModel?: LanguageModel,
     @inject(AiIntegrationBindings.SmartModel, {optional: true})
     private readonly smartModel?: LanguageModel,
-    @service(SqlGenerationHelper, {optional: true})
+    @inject('services.SqlGenerationHelper', {optional: true})
     private readonly sqlGen: SqlGenerationHelper = new SqlGenerationHelper(),
   ) {}
 

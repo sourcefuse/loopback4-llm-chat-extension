@@ -1,4 +1,4 @@
-import {BindingScope, inject, injectable, service} from '@loopback/core';
+import {BindingScope, inject, injectable} from '@loopback/core';
 import {ILogger, LOGGER} from '@sourceloop/core';
 import {AiIntegrationBindings} from '../../../../keys';
 import {ICache} from '../../../../types';
@@ -27,7 +27,7 @@ export class TableSearchService {
     >,
     @inject(AiIntegrationBindings.Cache)
     private readonly cache: ICache,
-    @service(DbSchemaHelperService)
+    @inject('services.DbSchemaHelperService')
     private readonly dbSchemaHelper: DbSchemaHelperService,
   ) {}
 

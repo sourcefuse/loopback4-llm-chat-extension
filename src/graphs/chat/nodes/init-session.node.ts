@@ -1,4 +1,4 @@
-import {service} from '@loopback/core';
+import {inject} from '@loopback/core';
 import {graphNode} from '../../../decorators';
 import {LLMStreamEventType} from '../../event.types';
 import type {ChatState, IChatNode} from '../../state';
@@ -20,7 +20,9 @@ import {ChatNodes} from '../nodes.enum';
  */
 @graphNode(ChatNodes.InitSession)
 export class InitSessionNode implements IChatNode {
-  constructor(@service(ChatStore) protected readonly chatStore: ChatStore) {}
+  constructor(
+    @inject('services.ChatStore') protected readonly chatStore: ChatStore,
+  ) {}
 
   async execute(state: ChatState): Promise<Partial<ChatState>> {
     const requesterResourceId =

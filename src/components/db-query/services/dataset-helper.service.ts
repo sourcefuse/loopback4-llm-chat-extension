@@ -1,4 +1,4 @@
-import {inject, service} from '@loopback/core';
+import {inject} from '@loopback/core';
 import debugFactory from 'debug';
 import {Filter} from '@loopback/repository';
 import {HttpErrors} from '@loopback/rest';
@@ -15,9 +15,9 @@ export class DataSetHelper {
   constructor(
     @inject(DbQueryAIExtensionBindings.DatasetStore)
     private readonly store: IDataSetStore,
-    @service(PermissionHelper)
+    @inject('services.PermissionHelper')
     private readonly permissionHelper: PermissionHelper,
-    @service(SemanticCacheService)
+    @inject('services.SemanticCacheService')
     private readonly semanticCache: SemanticCacheService,
   ) {}
 

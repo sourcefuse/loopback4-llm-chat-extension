@@ -1,12 +1,6 @@
 import {randomUUID} from 'node:crypto';
 import debugFactory from 'debug';
-import {
-  BindingScope,
-  Context,
-  inject,
-  injectable,
-  service,
-} from '@loopback/core';
+import {BindingScope, Context, inject, injectable} from '@loopback/core';
 import {Mastra} from '@mastra/core';
 import {AuthenticationBindings} from 'loopback4-authentication';
 import type {IAuthUserWithPermissions} from '@sourceloop/core';
@@ -41,7 +35,7 @@ export class ChatStore {
     @inject(AiIntegrationBindings.Mastra) protected readonly mastra: Mastra,
     @inject(AiIntegrationBindings.ResourceId, {optional: true})
     protected readonly resourceIdValue?: string,
-    @service(ChatLedgerService, {optional: true})
+    @inject('services.ChatLedgerService', {optional: true})
     protected readonly chatLedger?: ChatLedgerService,
   ) {}
 
