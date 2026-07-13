@@ -12,8 +12,8 @@
 <a href="https://github.com/sourcefuse/loopback4-llm-chat-extension/graphs/contributors" target="_blank">
 <img alt="GitHub contributors" src="https://img.shields.io/github/contributors/sourcefuse/loopback4-llm-chat-extension?">
 </a>
-<a href="https://www.npmjs.com/package/loopback4-authentication" target="_blank">
-<img alt="downloads" src="https://img.shields.io/npm/dw/loopback4-llm-chat-extension.svg">
+<a href="https://www.npmjs.com/package/lb4-llm-chat-component" target="_blank">
+<img alt="downloads" src="https://img.shields.io/npm/dw/lb4-llm-chat-component.svg">
 </a>
 <a href="https://github.com/sourcefuse/loopback4-llm-chat-extension/blob/master/LICENSE">
 <img src="https://img.shields.io/github/license/sourcefuse/loopback4-llm-chat-extension.svg" alt="License" />
@@ -59,7 +59,7 @@ Every node is DI-resolved per request from a `@graphNode(key)` class, exactly as
 
 ### Installation
 
-Install AIIntegrationsComponent using `npm`;
+Install AiIntegrationsComponent using `npm`:
 
 ```sh
 $ [npm install | yarn add] lb4-llm-chat-component
@@ -87,9 +87,9 @@ export class MyApplication extends BootMixin(
       // if not set to true, it will bind a ARC based sequence from @sourceloop/core with authentication and authorization
       useCustomSequence: true,
       // if not set to false, it will bind the core component from @sourceloop/core by default
-      mountCore: false
+      mountCore: false,
       // if not set to false, it will bind @sourceloop/file-utils component with defaults config
-      mountFileUtils: false
+      mountFileUtils: false,
     });
     this.component(AiIntegrationsComponent);
 
@@ -188,7 +188,7 @@ The packages comes with 3 strategies by default that are bound automatically on 
 
 - **ChatCountStrategy** - Applies limits per user based on number of chats. It is used if only `chatLimit` and `period` is provided in `tokenCounterConfig`.
 - **TokenCountStrategy** - Applies a fixed limit per user based on number of tokens used. It is used if `tokenLimit` and `period` are provided with `bufferToken` as optional field that determines that how much buffer to keep while checking for token limit.
-- **TokenCountPerUserStrategy** - Applies token based limit similar to `TokenCountStrategy` except the number of tokens commes from user permission `TokenUsage:NUMBER` in the user's token. It applies if only `period` is set in `tokenCounterConfig`, it also works with `bufferToken` just like `TokenCountStrategy`.
+- **TokenCountPerUserStrategy** - Applies token based limit similar to `TokenCountStrategy` except the number of tokens comes from user permission `TokenUsage:NUMBER` in the user's token. It applies if only `period` is set in `tokenCounterConfig`, it also works with `bufferToken` just like `TokenCountStrategy`.
 
 ## DbQueryComponent
 
@@ -401,7 +401,7 @@ export class Employee extends Entity {
 ```
 
 - Model description - this is the primary description of the model, it is used to select model for generation, so it should only define the purpose of the model itself.
-- Model context - this is secondary information about the model, usually defining some specific details about the model that must be kept in mind while using it. NOTE - These values should always include the model name. This must be information that is applicable to overall model usage, or atleast to multiple columns, and not related to any single field of the model.
+- Model context - this is secondary information about the model, usually defining some specific details about the model that must be kept in mind while using it. NOTE - These values should always include the model name. This must be information that is applicable to overall model usage, or at least to multiple columns, and not related to any single field of the model.
 - Property description - this is the description for a property of a model, providing context for the LLM on how to use and understand a particular property.
 
 ## Usage
@@ -421,8 +421,8 @@ this.bind(DbQueryAIExtensionBindings.Config).to({
     schema: 'public', // schema of the database in case of DBs like Postgresql
     ignoredColumns: ['deleted'], // list of db column names that will be ignored for query generation (Do not use Loopback field names in this list)
   },
-  readAccessForAI: false // give access of the query result to the llm
-  maxRowsForAI: 0 // number of rows from the result that are passed to the LLM
+  readAccessForAI: false, // give access of the query result to the llm
+  maxRowsForAI: 0, // number of rows from the result that are passed to the LLM
   // Relevant-table/column narrowing before SQL generation (wire from an env
   // var, e.g. process.env.COLUMN_SELECTION === 'true'):
   //   true  -> pass only the LLM-selected subset of tables to SQL generation
@@ -437,10 +437,10 @@ this.bind(DbQueryAIExtensionBindings.Config).to({
 The package comes with 3 connectors by default -
 
 - **PgConnector** - basic connector for PostgreSQL databases
-- **SqlLiteConnector** - basic connector SqlLite databases, can be used for testing
+- **SqlLiteConnector** - basic connector for SQLite databases, can be used for testing
 - **PgWithRlsConnector** - Connector for PostgreSQL databases with support for [Row Security Policies](https://www.postgresql.org/docs/current/ddl-rowsecurity.html). Refer [`PgWithRlsConnector`](#pgwithrlsconnector) for more details.
 
-You can write your own connector by following the `IDbConnector` interface and and binding it on `DbQueryAIExtensionBindings.Connector`.
+You can write your own connector by following the `IDbConnector` interface and binding it on `DbQueryAIExtensionBindings.Connector`.
 
 By default, the package binds `PgWithRlsConnector` but if you are not planning to use row security policies or default conditions, you can bind `PgConnector` -
 

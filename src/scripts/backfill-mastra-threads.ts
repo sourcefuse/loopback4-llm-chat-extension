@@ -24,6 +24,7 @@ import {Message} from '../models/message.model';
 import {MessageMetadataType} from '../graphs/chat/chat-metadata.type';
 import type {ChatRepository} from '../repositories/chat.repository';
 import type {MessageRepository} from '../repositories/message.repository';
+import {formatResourceId as canonicalResourceId} from '../runtime/resource-id.util';
 
 /**
  * Consumer's Application is expected to mix in BootMixin + RepositoryMixin
@@ -73,7 +74,9 @@ const errOut = (msg: string): void => {
 function formatResourceId(chat: Chat): string {
   const mode = process.env.BACKFILL_RESOURCE_ID_FORMAT ?? 'tenant-user';
   if (mode === 'user-only') return chat.userId;
-  if (chat.tenantId) return `${chat.tenantId}:${chat.userId}`;
+  // Source the `${tenantId}:${principalId}` format from the canonical util so
+  // the backfill can never drift from the runtime writer / controller reader.
+  if (chat.tenantId) return canonicalResourceId(chat.tenantId, chat.userId);
   return chat.userId;
 }
 

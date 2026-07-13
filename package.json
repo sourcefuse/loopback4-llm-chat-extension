@@ -174,7 +174,8 @@
     "README.md",
     "dist",
     "src",
-    "!*/__tests__"
+    "!*/__tests__",
+    "!src/**/*.md"
   ],
   "peerDependencies": {
     "@loopback/core": "^7.0.11"

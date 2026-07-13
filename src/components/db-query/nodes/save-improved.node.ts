@@ -29,11 +29,11 @@ export class SaveImprovedNode implements IGraphNode<unknown, SaveOut> {
     const patch: {query: string; description?: string} = {query: data.sql};
     if (data.description !== undefined) patch.description = data.description;
 
-    try {
-      await store.updateById(data.datasetId, patch);
-    } catch {
-      return failResult;
-    }
+    // Let a persist failure propagate to the tool (→ Failed status) rather than
+    // swallowing it into an empty success — mirrors the generate path
+    // (SaveDataSetNode). Silently returning failResult here lost the user's
+    // improvement with zero diagnostics.
+    await store.updateById(data.datasetId, patch);
 
     return {datasetId: data.datasetId, sql: data.sql};
   }

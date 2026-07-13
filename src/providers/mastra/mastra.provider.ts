@@ -180,10 +180,20 @@ export class MastraProvider implements Provider<Mastra> {
     config: AIIntegrationConfig | undefined = this.config,
     env: NodeJS.ProcessEnv = process.env,
   ): number {
+    // A malformed value must not reach TokenLimiter: `parseInt('abc')` is NaN
+    // and `config.maxTokenCount: 0` is falsy-but-not-nullish, so plain `??`
+    // would pass NaN/0 straight through — and TokenLimiter(0) hard-blocks every
+    // request. Treat any non-finite or non-positive budget as "unset".
+    const valid = (v: number | undefined): number | undefined =>
+      typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : undefined;
     const envTokenBudget = env.MAX_TOKEN_COUNT
       ? Number.parseInt(env.MAX_TOKEN_COUNT, 10)
       : undefined;
-    return config?.maxTokenCount ?? envTokenBudget ?? DEFAULT_MAX_TOKEN_COUNT;
+    return (
+      valid(config?.maxTokenCount) ??
+      valid(envTokenBudget) ??
+      DEFAULT_MAX_TOKEN_COUNT
+    );
   }
 }
 
@@ -242,7 +252,8 @@ function buildSemanticRecallOption(
 }
 
 function buildGenerateTitleOption():
-  boolean | {model: MastraModelConfig; instructions?: string} {
+  | boolean
+  | {model: MastraModelConfig; instructions?: string} {
   if (process.env.MASTRA_GENERATE_TITLE !== 'true') return false;
   const titleModel = process.env.MASTRA_TITLE_MODEL;
   if (!titleModel) return true;

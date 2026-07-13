@@ -177,6 +177,25 @@ describe('Mastra runtime Provider (unit)', () => {
       expect(probe().budget({}, {})).to.equal(DEFAULT_MAX_TOKEN_COUNT);
     });
 
+    it('treats a non-positive or malformed budget as unset (never TokenLimiter(0)/NaN)', () => {
+      // `config.maxTokenCount: 0` is falsy-but-not-nullish; a plain `??` would
+      // pass it through and TokenLimiter(0) hard-blocks every request.
+      expect(probe().budget({maxTokenCount: 0}, {})).to.equal(
+        DEFAULT_MAX_TOKEN_COUNT,
+      );
+      expect(probe().budget({maxTokenCount: -5}, {})).to.equal(
+        DEFAULT_MAX_TOKEN_COUNT,
+      );
+      // A malformed env var parses to NaN, which is also not nullish.
+      expect(probe().budget(undefined, {MAX_TOKEN_COUNT: 'abc'})).to.equal(
+        DEFAULT_MAX_TOKEN_COUNT,
+      );
+      // A zero config must not mask a valid env budget either.
+      expect(
+        probe().budget({maxTokenCount: 0}, {MAX_TOKEN_COUNT: '5000'}),
+      ).to.equal(5000);
+    });
+
     it('is overridable by a subclass (the host-facing seam)', () => {
       class FixedBudgetProvider extends MastraProvider {
         protected resolveTokenBudget(): number {

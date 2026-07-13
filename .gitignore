@@ -69,3 +69,5 @@ typings/
 *.tsbuildinfo
 
 mochawesome-report
+# macOS
+.DS_Store
