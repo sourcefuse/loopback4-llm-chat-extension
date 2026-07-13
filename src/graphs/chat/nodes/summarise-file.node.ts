@@ -144,8 +144,7 @@ export class SummariseFileNode implements IChatNode {
       // TokenCounter hooked every LLM call; Mastra's stream.usage covers only
       // the chat turn).
       const fu = result.usage as
-        | {inputTokens?: number; outputTokens?: number}
-        | undefined;
+        {inputTokens?: number; outputTokens?: number} | undefined;
       this.usage?.add(modelLabel(this.fileLlm ?? this.chatLlm), {
         inputTokens: fu?.inputTokens ?? 0,
         outputTokens: fu?.outputTokens ?? 0,

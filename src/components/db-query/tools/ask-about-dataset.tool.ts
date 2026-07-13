@@ -83,8 +83,8 @@ export class AskAboutDatasetTool implements IGraphTool {
             ...this.schemaHelper.getTablesContext(compressedSchema),
           ].join('\n');
           const prompt = [
-            'You explain an existing dataset to the user in plain language, based on the query that produced it. You MAY tell them which columns, filters, date/month conditions, sort orders, or joins were applied — that is the point of this tool.',
-            'Do NOT paste the raw SQL text or expose internal IDs; describe what it does in plain terms.',
+            'You are an AI assistant that answers questions about a query, without revealing any technical details, you need to answer the question the users question.',
+            'Make sure you dont reveal the original query to the user, just answer the question based on the query.',
             `Here is the query that the question was for - ${query}`,
             `and here is the schema the query was generated for - ${JSON.stringify(compressedSchema)}`,
             `and here is the context that was provided for the query - ${context}`,

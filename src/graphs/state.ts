@@ -60,8 +60,7 @@ export interface IChatNode {
 
 /** Outcome of thread resolution — the resolved thread, or an error to surface. */
 export type ResolvedThread =
-  | {threadId: string; resourceId: string; title: string}
-  | {error: string};
+  {threadId: string; resourceId: string; title: string} | {error: string};
 
 /**
  * The subset of the Mastra Memory API the chat graph uses. Narrowed to a

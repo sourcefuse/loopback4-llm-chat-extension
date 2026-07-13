@@ -1,10 +1,5 @@
 export type OpenRouterReasoningEffort =
-  | 'xhigh'
-  | 'high'
-  | 'medium'
-  | 'low'
-  | 'minimal'
-  | 'none';
+  'xhigh' | 'high' | 'medium' | 'low' | 'minimal' | 'none';
 
 export type OpenRouterReasoningSummary = 'auto' | 'concise' | 'detailed';
 

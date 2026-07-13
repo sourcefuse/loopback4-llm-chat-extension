@@ -275,10 +275,7 @@ export function buildProviderOptions(
  */
 /** Span/result classification for a traced generateText call. */
 export type GenResultType =
-  | 'tool_selection'
-  | 'response_generation'
-  | 'reasoning'
-  | 'planning';
+  'tool_selection' | 'response_generation' | 'reasoning' | 'planning';
 
 export async function tracedGenerateText(args: {
   model: LanguageModel;

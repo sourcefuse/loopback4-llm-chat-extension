@@ -330,8 +330,7 @@ function populateStreamMetrics(
       v.data.status?.startsWith('DESCRIPTION:'),
   );
   const lastDescription = finalDescription.at(-1) as
-    | LLMStreamToolStatusEvent
-    | undefined;
+    LLMStreamToolStatusEvent | undefined;
   if (lastDescription) {
     result.description = (lastDescription.data.status ?? '').replace(
       'DESCRIPTION:',
@@ -361,8 +360,7 @@ function extractDatasetId(body: LLMStreamEvent[]): string | undefined {
     (v: LLMStreamEvent) => v.type === LLMStreamEventType.Tool,
   );
   const last = toolEvents.at(-1) as
-    | {data?: {data?: {datasetId?: string}}}
-    | undefined;
+    {data?: {data?: {datasetId?: string}}} | undefined;
   return last?.data?.data?.datasetId;
 }
 

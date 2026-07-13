@@ -9,6 +9,7 @@ import type {Tool} from '@mastra/core/tools';
 import type {RequestContext} from '@mastra/core/request-context';
 import type {Observability} from '@mastra/observability';
 import {AiIntegrationBindings} from '../../keys';
+import type {AIIntegrationConfig} from '../../types';
 import {TokenLimiter} from '@mastra/core/processors';
 import {buildChatInstructions} from '../../runtime/chat-agent-instructions';
 import {DEFAULT_MAX_TOKEN_COUNT} from '../../constant';
@@ -51,6 +52,11 @@ export class MastraProvider implements Provider<Mastra> {
     // bound. Prefer the dedicated Observability binding when both are present.
     @inject(AiIntegrationBindings.ObfHandler, {optional: true})
     private obfHandler?: Observability,
+    // Host config binding — read for `maxTokenCount` (the LB4-idiomatic way to
+    // tune the chat token budget, advertised on AIIntegrationConfig). Optional:
+    // a consumer may configure everything via env vars instead.
+    @inject(AiIntegrationBindings.Config, {optional: true})
+    private config?: AIIntegrationConfig,
   ) {}
 
   async value(): Promise<Mastra> {
@@ -119,11 +125,10 @@ export class MastraProvider implements Provider<Mastra> {
     // Budget must exceed the system prompt (directives + host systemContext) —
     // the limiter cannot trim system messages, so a too-low budget HARD-BLOCKS
     // the request. Default (DEFAULT_MAX_TOKEN_COUNT) is sized for that; override
-    // with MAX_TOKEN_COUNT only to a value that still clears your system prompt.
-    const tokenBudget = process.env.MAX_TOKEN_COUNT
-      ? Number.parseInt(process.env.MAX_TOKEN_COUNT, 10)
-      : DEFAULT_MAX_TOKEN_COUNT;
-    const maxTokenCountProcessor = new TokenLimiter(tokenBudget);
+    // only to a value that still clears your system prompt (see
+    // {@link resolveTokenBudget} for the config/env precedence — override that
+    // method in a MastraProvider subclass to change the policy).
+    const maxTokenCountProcessor = new TokenLimiter(this.resolveTokenBudget());
     const chatAgent = new Agent({
       id: 'chat-agent',
       name: 'ChatAgent',
@@ -157,6 +162,28 @@ export class MastraProvider implements Provider<Mastra> {
       vectors: this.vector ? {default: this.vector} : undefined,
       observability: this.observability ?? this.obfHandler,
     });
+  }
+
+  /**
+   * Chat token-budget precedence: explicit config field → env override →
+   * default. Restores the v3 `ContextCompressionNode` behaviour (which computed
+   * the SAME precedence inside a DI class). Kept a `protected` method — NOT a
+   * module-level function — so a host that binds a `MastraProvider` subclass at
+   * `AiIntegrationBindings.Mastra` can override the budget policy, mirroring how
+   * v3 hosts overrode the `ContextCompressionNode` class. Before this, the
+   * provider read env ONLY, so a config-supplied budget was silently dropped.
+   *
+   * `config`/`env` are parameters (defaulting to `this.config` / `process.env`)
+   * so the precedence stays unit-testable without booting the whole provider.
+   */
+  protected resolveTokenBudget(
+    config: AIIntegrationConfig | undefined = this.config,
+    env: NodeJS.ProcessEnv = process.env,
+  ): number {
+    const envTokenBudget = env.MAX_TOKEN_COUNT
+      ? Number.parseInt(env.MAX_TOKEN_COUNT, 10)
+      : undefined;
+    return config?.maxTokenCount ?? envTokenBudget ?? DEFAULT_MAX_TOKEN_COUNT;
   }
 }
 
@@ -215,8 +242,7 @@ function buildSemanticRecallOption(
 }
 
 function buildGenerateTitleOption():
-  | boolean
-  | {model: MastraModelConfig; instructions?: string} {
+  boolean | {model: MastraModelConfig; instructions?: string} {
   if (process.env.MASTRA_GENERATE_TITLE !== 'true') return false;
   const titleModel = process.env.MASTRA_TITLE_MODEL;
   if (!titleModel) return true;

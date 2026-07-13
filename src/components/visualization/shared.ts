@@ -95,8 +95,7 @@ export function pickVisualizer(
  * fits the request (v2 select-visualization.node "none" path).
  */
 export type VisualizerSelection =
-  | {chartType: string}
-  | {rejected: true; reason: string};
+  {chartType: string} | {rejected: true; reason: string};
 
 /**
  * The data shape the selector reasons about — the generated SQL, the dataset

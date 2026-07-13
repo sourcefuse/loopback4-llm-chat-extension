@@ -45,8 +45,7 @@ export class PgVectorStore implements Provider<MastraVector> {
     }
 
     const dsSchema = this.pgDataSource.connector?.settings?.schema as
-      | string
-      | undefined;
+      string | undefined;
     return new PgVector({
       id: 'mastra-pgvector',
       connectionString: this.buildConnString(),

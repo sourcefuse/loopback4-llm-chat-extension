@@ -29,11 +29,18 @@ src/
 │ │ ├── async-event-queue.ts         # SSE event ordering across producers
 │ │ └── run-registry.ts              # HITL approval flow (sessionId → runId)
 │ ├── request-context.builder.ts     # RequestContextBuilder: assembles the per-request Mastra RequestContext
-│ ├── model-resolver.ts              # resolveAiSdkModel / modelLabel (shared by builder + SummariseFileNode)
-│ ├── _node-shell.ts                 # DI shell for committed workflow steps
+│ ├── model-resolver.ts              # modelLabel / isAiSdkLanguageModel (shared by builder + SummariseFileNode)
+│ ├── _node-shell.ts                 # makeNodeShell — DI shell for committed graph nodes
 │ ├── chat-agent-instructions.ts     # shared chat system prompt builder
+│ ├── index.ts                       # `/mastra` subpath: node shells + schemas for recomposing graphs
 │ └── resource-id.util.ts            # tenant-scoped resourceId derivation
-└── components/{db-query,visualization}/workflows/   # the two Mastra Workflows
+└── components/
+  ├── db-query/
+  │ ├── db-query.graph.ts            # the db-query graph wiring (dbQueryGraph + generate/improve sub-graphs)
+  │ └── nodes/                       # the 23 @graphNode classes (one file per node)
+  └── visualization/
+    ├── visualization.graph.ts       # the visualization graph wiring
+    └── nodes/                       # the 4 @graphNode classes
 ```
 
 There is **no `chat.workflow.ts`** — that is a deliberate decision: chat is
@@ -47,8 +54,8 @@ imperatively over an `Agent` + `Memory`, rather than a compiled `StateGraph`.
 | v2 graph           | Nodes | v3 primitive                | File(s)                                                                     |
 | ------------------ | :---: | --------------------------- | --------------------------------------------------------------------------- |
 | ChatGraph          |   6   | `ChatGraph` + Mastra **Agent** | `graphs/chat/` (ChatGraph orchestrating `@graphNode` classes over an Agent) |
-| DbQueryGraph       |  17   | Mastra **Workflow**         | `components/db-query/workflows/generate.workflow.ts` + `improve.workflow.ts` |
-| VisualizationGraph |   4   | Mastra **Workflow**         | `components/visualization/workflows/visualization.workflow.ts`              |
+| DbQueryGraph       |  17   | Mastra **Workflow**         | `components/db-query/db-query.graph.ts` (wiring) + `components/db-query/nodes/` (the `@graphNode` classes) |
+| VisualizationGraph |   4   | Mastra **Workflow**         | `components/visualization/visualization.graph.ts` (wiring) + `components/visualization/nodes/` |
 
 Chat picked **Agent** because the loop is `CallLLM → RunTool → CallLLM`
 which is exactly what `agent.stream({maxSteps, tools, memory})` already
@@ -79,48 +86,68 @@ rebinding its key (the `BaseGraph._getNodeFn` seam).
 Locked SSE wire contract (8 event types) is preserved byte-identical —
 the controller surface `POST /reply` is unchanged.
 
-## DbQueryGraph (17 nodes) → generateQueryWorkflow + improveQueryWorkflow
+## DbQueryGraph → dbQueryGraph (+ generateQueryGraph / improveQueryGraph)
 
-| v2 node                   | v3 step                                                                           | Notes                                                                                                                                                                       |
-| ------------------------- | --------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `IsImprovementNode`       | `improveQueryWorkflow.loadExistingStep`                                           | Real impl — fetches existing dataset, merges delta prompt. `generateQueryWorkflow.isImprovementStep` is an intentional no-op (entry workflow is never in improvement mode). |
-| `CheckCacheNode`          | `generateQueryWorkflow.checkCacheStep`                                            | QueryCache retriever → LLM AsIs/Similar/NotRelevant judge.                                                                                                                  |
-| `GetTablesNode`           | `generateQueryWorkflow.getTablesStep`                                             | `SchemaStore.get()` deterministic baseline; LLM relevance filter is follow-up.                                                                                              |
-| `CheckTemplatesNode`      | `generateQueryWorkflow.checkTemplatesStep`                                        | TemplateCache retriever → LLM exact-match judge.                                                                                                                            |
-| `ClassifyChangeNode`      | `generateQueryWorkflow.classifyChangeStep`                                        | Active only in improvement mode (minor/major/rewrite classify).                                                                                                             |
-| `PostCacheAndTablesNode`  | `generateQueryWorkflow.postCacheAndTablesStep`                                    | Pure fan-in merger of the 4 parallel branches. Status routing: `AsIs` / `FromTemplate` / `Failed` / `Continue`.                                                             |
-| `CheckPermissionsNode`    | (none — preserved at lower layer)                                                 | `PermissionHelper.findMissingPermissions()` runs inside `DataSetHelper.getDataFromDataset()` + `DatasetController` ACL. A.4.                                                |
-| `GenerateChecklistNode`   | `generateQueryWorkflow.generateChecklistStep`                                     | LLM builds 3-6 item checklist before dountil loop.                                                                                                                          |
-| `SqlGenerationNode`       | `generateQueryWorkflow.sqlAndValidateStep` (composite)                            | One iteration of dountil loop.                                                                                                                                              |
-| `SyntacticValidatorNode`  | `generateQueryWorkflow.sqlAndValidateStep` (embedded)                             | `IDbConnector.validate(sql)` DB EXPLAIN call.                                                                                                                               |
-| `SemanticValidatorNode`   | `generateQueryWorkflow.sqlAndValidateStep` (embedded)                             | LLM `<valid/>` vs `<invalid>…</invalid>` verdict against checklist.                                                                                                         |
-| `GenerateDescriptionNode` | `generateQueryWorkflow.sqlAndValidateStep` (embedded)                             | Description string baked into the SQL generation prompt; will split out if it needs its own retry budget.                                                                   |
-| `PostValidationNode`      | (collapsed)                                                                       | Mastra workflows pass `{passed, feedback, attempts}` through dountil natively — no explicit merge step needed.                                                              |
-| `FixQueryNode`            | `improveQueryWorkflow.fixQueryStep`                                               | Dountil loop body for improve workflow. Same syntactic + semantic validators embedded.                                                                                      |
-| `VerifyChecklistNode`     | (embedded in semantic validator)                                                  | LLM verdict against checklist is exactly the v2 verify-checklist behaviour.                                                                                                 |
-| `SaveDataSetNode`         | `generateQueryWorkflow.saveDatasetStep` + `improveQueryWorkflow.saveImprovedStep` | Real `IDataSetStore.create / updateById` calls + tenantId from `AuthenticationBindings.CURRENT_USER`.                                                                       |
-| `FailedNode`              | `generateQueryWorkflow.failedStep` + `improveQueryWorkflow.failedStep`            | Terminal step at the end of the loop's "no" branch.                                                                                                                         |
+Every v2 db-query node was restored **1:1 as its own `@graphNode` class** under
+`components/db-query/nodes/` — the earlier consolidation into a single composite
+`sqlAndValidateStep` was reverted for full LangGraph fidelity. The graph wiring
+in `db-query.graph.ts` registers three workflows on the Mastra singleton:
 
-Extra v3 steps that have no 1:1 v2 node (they were inline logic inside
-v2 nodes that needed their own Mastra step):
+- `dbQueryGraph` (id `db-query`) — the single entry both db-query tools call. Its
+  one node `isImprovementNode` dispatches on `datasetId` (absent → generate,
+  present → improve) by resolving the sub-graph below via `mastra.getWorkflow`.
+- `generateQueryGraph` (id `generate-query`):
+  `parallel[check_cache, get_tables, check_templates]` → `post_cache_and_tables`
+  → branch(`FromTemplate` → `save_dataset_from_template` / `AsIs` →
+  `return_cached` / `Continue` → `get_columns`) → `generate_checklist` →
+  `verify_checklist` → `classify_change` →
+  `dountil( sql_generation → parallel[syntactic_validator, semantic_validator, generate_description] → post_validation )`
+  → branch(`failed` / `save_dataset`).
+- `improveQueryGraph` (id `improve-query`): `load_existing` →
+  `dountil(fix_query)` → branch(`improve_failed` / `save_improved`).
 
-- `generateQueryWorkflow.returnCachedStep` — was inline at top of v2 `PostCacheAndTables`'s `AsIs` branch.
-- `generateQueryWorkflow.saveDatasetFromTemplateStep` — was inline at top of v2 `PostCacheAndTables`'s `FromTemplate` branch.
-- `generateQueryWorkflow.getColumnsStep` — was part of v2 `GetColumns` (separate node restored here as its own step).
+| v2 node                   | Node file (key)                                       | Notes                                                                                                                        |
+| ------------------------- | ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `IsImprovementNode`       | `is-improvement.node.ts` (`is_improvement`)           | Entry dispatch of `dbQueryGraph` — routes to the generate or improve sub-graph on `datasetId`.                              |
+| `CheckCacheNode`          | `check-cache.node.ts` (`check_cache`)                 | QueryCache retriever → LLM AsIs/Similar/NotRelevant judge.                                                                  |
+| `GetTablesNode`           | `get-tables.node.ts` (`get_tables`)                   | `SchemaStore.get()` deterministic baseline; LLM relevance filter is follow-up.                                             |
+| `CheckTemplatesNode`      | `check-templates.node.ts` (`check_templates`)         | TemplateCache retriever → LLM exact-match judge.                                                                           |
+| `ClassifyChangeNode`      | `classify-change.node.ts` (`classify_change`)         | Active only in improvement mode (minor/major/rewrite classify).                                                            |
+| `PostCacheAndTablesNode`  | `post-cache-and-tables.node.ts` (`post_cache_and_tables`) | Fan-in merger of the parallel branches. Status routing: `AsIs` / `FromTemplate` / `Failed` / `Continue`.               |
+| `CheckPermissionsNode`    | `check-permissions.node.ts` (`check_permissions`)     | Restored node; `PermissionHelper.findMissingPermissions()` is also enforced at the ACL/`DataSetHelper` layer. A.4.         |
+| `GenerateChecklistNode`   | `generate-checklist.node.ts` (`generate_checklist`)   | LLM builds 3-6 item checklist before the dountil loop.                                                                    |
+| `SqlGenerationNode`       | `sql-generation.node.ts` (`sql_generation`)           | First step of each dountil iteration; `buildPrompt()` override seam.                                                       |
+| `SyntacticValidatorNode`  | `syntactic-validator.node.ts` (`syntactic_validator`) | `IDbConnector.validate(sql)` DB EXPLAIN call. Runs in the parallel validator fan-out.                                     |
+| `SemanticValidatorNode`   | `semantic-validator.node.ts` (`semantic_validator`)   | LLM `<valid/>` vs `<invalid>…</invalid>` verdict against checklist. Parallel fan-out.                                     |
+| `GenerateDescriptionNode` | `generate-description.node.ts` (`generate_description`) | Streams the dataset description. Parallel fan-out.                                                                        |
+| `PostValidationNode`      | `post-validation.node.ts` (`post_validation`)         | Merges the parallel validators → `{passed, feedback, attempts}` for the dountil predicate; reselects tables on failure.   |
+| `FixQueryNode`            | `fix-query.node.ts` (`fix_query`)                     | Dountil loop body for the improve path. Same validators embedded via `SqlGenerationHelper`.                              |
+| `VerifyChecklistNode`     | `verify-checklist.node.ts` (`verify_checklist`)       | LLM verdict against checklist before generation.                                                                          |
+| `SaveDataSetNode`         | `save-dataset-node.ts` (`save_dataset`) + `save-improved.node.ts` (`save_improved`) | Real `IDataSetStore.create / updateById` + tenantId from `AuthenticationBindings.CURRENT_USER`.     |
+| `FailedNode`              | `failed.node.ts` (`failed`) + `improve-failed.node.ts` (`improve_failed`) | Terminal node on the loop's "no" branch (improve terminal keeps id `failed`, DI key `improve_failed`). |
 
-## VisualizationGraph (4 nodes) → visualizationWorkflow
+Extra nodes with no 1:1 v2 node (inline v2 logic promoted to its own node):
 
-Direct 1:1 mapping.
+- `return-cached.node.ts` (`return_cached`) — was inline at the top of v2 `PostCacheAndTables`'s `AsIs` branch.
+- `save-dataset-from-template.node.ts` (`save_dataset_from_template`) — was inline in v2 `PostCacheAndTables`'s `FromTemplate` branch.
+- `get-columns.node.ts` (`get_columns`) — the relevant-table narrowing split out of v2 `GetTables` as its own node.
+- `load-existing.node.ts` (`load_existing`) — improve-path entry; fetches the existing dataset and merges the delta prompt.
 
-| v2 node                   | v3 step                                         |
-| ------------------------- | ----------------------------------------------- |
-| `SelectVisualizationNode` | `visualizationWorkflow.selectVisualisationStep` |
-| `CallQueryGenerationNode` | `visualizationWorkflow.callQueryGenerationStep` |
-| `GetDatasetDataNode`      | `visualizationWorkflow.getDatasetDataStep`      |
-| `RenderVisualizationNode` | `visualizationWorkflow.renderVisualizationStep` |
+## VisualizationGraph (4 nodes) → visualizationGraph
+
+Direct 1:1 mapping — one `@graphNode` file per node under
+`components/visualization/nodes/`, wired in `visualization.graph.ts`
+(registered as `visualizationGraph`, id `visualization`).
+
+| v2 node                   | Node file (key)                                             |
+| ------------------------- | ---------------------------------------------------------- |
+| `SelectVisualizationNode` | `select-visualization.node.ts` (`select_visualization`)     |
+| `CallQueryGenerationNode` | `call-query-generation.node.ts` (`call_query_generation`)   |
+| `GetDatasetDataNode`      | `get-dataset-data.node.ts` (`get_dataset_data`)             |
+| `RenderVisualizationNode` | `render-visualization.node.ts` (`render_visualization`)     |
 
 Visualizers (`PieVisualizer`, `BarVisualizer`, `LineVisualizer`) and the
-`@visualizer()` decorator are preserved. `renderVisualizationStep`
+`@visualizer()` decorator are preserved. `RenderVisualizationNode`
 dispatches to them via the consumer-registered registry, same way v2
 did. A.3.
 
@@ -142,10 +169,11 @@ POST /reply
  │ Mastra tool wrappers (4 of them) live in
  │ src/components/{db-query,visualization}/tools/*.tool.ts.
  │ Three of them call workflows:
- │ - get-data-as-dataset → mastra.getWorkflow('generateQueryWorkflow').createRun().start()
- │ - improve-dataset → mastra.getWorkflow('improveQueryWorkflow').createRun().start()
- │ - generate-visualization → mastra.getWorkflow('visualizationWorkflow').createRun().start()
- │ The fourth (ask-about-dataset) runs a one-shot Mastra Agent inline.
+ │ - get-data-as-dataset → mastra.getWorkflow('dbQueryGraph').createRun().start()
+ │ - improve-dataset → mastra.getWorkflow('dbQueryGraph').createRun().start()
+ │     (the shared entry graph dispatches to the generate/improve sub-graph on datasetId)
+ │ - generate-visualization → mastra.getWorkflow('visualizationGraph').createRun().start()
+ │ The fourth (ask-about-dataset) makes ONE cheap-tier tracedGenerateText call inline (no agent).
  │ ↓
  ├─ CallLLMNode pump: drain stream.fullStream → AsyncEventQueue
  │ (text-delta → Message, tool-call → Tool, tripwire → Error, etc.)
@@ -170,7 +198,7 @@ parameter:
 ## Branch lineage
 
 - `feat/mastra-migration` — earlier exploration; followed the "every v2 node becomes its own Mastra step" approach (1:1 port). That branch never landed.
-- `feat/mastra-migration-v2` (this branch / PR #22) — current implementation. Same end state for DbQuery + Visualization (1:1 for 14 of 17 / 4 of 4 nodes), but consolidates the 5 validator-family v2 nodes (SqlGeneration + Syntactic + Semantic + GenerateDescription + VerifyChecklist) into a single composite `sqlAndValidateStep`, and replaces ChatGraph entirely with Mastra `Agent`
+- `feat/mastra-migration-v2` (this branch / PR #22) — current implementation. DbQuery + Visualization are restored to full LangGraph node fidelity: every v2 node is its own `@graphNode` class (an earlier revision had consolidated the 5 validator-family nodes into one composite `sqlAndValidateStep`; that was reverted so each node stays independently overridable). ChatGraph is replaced entirely with a Mastra `Agent`.
 
 ## Further reading
 

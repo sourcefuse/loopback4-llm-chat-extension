@@ -51,7 +51,7 @@ These `3.x` symbols/paths were preserved so existing imports keep resolving:
 
 Every node is DI-resolved per request from a `@graphNode(key)` class, exactly as in `3.x`. To customise behaviour, `extends` the node, override a method, and rebind the subclass under the same `@graphNode` key. The prompt/selection logic is exposed as small overridable seams so you don't have to re-implement `execute`:
 
-- `SqlAndValidateNode.buildPrompt()` — the SQL-generation prompt (dialect, house style, guard rules).
+- `SqlGenerationNode.buildPrompt()` — the SQL-generation prompt (dialect, house style, guard rules).
 - `FixQueryNode.buildPrompt()` — the SQL-repair prompt.
 - `GetColumnsNode.selectRelevantTables()` — table-relevance selection + the "unanswerable" gate.
 - `SelectVisualizationNode.buildSelectionPrompt()` / `parseSelection()` — visualizer choice for custom chart types.
@@ -644,70 +644,91 @@ export class MyMastraProvider implements Provider<Mastra> {
 // this.bind(AiIntegrationBindings.Mastra).toProvider(MyMastraProvider);
 ```
 
-## Steps and workflows
+## Nodes and graphs
 
-The db-query and visualization flows are Mastra workflows, but each step is a
-DI-resolved LoopBack service — an `@step(key)`-decorated class implementing
-`IWorkflowStep` (the Mastra-named successor of the old LangGraph `@graphNode`
-classes). The Mastra workflow only references a step by its `key` through a thin
-committed shell; the actual implementation is resolved from the container at run
-time (`WorkflowRunner` looks it up by tag, exactly like the `@graphTool` tool
-registry). So **overriding one step is a single binding** — no need to recompose
-the workflow.
+The db-query and visualization flows run on Mastra workflows, but — exactly as
+in the LangGraph version — each node is a DI-resolved LoopBack service: a
+`@graphNode(key)`-decorated class implementing `IGraphNode` (its `execute`
+receives a `GraphNodeCtx`). The Mastra graph only references a node by its `key`
+through a thin committed shell; the concrete implementation is resolved from the
+container at run time (by tag, exactly like the `@graphTool` tool registry). So
+**overriding one node is a single binding** — no need to recompose the graph.
+`graphNode`, `IGraphNode`, `GraphNodeCtx` and the key enums (`DbQueryNodes`,
+`VisualizationGraphNodes`, `ChatNodes`) are all exported from the package root.
 
-### Override one step (recommended)
+### Override one node (recommended)
 
-Bind your own `@step(key)` class with the SAME key as the step you want to
-replace. Because the runner resolves steps by tag, your class wins — the rest of
-the workflow is untouched.
+Bind your own `@graphNode(key)` class with the SAME key as the node you want to
+replace. Because the graph resolves nodes by tag, your class wins — the rest of
+the graph is untouched. Use the key enum so you can't mistype it (keys are
+snake_case, e.g. `DbQueryNodes.GetTables === 'get_tables'`).
 
 ```ts
-import {step, IWorkflowStep, WorkflowStepCtx} from 'lb4-llm-chat-component';
+import {
+  graphNode,
+  IGraphNode,
+  GraphNodeCtx,
+  DbQueryNodes,
+} from 'lb4-llm-chat-component';
 
-// `key` MUST match the step you're replacing (e.g. 'get-tables'). Keep the same
-// output shape so the downstream steps still wire up.
-@step('get-tables')
-export class MyGetTablesStep implements IWorkflowStep<{prompt?: string}, {tables: string[]}> {
-  async execute({requestContext}: WorkflowStepCtx) {
+// `key` MUST match the node you're replacing. Keep the same output shape so the
+// downstream nodes still wire up.
+@graphNode(DbQueryNodes.GetTables) // 'get_tables'
+export class MyGetTablesNode
+  implements IGraphNode<{prompt?: string}, {tables: string[]}>
+{
+  async execute({inputData, requestContext}: GraphNodeCtx<{prompt?: string}>) {
     // ...your table-selection logic; request-scoped collaborators (stores,
-    // helpers, the resolved LLM tiers) are on `requestContext`...
+    // helpers, the resolved LLM tiers) are read from `requestContext`...
     return {tables: ['employees', 'currencies']};
   }
 }
 ```
 
-Register it as a service in your application (it REBINDS the bundled step —
-exactly one binding may carry a given key, so your registration replaces the
-default):
+Register it as a service in your application. Exactly one binding may carry a
+given `@graphNode` key, so when you replace a **bundled** node you must unbind
+the default first — otherwise both bindings match the tag and the node resolver
+throws `Multiple nodes found with key get_tables` on the first request (a
+boot-clean but request-time failure):
 
 ```ts
-this.service(MyGetTablesStep);
+this.unbind('services.GetTablesNode'); // drop the bundled node …
+this.service(MyGetTablesNode); //          … then register yours
 ```
 
-The db-query step keys: `check-cache`, `get-tables`, `check-templates`,
-`post-cache-and-tables`, `return-cached`, `save-dataset-from-template`,
-`get-columns`, `generate-checklist`, `verify-checklist`, `sql-and-validate`,
-`save-dataset`, `failed`; and the improve workflow: `load-existing`,
-`fix-query`, `save-improved`, `improve-failed`. Visualization:
-`select-visualisation`, `call-query-generation`, `get-dataset-data`,
-`render-visualization`. (The constants are exported from
-`lb4-llm-chat-component/mastra` as `STEP_GET_TABLES`, etc.)
+The db-query node keys (values of `DbQueryNodes`) — generate path:
+`is_improvement`, `check_cache`, `get_tables`, `check_permissions`,
+`check_templates`, `get_columns`, `classify_change`, `generate_checklist`,
+`sql_generation`, `syntactic_validator`, `semantic_validator`,
+`generate_description`, `post_validation`, `verify_checklist`, `return_cached`,
+`save_dataset_from_template`, `post_cache_and_tables`, `save_dataset`, `failed`;
+improve path: `load_existing`, `fix_query`, `save_improved`, `improve_failed`.
+Visualization (`VisualizationGraphNodes`): `get_dataset_data`,
+`select_visualization`, `render_visualization`, `call_query_generation`. Chat
+(`ChatNodes`): `init_session`, `summarise_file`, `call_llm`, `run_tool`,
+`trim_messages`, `end_session`.
+
+Most nodes also expose a smaller override seam so you don't have to reimplement
+`execute` at all — see "Overriding node behaviour" above (e.g.
+`SqlGenerationNode.buildPrompt()`, `GetColumnsNode.selectRelevantTables()`).
 
 ### Recompose a whole graph (advanced)
 
-When you need to change the DAG shape itself (add/remove steps, change a
-branch), build a custom graph from the exported step shells and register it
-under the key it is resolved by. Both tools call the single `dbQueryGraph`,
-whose entry node dispatches to `generateQueryGraph` / `improveQueryGraph` — so
-to change the generate DAG you rebind the `generateQueryGraph` key (to change
-dispatch/routing itself, rebind `dbQueryGraph`):
+When you need to change the DAG shape itself (add/remove nodes, change a
+branch), build a custom graph from the exported node shells and register it
+under the key it is resolved by. Both db-query tools call the single
+`dbQueryGraph`, whose entry node dispatches to `generateQueryGraph` /
+`improveQueryGraph` — so to change the generate DAG you rebind the
+`generateQueryGraph` key (to change dispatch/routing itself, rebind
+`dbQueryGraph`). The node shells and workflow schemas live on the `/mastra`
+subpath (NOT the package root):
 
 ```ts
 import {createWorkflow} from '@mastra/core/workflows';
 import {
   checkCacheNode,
   getTablesNode,
-  // ...other step shells you keep...
+  // ...other node shells you keep...
   generateQueryInputSchema,
   generateQueryOutputSchema,
 } from 'lb4-llm-chat-component/mastra';
@@ -718,7 +739,7 @@ export const myGenerateGraph = createWorkflow({
   outputSchema: generateQueryOutputSchema,
 })
   .parallel([checkCacheNode, getTablesNode /* , ... */])
-  // ...mirror the DAG in the package's generate.graph.ts...
+  // ...mirror the DAG in the package's db-query.graph.ts...
   .commit();
 ```
 

@@ -1,18 +1,5 @@
-import {Entity} from '@loopback/repository';
-import {ModelConstructor} from '@sourceloop/core';
 import {DEFAULT_MAX_READ_ROWS_FOR_AI} from './constant';
-import {DbQueryConfig, IDataSetStore, IModelConfig} from './types';
-
-export function isModelWithPermission(m: IModelConfig): m is {
-  model: ModelConstructor<Entity>;
-  readPermissionKey: string;
-} {
-  return (m as {readPermissionKey?: string}).readPermissionKey !== undefined;
-}
-
-export function getModelFromConfig(m: IModelConfig): ModelConstructor<Entity> {
-  return isModelWithPermission(m) ? m.model : m;
-}
+import {DbQueryConfig, IDataSetStore} from './types';
 
 /**
  * Build the message the dataset tools hand back to the AI agent.

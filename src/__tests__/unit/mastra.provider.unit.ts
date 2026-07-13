@@ -3,6 +3,8 @@ import {Mastra} from '@mastra/core';
 import type {MastraCompositeStore} from '@mastra/core/storage';
 import type {MastraEmbeddingModel, MastraVector} from '@mastra/core/vector';
 import {MastraProvider} from '../../providers/mastra/mastra.provider';
+import {DEFAULT_MAX_TOKEN_COUNT} from '../../constant';
+import type {AIIntegrationConfig} from '../../types';
 
 /**
  * Singleton Mastra runtime provider. This is the heart of the Mastra
@@ -138,5 +140,53 @@ describe('Mastra runtime Provider (unit)', () => {
     process.env.MASTRA_SEMANTIC_RECALL = 'true';
     const mastra = await new MastraProvider(makeStorage()).value();
     expect(mastra).to.be.instanceOf(Mastra);
+  });
+
+  // Token-budget precedence: config.maxTokenCount → MAX_TOKEN_COUNT env →
+  // default. Regression guard — the provider previously read env ONLY, so a
+  // host tuning AIIntegrationConfig.maxTokenCount (the LB4-idiomatic path the
+  // config type + docstrings advertise) had its value silently dropped.
+  //
+  // `resolveTokenBudget` is a PROTECTED method (not a module function) so a host
+  // can override the policy in a MastraProvider subclass, mirroring how v3 hosts
+  // overrode the ContextCompressionNode class. This subclass exposes it exactly
+  // the way such a host would reach it.
+  describe('resolveTokenBudget (chat token-budget precedence)', () => {
+    class ProbeProvider extends MastraProvider {
+      budget(config?: AIIntegrationConfig, env?: NodeJS.ProcessEnv): number {
+        return this.resolveTokenBudget(config, env);
+      }
+    }
+    const probe = () => new ProbeProvider(makeStorage());
+
+    it('honours config.maxTokenCount over the env var', () => {
+      expect(
+        probe().budget({maxTokenCount: 4242}, {MAX_TOKEN_COUNT: '9999'}),
+      ).to.equal(4242);
+    });
+
+    it('falls back to MAX_TOKEN_COUNT env when config has no maxTokenCount', () => {
+      expect(probe().budget({}, {MAX_TOKEN_COUNT: '9999'})).to.equal(9999);
+      expect(probe().budget(undefined, {MAX_TOKEN_COUNT: '9999'})).to.equal(
+        9999,
+      );
+    });
+
+    it('falls back to the default when neither config nor env is set', () => {
+      expect(probe().budget(undefined, {})).to.equal(DEFAULT_MAX_TOKEN_COUNT);
+      expect(probe().budget({}, {})).to.equal(DEFAULT_MAX_TOKEN_COUNT);
+    });
+
+    it('is overridable by a subclass (the host-facing seam)', () => {
+      class FixedBudgetProvider extends MastraProvider {
+        protected resolveTokenBudget(): number {
+          return 123;
+        }
+        expose(): number {
+          return this.resolveTokenBudget();
+        }
+      }
+      expect(new FixedBudgetProvider(makeStorage()).expose()).to.equal(123);
+    });
   });
 });

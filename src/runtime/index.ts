@@ -1,11 +1,11 @@
 // Advanced extension surface — Mastra workflow/agent building blocks.
 //
 // Import from `lb4-llm-chat-component/mastra` (NOT the package root) to compose
-// custom workflows, override an individual step, or build a custom Mastra
+// custom graphs, override an individual node, or build a custom Mastra
 // instance. The db-query and visualization flows now live entirely under their
 // LB4 components (`components/db-query`, `components/visualization`); this
 // subpath just re-exports the pieces consumers compose against. Kept on a
-// dedicated subpath because the step schemas use generic names
+// dedicated subpath because the node schemas use generic names
 // (`inputSchema`/`outputSchema`, re-exported here as
 // `generateQueryInputSchema`/`generateQueryOutputSchema`) that would collide
 // with the package-root `export *` barrel.
@@ -24,10 +24,10 @@ export {
 } from '../components/db-query/db-query.graph';
 export {visualizationGraph} from '../components/visualization/visualization.graph';
 
-// Individual db-query generate step SHELLS — reuse the ones you keep when
-// recomposing a custom workflow (see README "Steps and workflows"). To override
-// the LOGIC of a step, bind your own `@graphNode(key)` class instead (the simpler
-// path) — `step` + `IGraphNode` are on the package root.
+// Individual db-query generate node SHELLS — reuse the ones you keep when
+// recomposing a custom graph (see README "Nodes and graphs"). To override
+// the LOGIC of a node, bind your own `@graphNode(key)` class instead (the simpler
+// path) — `graphNode` + `IGraphNode` + `GraphNodeCtx` are on the package root.
 export {
   checkCacheNode,
   getTablesNode,

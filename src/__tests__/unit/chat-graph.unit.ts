@@ -368,8 +368,7 @@ describe('ChatGraph Unit', () => {
     );
 
     const err = events.find(e => e.type === LLMStreamEventType.Error) as
-      | undefined
-      | {data: {message: string}};
+      undefined | {data: {message: string}};
     expect(err).to.not.be.undefined();
     expect(err!.data.message).to.match(/pii-detector/);
     expect(err!.data.message).to.match(/email leak/);
