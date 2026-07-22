@@ -222,8 +222,7 @@ Do not return any other text or explanation, just the XML tags.
     config: RunnableConfig,
     schema: DatabaseSchema | undefined,
     templateFetcher:
-      | ((id: string) => Promise<QueryTemplate | undefined>)
-      | undefined,
+      ((id: string) => Promise<QueryTemplate | undefined>) | undefined,
     depth: number,
   ): Promise<string> {
     let sql = template.template;
