@@ -175,6 +175,7 @@ export async function seedDataset(appInstance: TestApp) {
   ctx.bind(AuthenticationBindings.CURRENT_USER).to({
     id: 'test-user',
     userTenantId: 'default',
+    tenantId: 'default',
   } as unknown as IAuthUserWithPermissions);
   const repo = await ctx.get<DataSetRepository>(
     `repositories.${DataSetRepository.name}`,
@@ -252,6 +253,7 @@ export async function getRepo(app: Application, repo: string) {
   ctx.bind(AuthenticationBindings.CURRENT_USER).to({
     id: 'test-user',
     userTenantId: 'default-user-id',
+    tenantId: 'default',
     role: 'admin',
   } as unknown as IAuthUserWithPermissions);
   return ctx.get<DataSetRepository>(`repositories.${DataSetRepository.name}`);

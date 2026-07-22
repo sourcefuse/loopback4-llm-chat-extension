@@ -202,12 +202,12 @@
     "simple-git": "3.33.0",
     "flatted": "3.4.2",
     "serialize-javascript": "7.0.4",
-    "multer": "2.1.1",
+    "multer": "2.2.0",
     "sequelize": "6.37.8",
     "underscore": "1.13.8",
     "tar": "7.5.12",
     "minimatch": "10.2.4",
-    "undici": "6.24.1",
+    "undici": "8.5.0",
     "ignore": "7.0.5",
     "@sourceloop/file-utils": {
       "@loopback/context": "8.0.11"
