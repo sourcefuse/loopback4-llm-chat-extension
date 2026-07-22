@@ -52,10 +52,7 @@ export enum RelationType {
 }
 
 export type Status =
-  | EvaluationResult
-  | DatasetFeedback
-  | Errors
-  | GenerationError;
+  EvaluationResult | DatasetFeedback | Errors | GenerationError;
 
 export type DatasetServiceConfig = {};
 
@@ -212,11 +209,7 @@ export type QueryCacheMetadata = {
 };
 
 export type PlaceholderType =
-  | 'string'
-  | 'number'
-  | 'boolean'
-  | 'sql_expression'
-  | 'template_ref';
+  'string' | 'number' | 'boolean' | 'sql_expression' | 'template_ref';
 
 export type TemplatePlaceholder = {
   name: string;

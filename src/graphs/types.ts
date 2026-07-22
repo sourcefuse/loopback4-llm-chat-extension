@@ -39,8 +39,7 @@ export type IGraphConditionalEdge<T extends object> = {
 };
 
 export type IGraphEdge<T extends object> =
-  | IGraphDirectEdge
-  | IGraphConditionalEdge<T>;
+  IGraphDirectEdge | IGraphConditionalEdge<T>;
 
 export enum ToolStatus {
   Running = 'running',

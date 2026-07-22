@@ -197,8 +197,7 @@ function populateStreamMetrics(
       v.data.status?.startsWith('DESCRIPTION:'),
   );
   const lastDescription = finalDescription.at(-1) as
-    | LLMStreamToolStatusEvent
-    | undefined;
+    LLMStreamToolStatusEvent | undefined;
   if (lastDescription) {
     result.description = lastDescription.data.status.replace(
       'DESCRIPTION:',
