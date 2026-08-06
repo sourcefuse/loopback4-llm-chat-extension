@@ -1,13 +1,17 @@
-import {PromptTemplate} from '@langchain/core/prompts';
-import {RunnableSequence} from '@langchain/core/runnables';
-import {LangGraphRunnableConfig} from '@langchain/langgraph';
 import {inject, service} from '@loopback/core';
 import {HttpErrors} from '@loopback/rest';
 import {IAuthUserWithPermissions} from '@sourceloop/core';
 import {createHash} from 'crypto';
 import {AuthenticationBindings} from 'loopback4-authentication';
 import {graphNode} from '../../../decorators';
-import {IGraphNode, LLMStreamEventType, ToolStatus} from '../../../graphs';
+import {
+  IGraphNode,
+  invokeModel,
+  LLMStreamEventType,
+  renderPrompt,
+  RunnableConfig,
+  ToolStatus,
+} from '../../../graphs';
 import {AiIntegrationBindings} from '../../../keys';
 import {LLMProvider} from '../../../types';
 import {stripThinkingTokens} from '../../../utils';
@@ -36,8 +40,7 @@ export class SaveDataSetNode implements IGraphNode<DbQueryState> {
     private readonly checks?: string[],
   ) {}
 
-  prompt =
-    PromptTemplate.fromTemplate(`You are an AI assitant that generates a short description of a query based on a given schema, providing a summary of the query's intent and user's demand in a way that is short but does not miss any importance detail.
+  prompt = `You are an AI assitant that generates a short description of a query based on a given schema, providing a summary of the query's intent and user's demand in a way that is short but does not miss any importance detail.
 
   Here is the query that you need to describe - {query}
 
@@ -46,11 +49,11 @@ export class SaveDataSetNode implements IGraphNode<DbQueryState> {
 
 
   {checks}
-  The output should be a valid description of the query that is easy to understand by the user in plain text, without any formatting`);
+  The output should be a valid description of the query that is easy to understand by the user in plain text, without any formatting`;
 
   async execute(
     state: DbQueryState,
-    config: LangGraphRunnableConfig,
+    config: RunnableConfig,
   ): Promise<DbQueryState> {
     config.writer?.({
       type: LLMStreamEventType.Log,
@@ -66,16 +69,18 @@ export class SaveDataSetNode implements IGraphNode<DbQueryState> {
     }
 
     if (!state.description) {
-      const chain = RunnableSequence.from([this.prompt, this.llm]);
-
-      const output = await chain.invoke({
-        checks: [
-          'You must keep these additional details in consideration while describing the query -',
-          ...(this.checks ?? []),
-        ].join('\n'),
-        query: state.sql,
-        schema: this.dbSchemaHelper.asString(state.schema),
-      });
+      const output = await invokeModel(
+        this.llm,
+        renderPrompt(this.prompt, {
+          checks: [
+            'You must keep these additional details in consideration while describing the query -',
+            ...(this.checks ?? []),
+          ].join('\n'),
+          query: state.sql,
+          schema: this.dbSchemaHelper.asString(state.schema),
+        }),
+        {config},
+      );
 
       state.description = stripThinkingTokens(output);
     }

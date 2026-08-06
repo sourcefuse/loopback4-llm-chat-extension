@@ -1,4 +1,4 @@
-import {PromptTemplate} from '@langchain/core/prompts';
+import {generateObject} from 'ai';
 import {IVisualizer} from '../types';
 import {AiIntegrationBindings} from '../../../keys';
 import {LLMProvider} from '../../../types';
@@ -6,14 +6,14 @@ import {inject} from '@loopback/core';
 import {AnyObject} from '@loopback/repository';
 import {VisualizationGraphState} from '../state';
 import z from 'zod';
-import {RunnableSequence} from '@langchain/core/runnables';
+import {renderPrompt} from '../../../graphs';
 import {visualizer} from '../decorators/visualizer.decorator';
 
 @visualizer()
 export class PieVisualizer implements IVisualizer {
   name = 'pie';
   description = `Renders the data in a pie chart format. Best for visualizing proportions and percentages among categories.`;
-  renderPrompt = PromptTemplate.fromTemplate(`
+  renderPrompt = `
 <instructions>
 You are an expert data visualization assistant. Your task is to create a pie chart config based on the provided SQL query, it's description and user prompt. Follow these steps:
 1. Analyze the SQL query results to understand the data structure.
@@ -31,7 +31,7 @@ You are an expert data visualization assistant. Your task is to create a pie cha
 <user-prompt>
 {userPrompt}
 </user-prompt>
-</inputs>`);
+</inputs>`;
 
   context?: string | undefined =
     `A pie chart requires data with at least two columns: one for the labels (categories) and one for the values (numerical data). Ensure that the values are non-negative and represent parts of a whole, as pie charts are used to visualize proportions and percentages among different categories.`;
@@ -43,7 +43,7 @@ You are an expert data visualization assistant. Your task is to create a pie cha
     valueColumn: z
       .string()
       .describe('Column to be used for values in the pie chart'),
-  }) as z.AnyZodObject;
+  }) as z.ZodType;
 
   constructor(
     @inject(AiIntegrationBindings.CheapLLM)
@@ -54,20 +54,17 @@ You are an expert data visualization assistant. Your task is to create a pie cha
     if (!state.sql || !state.queryDescription || !state.prompt) {
       throw new Error('Invalid State');
     }
-    const llmWithStructuredOutput = this.llm.withStructuredOutput<AnyObject>(
-      this.schema,
-    );
-
-    const chain = RunnableSequence.from([
-      this.renderPrompt,
-      llmWithStructuredOutput,
-    ]);
-
-    const settings = await chain.invoke({
-      sql: state.sql!,
-      description: state.queryDescription!,
-      userPrompt: state.prompt!,
+    const {object} = await generateObject({
+      ...(this.llm.defaultSettings ?? {}),
+      model: this.llm,
+      schema: this.schema,
+      prompt: renderPrompt(this.renderPrompt, {
+        sql: state.sql!,
+        description: state.queryDescription!,
+        userPrompt: state.prompt!,
+      }),
     });
+    const settings = object as AnyObject;
     return settings;
   }
 }

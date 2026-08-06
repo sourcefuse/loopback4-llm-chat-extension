@@ -2,9 +2,12 @@ import {Context, inject, service} from '@loopback/core';
 import {AnyObject} from '@loopback/repository';
 import {z} from 'zod';
 import {graphTool} from '../../../decorators';
-import {IGraphTool, ToolStatus} from '../../../graphs';
-import {StructuredToolInterface} from '@langchain/core/tools';
-import {RunnableToolLike} from '@langchain/core/runnables';
+import {
+  GraphTool,
+  IGraphTool,
+  RunnableConfig,
+  ToolStatus,
+} from '../../../graphs';
 import {VisualizationGraph} from '../visualization.graph';
 import {VISUALIZATION_KEY} from '../keys';
 import {IVisualizer} from '../types';
@@ -40,9 +43,8 @@ export class GenerateVisualizationTool implements IGraphTool {
     };
   }
 
-  async build(): Promise<StructuredToolInterface | RunnableToolLike> {
+  async build(config: RunnableConfig): Promise<GraphTool> {
     const visualizations = await this._getVisualizations();
-    const graph = await this.visualizationGraph.build();
     const schema = z.object({
       prompt: z
         .string()
@@ -62,7 +64,7 @@ export class GenerateVisualizationTool implements IGraphTool {
           `Type of visualization to be generated. It can be one of the following: ${visualizations.map(v => v.name).join(', ')}. If not provided, the system will decide the best visualization based on the data and prompt.`,
         ),
     }) as AnyObject[string];
-    return graph.asTool({
+    return this.visualizationGraph.asTool(config, {
       name: this.key,
       description: `Generates a visualization for the user's request. It takes in a prompt and an optional dataset ID.
 If the user's request involves trends, growth, decline, comparisons, distributions, patterns, correlations, or any analytical insight, ALWAYS use this tool instead of 'get-data-as-dataset'.

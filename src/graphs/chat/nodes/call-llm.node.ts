@@ -1,4 +1,3 @@
-import {AIMessage} from '@langchain/core/messages';
 import {inject} from '@loopback/context';
 import {service} from '@loopback/core';
 import {HttpErrors} from '@loopback/rest';
@@ -7,6 +6,8 @@ import {AiIntegrationBindings} from '../../../keys';
 import {LLMProvider, ToolStore} from '../../../types';
 import {getTextContent} from '../../../utils';
 import {LLMStreamEventType} from '../../event.types';
+import {invokeModel} from '../../llm';
+import {ModelMessage} from '../../messages';
 import {ChatState} from '../../state';
 import {IGraphNode, RunnableConfig} from '../../types';
 import {ChatStore} from '../chat.store';
@@ -33,9 +34,10 @@ export class CallLLMNode implements IGraphNode<ChatState> {
       'Calling LLM with tools:',
       tools.map(tool => tool.name),
     );
-    const response: AIMessage = await this.llm
-      .bindTools(tools)
-      .invoke(state.messages);
+    const response: ModelMessage = await invokeModel(this.llm, state.messages, {
+      tools,
+      config,
+    });
     const text = getTextContent(response.content).trim();
     if (!state.id) {
       debug('No chat ID found in state, this is unexpected');

@@ -1,7 +1,3 @@
-import {ContentBlock, HumanMessage} from '@langchain/core/messages';
-import {PromptTemplate} from '@langchain/core/prompts';
-import {RunnableSequence} from '@langchain/core/runnables';
-import {LangGraphRunnableConfig, Messages} from '@langchain/langgraph';
 import {inject} from '@loopback/context';
 import {service} from '@loopback/core';
 import {AnyObject} from '@loopback/repository';
@@ -11,8 +7,10 @@ import {AiIntegrationBindings} from '../../../keys';
 import {LLMProvider} from '../../../types';
 import {mergeAttachments, stripThinkingTokens} from '../../../utils';
 import {LLMStreamEventType} from '../../event.types';
+import {defaultFileContent, invokeModel, renderPrompt} from '../../llm';
+import {humanMessage, ModelMessage, Messages} from '../../messages';
 import {ChatState} from '../../state';
-import {IGraphNode} from '../../types';
+import {IGraphNode, RunnableConfig} from '../../types';
 import {ChatStore} from '../chat.store';
 import {ChatNodes} from '../nodes.enum';
 
@@ -27,8 +25,7 @@ export class SummariseFileNode implements IGraphNode<ChatState> {
     private readonly chatStore: ChatStore,
   ) {}
 
-  prompt =
-    PromptTemplate.fromTemplate(`You are an AI assistant that summarizes file content keeping all the important details in mind.
+  prompt = `You are an AI assistant that summarizes file content keeping all the important details in mind.
   Make sure that you don't miss any important details and summarize the content in a concise manner.
   While summarizing the content, make sure that you keep the user's prompt in mind and summarize the content in a way that it can be used to answer the user's query.
   You will be provided with user's original prompt and one file among the files that user provided.
@@ -37,12 +34,9 @@ export class SummariseFileNode implements IGraphNode<ChatState> {
   The output should just be a plain text string without any additional markdown syntax or any special formatting.
   Here is the user's prompt:
   {prompt}
-  `);
+  `;
 
-  async execute(
-    state: ChatState,
-    config: LangGraphRunnableConfig,
-  ): Promise<ChatState> {
+  async execute(state: ChatState, config: RunnableConfig): Promise<ChatState> {
     if (!state.id) {
       debug('No chat ID found in state, this is unexpected');
       throw new HttpErrors.InternalServerError();
@@ -65,24 +59,19 @@ export class SummariseFileNode implements IGraphNode<ChatState> {
       const prompt: Messages = [
         {
           role: 'system',
-          content: await this.prompt.format({
+          content: renderPrompt(this.prompt, {
             prompt: state.prompt,
           }),
         },
         {
           role: 'user',
-          content: [
-            {
-              type: 'text',
-              text: state.prompt,
-            },
-            fileContent as unknown as ContentBlock,
-          ],
-        },
+          content: [{type: 'text', text: state.prompt}, fileContent],
+        } as ModelMessage,
       ];
-      const chain = RunnableSequence.from([this.llm, stripThinkingTokens]);
 
-      const summary = await chain.invoke(prompt);
+      const summary = stripThinkingTokens(
+        await invokeModel(this.llm, prompt, {config}),
+      );
 
       await this.chatStore.addAttachmentMessage(
         state.id,
@@ -109,11 +98,7 @@ export class SummariseFileNode implements IGraphNode<ChatState> {
         return {
           ...state,
           prompt: response,
-          messages: [
-            new HumanMessage({
-              content: response,
-            }),
-          ],
+          messages: [humanMessage(response)],
           files: [],
         };
       }
@@ -122,11 +107,7 @@ export class SummariseFileNode implements IGraphNode<ChatState> {
     // code should reach here if there were no files to process to begin with
     return {
       ...state,
-      messages: [
-        new HumanMessage({
-          content: state.prompt,
-        }),
-      ],
+      messages: [humanMessage(state.prompt)],
       files: [],
     };
   }
@@ -135,14 +116,7 @@ export class SummariseFileNode implements IGraphNode<ChatState> {
     if (this.llm.getFile) {
       return this.llm.getFile(file);
     } else {
-      return {
-        type: 'file',
-        // eslint-disable-next-line @typescript-eslint/naming-convention
-        source_type: 'base64',
-        data: file.buffer?.toString('base64') ?? '',
-        // eslint-disable-next-line @typescript-eslint/naming-convention
-        mime_type: 'application/pdf',
-      };
+      return defaultFileContent(file);
     }
   }
 }

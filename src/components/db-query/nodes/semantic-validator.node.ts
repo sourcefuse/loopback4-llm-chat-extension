@@ -1,9 +1,12 @@
-import {PromptTemplate} from '@langchain/core/prompts';
-import {RunnableSequence} from '@langchain/core/runnables';
-import {LangGraphRunnableConfig} from '@langchain/langgraph';
 import {inject, service} from '@loopback/core';
 import {graphNode} from '../../../decorators';
-import {IGraphNode, LLMStreamEventType} from '../../../graphs';
+import {
+  IGraphNode,
+  invokeModel,
+  LLMStreamEventType,
+  renderPrompt,
+  RunnableConfig,
+} from '../../../graphs';
 import {AiIntegrationBindings} from '../../../keys';
 import {LLMProvider} from '../../../types';
 import {stripThinkingTokens} from '../../../utils';
@@ -34,7 +37,7 @@ export class SemanticValidatorNode implements IGraphNode<DbQueryState> {
     private readonly permissionHelper?: PermissionHelper,
   ) {}
 
-  prompt = PromptTemplate.fromTemplate(`
+  prompt = `
 <instructions>
 You are an AI assistant that validates whether a SQL query satisfies a given checklist.
 The query has already been validated for syntax and correctness.
@@ -82,9 +85,9 @@ If any checklist item is NOT satisfied, return your response in two sections:
 <tables>exchange_rates, deals, employees</tables>
 </example-invalid>
 </output-instructions>
-`);
+`;
 
-  feedbackPrompt = PromptTemplate.fromTemplate(`
+  feedbackPrompt = `
 <feedback-instructions>
 We also need to consider the users feedback on the last attempt at query generation.
 
@@ -92,11 +95,11 @@ But was rejected by validator with the following errors -
 {feedback}
 
 Keep these feedbacks in mind while validating the new query.
-</feedback-instructions>`);
+</feedback-instructions>`;
 
   async execute(
     state: DbQueryState,
-    config: LangGraphRunnableConfig,
+    config: RunnableConfig,
   ): Promise<DbQueryState> {
     config.writer?.({
       type: LLMStreamEventType.ToolStatus,
@@ -114,15 +117,18 @@ Keep these feedbacks in mind while validating the new query.
     const tableList =
       (await this.tableSearchService.getTables(state.prompt)) ?? [];
     const accessibleTables = this._filterByPermissions(tableList);
-    const chain = RunnableSequence.from([this.prompt, llm]);
-    const output = await chain.invoke({
-      userPrompt: state.prompt,
-      query: state.sql,
-      schema: this.schemaHelper.asString(state.schema),
-      tableNames: accessibleTables.join(', '),
-      checklist: state.validationChecklist ?? 'No checklist provided.',
-      feedbacks: await this.getFeedbacks(state),
-    });
+    const output = await invokeModel(
+      llm,
+      renderPrompt(this.prompt, {
+        userPrompt: state.prompt,
+        query: state.sql,
+        schema: this.schemaHelper.asString(state.schema),
+        tableNames: accessibleTables.join(', '),
+        checklist: state.validationChecklist ?? 'No checklist provided.',
+        feedbacks: await this.getFeedbacks(state),
+      }),
+      {config},
+    );
     const response = stripThinkingTokens(output);
 
     const invalidMatch = /<invalid>(.*?)<\/invalid>/s.exec(response);
@@ -156,7 +162,7 @@ Keep these feedbacks in mind while validating the new query.
 
   async getFeedbacks(state: DbQueryState) {
     if (state.feedbacks?.length) {
-      const feedbacks = await this.feedbackPrompt.format({
+      const feedbacks = renderPrompt(this.feedbackPrompt, {
         feedback: state.feedbacks.join('\n'),
       });
       return feedbacks;

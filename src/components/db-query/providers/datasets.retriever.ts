@@ -1,9 +1,10 @@
-import {Document} from '@langchain/core/documents';
-import {BaseRetriever} from '@langchain/core/retrievers';
-import {VectorStore} from '@langchain/core/vectorstores';
 import {inject, Provider, ValueOrPromise} from '@loopback/core';
-import {AnyObject} from '@loopback/repository';
-import {MemoryVectorStore} from '@langchain/classic/vectorstores/memory';
+import {
+  BaseRetriever,
+  Document,
+  MemoryVectorStore,
+  VectorStore,
+} from '../../../vector';
 import {AiIntegrationBindings} from '../../../keys';
 import {DbQueryStoredTypes} from '../types';
 import {AuthenticationBindings} from 'loopback4-authentication';
@@ -16,7 +17,7 @@ export class DatasetRetriever implements Provider<BaseRetriever> {
     @inject(AuthenticationBindings.CURRENT_USER)
     private readonly user: IAuthUserWithPermissions,
   ) {}
-  value(): ValueOrPromise<BaseRetriever<AnyObject>> {
+  value(): ValueOrPromise<BaseRetriever> {
     if (this.vectorStore instanceof MemoryVectorStore) {
       return this.vectorStore.asRetriever({
         k: 5,

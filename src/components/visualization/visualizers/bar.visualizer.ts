@@ -1,4 +1,4 @@
-import {PromptTemplate} from '@langchain/core/prompts';
+import {generateObject} from 'ai';
 import {IVisualizer} from '../types';
 import {AiIntegrationBindings} from '../../../keys';
 import {LLMProvider} from '../../../types';
@@ -6,14 +6,14 @@ import {inject} from '@loopback/core';
 import {AnyObject} from '@loopback/repository';
 import {VisualizationGraphState} from '../state';
 import z from 'zod';
-import {RunnableSequence} from '@langchain/core/runnables';
+import {renderPrompt} from '../../../graphs';
 import {visualizer} from '../decorators/visualizer.decorator';
 
 @visualizer()
 export class BarVisualizer implements IVisualizer {
   name = 'bar';
   description = `Renders the data in a bar chart format. Best for comparing values across different categories or showing trends over time.`;
-  renderPrompt = PromptTemplate.fromTemplate(`
+  renderPrompt = `
 <instructions>
 You are an expert data visualization assistant. Your task is to create a bar chart config based on the provided SQL query, it's description and user prompt. Follow these steps:
 1. Analyze the SQL query results to understand the data structure.
@@ -31,7 +31,7 @@ You are an expert data visualization assistant. Your task is to create a bar cha
 <user-prompt>
 {userPrompt}
 </user-prompt>
-</inputs>`);
+</inputs>`;
 
   context?: string | undefined =
     `A bar chart requires data with at exactly two columns: one for the categories (x-axis) and one for the values (y-axis). Ensure that the category column contains discrete values representing different groups or categories, while the value column contains numerical data that can be compared across these categories. Bar charts can be oriented either vertically or horizontally depending on the data representation needs.`;
@@ -49,7 +49,7 @@ You are an expert data visualization assistant. Your task is to create a bar cha
       .describe(
         'Orientation of the bar chart: `vertical` or `horizontal` without backticks',
       ),
-  }) as z.AnyZodObject;
+  }) as z.ZodType;
 
   constructor(
     @inject(AiIntegrationBindings.CheapLLM)
@@ -60,20 +60,17 @@ You are an expert data visualization assistant. Your task is to create a bar cha
     if (!state.sql || !state.queryDescription || !state.prompt) {
       throw new Error('Invalid State');
     }
-    const llmWithStructuredOutput = this.llm.withStructuredOutput<AnyObject>(
-      this.schema,
-    );
-
-    const chain = RunnableSequence.from([
-      this.renderPrompt,
-      llmWithStructuredOutput,
-    ]);
-
-    const settings = await chain.invoke({
-      sql: state.sql!,
-      description: state.queryDescription!,
-      userPrompt: state.prompt!,
+    const {object} = await generateObject({
+      ...(this.llm.defaultSettings ?? {}),
+      model: this.llm,
+      schema: this.schema,
+      prompt: renderPrompt(this.renderPrompt, {
+        sql: state.sql!,
+        description: state.queryDescription!,
+        userPrompt: state.prompt!,
+      }),
     });
+    const settings = object as AnyObject;
     return settings;
   }
 }

@@ -1,5 +1,3 @@
-import {PromptTemplate} from '@langchain/core/prompts';
-import {RunnableSequence} from '@langchain/core/runnables';
 import {inject} from '@loopback/core';
 import {AiIntegrationBindings} from '../../../keys';
 import {LLMProvider} from '../../../types';
@@ -10,7 +8,7 @@ import {
   QueryTemplateMetadata,
   TemplatePlaceholder,
 } from '../types';
-import {RunnableConfig} from '../../../graphs';
+import {invokeModel, renderPrompt, RunnableConfig} from '../../../graphs';
 
 const MAX_TEMPLATE_RECURSION_DEPTH = 3;
 
@@ -25,7 +23,7 @@ export class TemplateHelper {
     private readonly llm: LLMProvider,
   ) {}
 
-  extractionPrompt = PromptTemplate.fromTemplate(`
+  extractionPrompt = `
 <instructions>
 You are an expert at extracting parameter values from natural language prompts.
 Given a user prompt, a SQL template, and a list of placeholders with their descriptions and types, extract the value for each placeholder from the prompt.
@@ -51,7 +49,7 @@ Rules per type:
 - sql_expression: Return a complete, valid SQL fragment with proper SQL syntax including quotes where needed. Example: <date_filter>created_at > '2024-01-01'</date_filter>
 
 Do not return any other text or explanation, just the XML tags.
-</output-format>`);
+</output-format>`;
 
   async extractPlaceholderValues(
     placeholders: TemplatePlaceholder[],
@@ -60,12 +58,6 @@ Do not return any other text or explanation, just the XML tags.
     config: RunnableConfig,
     schema?: DatabaseSchema,
   ): Promise<Record<string, string | null>> {
-    const chain = RunnableSequence.from([
-      this.extractionPrompt,
-      this.llm,
-      stripThinkingTokens,
-    ]);
-
     const placeholderDescriptions = placeholders
       .map(p => {
         let desc = `- ${p.name} (type: ${p.type}): ${p.description}`;
@@ -76,13 +68,16 @@ Do not return any other text or explanation, just the XML tags.
       })
       .join('\n');
 
-    const response = await chain.invoke(
-      {
-        prompt,
-        template: sqlTemplate,
-        placeholders: placeholderDescriptions,
-      },
-      config,
+    const response = stripThinkingTokens(
+      await invokeModel(
+        this.llm,
+        renderPrompt(this.extractionPrompt, {
+          prompt,
+          template: sqlTemplate,
+          placeholders: placeholderDescriptions,
+        }),
+        {config},
+      ),
     );
 
     return this._parseXmlValues(response, placeholders);

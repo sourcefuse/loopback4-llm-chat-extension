@@ -1,12 +1,11 @@
-import {DocumentInterface} from '@langchain/core/documents';
-import {PromptTemplate} from '@langchain/core/prompts';
-import {BaseRetriever} from '@langchain/core/retrievers';
-import {RunnableSequence} from '@langchain/core/runnables';
 import {inject, service} from '@loopback/core';
+import {BaseRetriever, DocumentInterface} from '../../../vector';
 import {graphNode} from '../../../decorators';
 import {
   IGraphNode,
+  invokeModel,
   LLMStreamEventType,
+  renderPrompt,
   RunnableConfig,
   ToolStatus,
 } from '../../../graphs';
@@ -30,7 +29,7 @@ export class CheckCacheNode implements IGraphNode<DbQueryState> {
     @service(DataSetHelper)
     private readonly dataSetHelper: DataSetHelper,
   ) {}
-  prompt = PromptTemplate.fromTemplate(`
+  prompt = `
 <instructions>
 You are an expert Semantic analyser, you will be given a prompt from the user and a list of past prompts that were handled successfully, along with description of the sql generated from those prompts.
 You need to return the most relevant prompt from the list and in which of the following ways is it relevant -
@@ -59,7 +58,7 @@ ${CacheResults.NotRelevant}
 <output-instructions>
 Do not return any other text or explanation, just the output in the above format.
 If no queries are relevant, return '${CacheResults.NotRelevant}' and nothing else.
-</output-instructions>`);
+</output-instructions>`;
   async execute(
     state: DbQueryState,
     config: RunnableConfig,
@@ -71,23 +70,20 @@ If no queries are relevant, return '${CacheResults.NotRelevant}' and nothing els
     if (relevantDocs.length === 0) {
       return {};
     }
-    const chain = RunnableSequence.from([
-      this.prompt,
-      this.smartLLM,
-      stripThinkingTokens,
-    ]);
-
-    const response = await chain.invoke(
-      {
-        queries: relevantDocs
-          .map(
-            (doc, index) =>
-              `<query-${index + 1}>\n<prompt>\n${doc.pageContent}\n</prompt>\n<description>${doc.metadata.description}</description></query-${index + 1}>`,
-          )
-          .join('\n'),
-        prompt: state.prompt,
-      },
-      config,
+    const response = stripThinkingTokens(
+      await invokeModel(
+        this.smartLLM,
+        renderPrompt(this.prompt, {
+          queries: relevantDocs
+            .map(
+              (doc, index) =>
+                `<query-${index + 1}>\n<prompt>\n${doc.pageContent}\n</prompt>\n<description>${doc.metadata.description}</description></query-${index + 1}>`,
+            )
+            .join('\n'),
+          prompt: state.prompt,
+        }),
+        {config},
+      ),
     );
 
     const [relevance, index] = response.split(' ');

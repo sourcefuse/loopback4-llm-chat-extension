@@ -7,7 +7,6 @@ import {
   post,
   requestBody,
 } from '@loopback/rest';
-import {BaseRetriever} from '@langchain/core/retrievers';
 import {
   CONTENT_TYPE,
   IAuthUserWithPermissions,
@@ -21,7 +20,7 @@ import {
   AuthenticationBindings,
 } from 'loopback4-authentication';
 import {authorize} from 'loopback4-authorization';
-import {VectorStore} from '@langchain/core/vectorstores';
+import {BaseRetriever, VectorStore} from '../../../vector';
 import {AiIntegrationBindings} from '../../../keys';
 import {PermissionKey} from '../../../permissions';
 import {QueryTemplateDTO, TemplatePlaceholderDTO} from '../models';

@@ -1,6 +1,6 @@
-import {RunnableConfig} from '@langchain/core/runnables';
 import {AnyObject} from '@loopback/repository';
 import {expect} from '@loopback/testlab';
+import {RunnableConfig} from '../../../graphs';
 import {GetTablesNode} from '../nodes';
 import {DatabaseSchema} from '../types';
 import {GetTableNodeTestCase} from './types';

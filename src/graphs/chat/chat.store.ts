@@ -1,4 +1,4 @@
-import {AIMessage, HumanMessage, ToolMessage} from '@langchain/core/messages';
+import {toolResultMessage, type ModelMessage} from '../messages';
 import {BindingScope, Getter, inject, injectable} from '@loopback/core';
 import {
   AnyObject,
@@ -112,7 +112,7 @@ export class ChatStore {
     return newMessage;
   }
 
-  async addHumanMessage(chatId: string, message: HumanMessage) {
+  async addHumanMessage(chatId: string, message: ModelMessage) {
     return this.addMessage(chatId, getTextContent(message.content), {
       type: MessageMetadataType.User,
     });
@@ -139,7 +139,7 @@ export class ChatStore {
     );
   }
 
-  async addAIMessage(chatId: string, message: AIMessage) {
+  async addAIMessage(chatId: string, message: ModelMessage) {
     let text = getTextContent(message.content);
     if (!text.trim()) {
       // empty message incase the LLM only returns tool calls
@@ -157,18 +157,18 @@ export class ChatStore {
 
   async addToolMessage(
     chatId: string,
-    message: ToolMessage,
+    toolResult: {toolName: string; toolCallId: string; content: string},
     metadata: AnyObject,
     aiMessage: Message,
     args?: AnyObject,
   ) {
     return this.addMessage(
       chatId,
-      getTextContent(message.content),
+      toolResult.content,
       {
         type: MessageMetadataType.Tool,
-        toolName: message.name!,
-        id: message.tool_call_id,
+        toolName: toolResult.toolName,
+        id: toolResult.toolCallId,
         args,
         ...metadata,
       },
@@ -189,35 +189,30 @@ export class ChatStore {
           );
         }
       }
-      return new HumanMessage({
-        content: messageContent,
-      });
+      return {role: 'user', content: messageContent};
     } else if (message.metadata?.type === MessageMetadataType.AI) {
-      const newMessage = new AIMessage(message.body.trim() ?? undefined);
-      newMessage.tool_calls =
-        message.messages
-          ?.filter(
-            (
-              v,
-            ): v is Message & {
-              metadata: ToolMessageMetadata;
-            } => v.metadata.type === MessageMetadataType.Tool,
-          )
-          .map(msg => {
-            return {
-              id: msg.metadata.id,
-              name: msg.metadata.toolName,
-              args: msg.metadata.args ?? {},
-            };
-          }) ?? [];
-      return newMessage;
+      const text = (message.body ?? '').trim();
+      const toolCalls = (message.messages ?? [])
+        .filter(
+          (v): v is Message & {metadata: ToolMessageMetadata} =>
+            v.metadata.type === MessageMetadataType.Tool,
+        )
+        .map(msg => ({
+          type: 'tool-call' as const,
+          toolCallId: msg.metadata.id,
+          toolName: msg.metadata.toolName,
+          input: msg.metadata.args ?? {},
+        }));
+      const content = toolCalls.length
+        ? [...(text ? [{type: 'text' as const, text}] : []), ...toolCalls]
+        : text;
+      return {role: 'assistant', content};
     } else if (message.metadata?.type === MessageMetadataType.Tool) {
-      return new ToolMessage({
-        name: message.metadata.toolName,
-        content: message.body,
-        // eslint-disable-next-line @typescript-eslint/naming-convention
-        tool_call_id: message.metadata.id,
-      });
+      return toolResultMessage(
+        message.metadata.id,
+        message.metadata.toolName,
+        message.body,
+      );
     } else {
       // do nothing for other types
     }

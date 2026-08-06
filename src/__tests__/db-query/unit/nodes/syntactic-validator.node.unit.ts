@@ -1,5 +1,5 @@
 import {juggler} from '@loopback/repository';
-import {expect, sinon} from '@loopback/testlab';
+import {expect} from '@loopback/testlab';
 import {
   DbQueryState,
   EvaluationResult,
@@ -7,17 +7,16 @@ import {
   SqliteConnector,
   SyntacticValidatorNode,
 } from '../../../../components';
-import {LLMProvider} from '../../../../types';
+import {createMockLLM, MockLLM} from '../../../test-helper';
 import {IAuthUserWithPermissions} from 'loopback4-authorization';
 
 describe('SyntacticValidatorNode Unit', function () {
   let node: SyntacticValidatorNode;
-  let llmStub: sinon.SinonStub;
+  let llm: MockLLM;
   let connector: IDbConnector;
 
   beforeEach(async () => {
-    llmStub = sinon.stub();
-    const llm = llmStub as unknown as LLMProvider;
+    llm = createMockLLM();
 
     const ds = new juggler.DataSource({
       connector: 'sqlite3',
@@ -39,7 +38,7 @@ describe('SyntacticValidatorNode Unit', function () {
       {} as unknown as IAuthUserWithPermissions,
     );
 
-    node = new SyntacticValidatorNode(llm, connector);
+    node = new SyntacticValidatorNode(llm.model, connector);
   });
 
   it('should return pass status in state if it is valid', async () => {
@@ -51,7 +50,7 @@ describe('SyntacticValidatorNode Unit', function () {
     } as unknown as DbQueryState;
 
     const result = await node.execute(state, {});
-    expect(llmStub.calledOnce).to.be.false();
+    expect(llm.calls).to.equal(0);
     expect(result).to.deepEqual({
       syntacticStatus: EvaluationResult.Pass,
     });
@@ -65,9 +64,9 @@ describe('SyntacticValidatorNode Unit', function () {
       },
     } as unknown as DbQueryState;
 
-    llmStub.resolves({
-      content: `<category>${EvaluationResult.TableError}</category>\n<tables>users</tables>`,
-    });
+    llm.setText(
+      `<category>${EvaluationResult.TableError}</category>\n<tables>users</tables>`,
+    );
 
     const result = await node.execute(state, {});
     expect(result.syntacticStatus).to.equal(EvaluationResult.TableError);
@@ -85,9 +84,9 @@ describe('SyntacticValidatorNode Unit', function () {
       },
     } as unknown as DbQueryState;
 
-    llmStub.resolves({
-      content: `<category>${EvaluationResult.QueryError}</category>\n<tables>users</tables>`,
-    });
+    llm.setText(
+      `<category>${EvaluationResult.QueryError}</category>\n<tables>users</tables>`,
+    );
 
     const result = await node.execute(state, {});
     expect(result.syntacticStatus).to.equal(EvaluationResult.QueryError);

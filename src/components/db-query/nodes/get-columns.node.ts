@@ -1,9 +1,13 @@
-import {PromptTemplate} from '@langchain/core/prompts';
-import {RunnableSequence} from '@langchain/core/runnables';
 import {inject} from '@loopback/context';
 import {service} from '@loopback/core';
 import {graphNode} from '../../../decorators';
-import {IGraphNode, LLMStreamEventType, RunnableConfig} from '../../../graphs';
+import {
+  IGraphNode,
+  invokeModel,
+  LLMStreamEventType,
+  renderPrompt,
+  RunnableConfig,
+} from '../../../graphs';
 import {AiIntegrationBindings} from '../../../keys';
 import {LLMProvider} from '../../../types';
 import {stripThinkingTokens} from '../../../utils';
@@ -32,7 +36,7 @@ export class GetColumnsNode implements IGraphNode<DbQueryState> {
     private readonly checks?: string[],
   ) {}
 
-  prompt = PromptTemplate.fromTemplate(`
+  prompt = `
 <instructions>
 You are an AI assistant that identifies relevant columns from database tables based on a user's query.
 Given a set of tables with their columns, you need to identify which columns are relevant to answer the user's query.
@@ -75,9 +79,9 @@ Example format (do not copy these exact values):
 
 In case of failure, return the failure message in the format:
 failed attempt: <reason for failure>
-</output-format>`);
+</output-format>`;
 
-  feedbackPrompt = PromptTemplate.fromTemplate(`
+  feedbackPrompt = `
 <feedback-instructions>
 We also need to consider the errors from last attempt at query generation.
 
@@ -89,7 +93,7 @@ But it was rejected with the following errors:
 
 Use these errors to refine your column selection. Consider if you need additional columns for joins, filtering, or calculations.
 </feedback-instructions>
-`);
+`;
 
   async execute(
     state: DbQueryState,
@@ -118,7 +122,6 @@ Use these errors to refine your column selection. Consider if you need additiona
       data: `Selecting relevant columns from ${Object.keys(state.schema.tables).length} tables`,
     });
 
-    const chain = RunnableSequence.from([this.prompt, this.llm]);
     config.writer?.({
       type: LLMStreamEventType.ToolStatus,
       data: {
@@ -131,17 +134,21 @@ Use these errors to refine your column selection. Consider if you need additiona
 
     while (attempts < 3) {
       attempts++;
-      const result = await chain.invoke({
-        tablesWithColumns: tablesWithColumns.join('\n\n'),
-        query: state.prompt,
-        feedbacks: await this.getFeedbacks(state),
-        checks: [
-          `<must-follow-rules>`,
-          ...(this.checks ?? []),
-          ...this.schemaHelper.getTablesContext(state.schema),
-          `</must-follow-rules>`,
-        ].join('\n'),
-      });
+      const result = await invokeModel(
+        this.llm,
+        renderPrompt(this.prompt, {
+          tablesWithColumns: tablesWithColumns.join('\n\n'),
+          query: state.prompt,
+          feedbacks: await this.getFeedbacks(state),
+          checks: [
+            `<must-follow-rules>`,
+            ...(this.checks ?? []),
+            ...this.schemaHelper.getTablesContext(state.schema),
+            `</must-follow-rules>`,
+          ].join('\n'),
+        }),
+        {config},
+      );
 
       const output = stripThinkingTokens(result);
 
@@ -220,7 +227,7 @@ Use these errors to refine your column selection. Consider if you need additiona
   async getFeedbacks(state: DbQueryState) {
     if (state.feedbacks) {
       const lastColumns = this._getSelectedColumnsFromSchema(state.schema);
-      const feedbacks = await this.feedbackPrompt.format({
+      const feedbacks = renderPrompt(this.feedbackPrompt, {
         feedback: state.feedbacks.join('\n'),
         lastColumns: JSON.stringify(lastColumns, null, 2),
       });

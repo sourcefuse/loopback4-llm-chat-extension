@@ -8,16 +8,15 @@ import {
   DbSchemaHelperService,
   TableSearchService,
 } from '../../../../components/db-query/services';
-import {LLMProvider} from '../../../../types';
+import {createMockLLM, MockLLM} from '../../../test-helper';
 
 describe('SemanticValidatorNode Unit', function () {
   let node: SemanticValidatorNode;
-  let llmStub: sinon.SinonStub;
+  let llm: MockLLM;
   let tableSearchStub: sinon.SinonStubbedInstance<TableSearchService>;
 
   beforeEach(() => {
-    llmStub = sinon.stub();
-    const llm = llmStub as unknown as LLMProvider;
+    llm = createMockLLM();
     const schemaHelper = {
       asString: sinon.stub().returns(''),
     } as unknown as DbSchemaHelperService;
@@ -25,8 +24,8 @@ describe('SemanticValidatorNode Unit', function () {
     tableSearchStub.getTables.resolves([]);
 
     node = new SemanticValidatorNode(
-      llm,
-      llm,
+      llm.model,
+      llm.model,
       {models: []},
       tableSearchStub,
       schemaHelper,
@@ -65,14 +64,12 @@ describe('SemanticValidatorNode Unit', function () {
       validationChecklist: '1. Query selects all users',
       changeType: undefined,
     };
-    llmStub.resolves({
-      content: '<valid/>',
-    });
+    llm.setText('<valid/>');
 
     const result = await node.execute(state, {});
 
     expect(result.semanticStatus).to.equal(EvaluationResult.Pass);
-    sinon.assert.calledOnce(llmStub);
+    expect(llm.calls).to.equal(1);
   });
 
   it('should return QueryError if the query is invalid', async () => {
@@ -107,26 +104,25 @@ describe('SemanticValidatorNode Unit', function () {
       validationChecklist: '1. Query selects from users table',
       changeType: undefined,
     };
-    llmStub.resolves({
-      content:
-        '<invalid>\n- Query selects from wrong table. Should select from users table instead.\n</invalid>\n<tables>users</tables>',
-    });
+    llm.setText(
+      '<invalid>\n- Query selects from wrong table. Should select from users table instead.\n</invalid>\n<tables>users</tables>',
+    );
 
     const result = await node.execute(state, {});
 
     expect(result.semanticStatus).to.equal(EvaluationResult.QueryError);
     expect(result.semanticErrorTables).to.deepEqual(['users']);
-    sinon.assert.calledOnce(llmStub);
+    expect(llm.calls).to.equal(1);
 
-    const prompt = llmStub.firstCall.args[0];
+    const prompt = llm.prompts[0];
     // Verify the prompt contains the user question, checklist, SQL, schema, and table names
-    expect(prompt.value).to.containEql(state.sql);
-    expect(prompt.value).to.containEql(state.prompt);
-    expect(prompt.value).to.containEql('1. Query selects from users table');
-    expect(prompt.value).to.containEql('<database-schema>');
-    expect(prompt.value).to.containEql('<user-question>');
-    expect(prompt.value).to.containEql('<available-tables>');
-    expect(prompt.value).to.containEql('users, orders');
+    expect(prompt).to.containEql(state.sql);
+    expect(prompt).to.containEql(state.prompt);
+    expect(prompt).to.containEql('1. Query selects from users table');
+    expect(prompt).to.containEql('<database-schema>');
+    expect(prompt).to.containEql('<user-question>');
+    expect(prompt).to.containEql('<available-tables>');
+    expect(prompt).to.containEql('users, orders');
   });
 
   it('should include feedbacks in the prompt', async () => {
@@ -157,15 +153,13 @@ describe('SemanticValidatorNode Unit', function () {
       validationChecklist: '1. Query selects all users',
       changeType: undefined,
     };
-    llmStub.resolves({
-      content: '<valid/>',
-    });
+    llm.setText('<valid/>');
 
     await node.execute(state, {});
 
-    sinon.assert.calledOnce(llmStub);
-    const prompt = llmStub.firstCall.args[0];
-    expect(prompt.value).to.containEql('the previous query was wrong');
+    expect(llm.calls).to.equal(1);
+    const prompt = llm.prompts[0];
+    expect(prompt).to.containEql('the previous query was wrong');
   });
 
   it('should pass all accessible tables from tableSearchService into available-tables so LLM can flag missing ones', async () => {
@@ -183,8 +177,8 @@ describe('SemanticValidatorNode Unit', function () {
     } as unknown as DbSchemaHelperService;
 
     const nodeWithTables = new SemanticValidatorNode(
-      llmStub as unknown as LLMProvider,
-      llmStub as unknown as LLMProvider,
+      llm.model,
+      llm.model,
       {models: []},
       tableSearchStub,
       schemaHelper,
@@ -218,7 +212,7 @@ describe('SemanticValidatorNode Unit', function () {
       changeType: undefined,
     };
 
-    llmStub.resolves({content: '<valid/>'});
+    llm.setText('<valid/>');
 
     await nodeWithTables.execute(state, {});
 
@@ -227,10 +221,10 @@ describe('SemanticValidatorNode Unit', function () {
       'Get revenue per user',
     );
 
-    sinon.assert.calledOnce(llmStub);
-    const prompt = llmStub.firstCall.args[0];
-    expect(prompt.value).to.containEql('<available-tables>');
-    expect(prompt.value).to.containEql(
+    expect(llm.calls).to.equal(1);
+    const prompt = llm.prompts[0];
+    expect(prompt).to.containEql('<available-tables>');
+    expect(prompt).to.containEql(
       'public.users, public.orders, public.payments, analytics.reports',
     );
   });

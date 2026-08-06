@@ -1,9 +1,12 @@
-import {PromptTemplate} from '@langchain/core/prompts';
-import {RunnableSequence} from '@langchain/core/runnables';
-import {LangGraphRunnableConfig} from '@langchain/langgraph';
 import {inject} from '@loopback/core';
 import {graphNode} from '../../../decorators';
-import {IGraphNode, LLMStreamEventType} from '../../../graphs';
+import {
+  IGraphNode,
+  invokeModel,
+  LLMStreamEventType,
+  renderPrompt,
+  RunnableConfig,
+} from '../../../graphs';
 import {AiIntegrationBindings} from '../../../keys';
 import {LLMProvider} from '../../../types';
 import {stripThinkingTokens} from '../../../utils';
@@ -13,7 +16,7 @@ import {ChangeType} from '../types';
 
 @graphNode(DbQueryNodes.ClassifyChange)
 export class ClassifyChangeNode implements IGraphNode<DbQueryState> {
-  prompt = PromptTemplate.fromTemplate(`
+  prompt = `
 <instructions>
 You are given the original description of a SQL query and a new description that includes user feedback.
 Your task is to classify the level of change required to transform the original query into the new one.
@@ -35,7 +38,7 @@ Classify as one of:
 <output-instructions>
 Return ONLY one of: minor, major, rewrite
 Do not include any other text, explanation, or formatting.
-</output-instructions>`);
+</output-instructions>`;
 
   constructor(
     @inject(AiIntegrationBindings.CheapLLM)
@@ -44,7 +47,7 @@ Do not include any other text, explanation, or formatting.
 
   async execute(
     state: DbQueryState,
-    config: LangGraphRunnableConfig,
+    config: RunnableConfig,
   ): Promise<DbQueryState> {
     if (!state.sampleSql) {
       return {} as DbQueryState;
@@ -55,11 +58,14 @@ Do not include any other text, explanation, or formatting.
       data: 'Classifying the level of change required for the query.',
     });
 
-    const chain = RunnableSequence.from([this.prompt, this.llm]);
-    const output = await chain.invoke({
-      originalDescription: state.sampleSqlPrompt ?? '',
-      newDescription: state.prompt,
-    });
+    const output = await invokeModel(
+      this.llm,
+      renderPrompt(this.prompt, {
+        originalDescription: state.sampleSqlPrompt ?? '',
+        newDescription: state.prompt,
+      }),
+      {config},
+    );
 
     const response = stripThinkingTokens(output).trim().toLowerCase();
     const changeType = this.parseChangeType(response);

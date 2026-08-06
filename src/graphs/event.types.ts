@@ -61,6 +61,18 @@ export type LLMStreamInitEvent = {
   };
 };
 
+/**
+ * Catch-all event shape. The node stream previously flowed through LangGraph's
+ * untyped custom writer, so nodes emit some events (e.g. `Error`, or a
+ * `ToolStatus` without an `id`) that don't match a specific variant above. This
+ * member keeps every `{type, data}` emission valid while preserving the typed
+ * variants for consumers that narrow on `type`.
+ */
+export type LLMStreamCustomEvent = {
+  type: LLMStreamEventType;
+  data?: unknown;
+};
+
 export type LLMStreamEvent =
   | LLMStreamInitEvent
   | LLMStreamMessageEvent
@@ -68,4 +80,5 @@ export type LLMStreamEvent =
   | LLMStreamToolEvent
   | LLMStreamToolStatusEvent
   | LLMStreamLogEvent
-  | LLMStreamTokenCountEvent;
+  | LLMStreamTokenCountEvent
+  | LLMStreamCustomEvent;

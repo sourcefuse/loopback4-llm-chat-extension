@@ -1,9 +1,12 @@
-import {PromptTemplate} from '@langchain/core/prompts';
-import {RunnableSequence} from '@langchain/core/runnables';
-import {LangGraphRunnableConfig} from '@langchain/langgraph';
 import {inject} from '@loopback/context';
 import {graphNode} from '../../../decorators';
-import {IGraphNode, LLMStreamEventType} from '../../../graphs';
+import {
+  IGraphNode,
+  invokeModel,
+  LLMStreamEventType,
+  renderPrompt,
+  RunnableConfig,
+} from '../../../graphs';
 import {AiIntegrationBindings} from '../../../keys';
 import {LLMProvider} from '../../../types';
 import {stripThinkingTokens} from '../../../utils';
@@ -21,8 +24,7 @@ export class SyntacticValidatorNode implements IGraphNode<DbQueryState> {
     private readonly connector: IDbConnector,
   ) {}
 
-  prompt =
-    PromptTemplate.fromTemplate(`You are an AI assistant that categorizes the SQL query error and identifies related tables.
+  prompt = `You are an AI assistant that categorizes the SQL query error and identifies related tables.
 
 Here is the SQL query error that you need to categorize -
 {error}
@@ -42,11 +44,11 @@ Also identify ALL tables that are related to the error. Be generous - include ta
 Return your response in exactly this format with no other text:
 <category>table_not_found or query_error</category>
 <tables>comma, separated, table, names</tables>
-`);
+`;
 
   async execute(
     state: DbQueryState,
-    config: LangGraphRunnableConfig,
+    config: RunnableConfig,
   ): Promise<DbQueryState> {
     config.writer?.({
       type: LLMStreamEventType.ToolStatus,
@@ -70,12 +72,15 @@ Return your response in exactly this format with no other text:
       } as DbQueryState;
     } catch (error) {
       const tableNames = Object.keys(state.schema?.tables ?? {});
-      const chain = RunnableSequence.from([this.prompt, this.llm]);
-      const output = await chain.invoke({
-        error: error.message,
-        query: state.sql,
-        tableNames: tableNames.join(', '),
-      });
+      const output = await invokeModel(
+        this.llm,
+        renderPrompt(this.prompt, {
+          error: error.message,
+          query: state.sql,
+          tableNames: tableNames.join(', '),
+        }),
+        {config},
+      );
       const result = stripThinkingTokens(output);
 
       const categoryMatch = /<category>(.*?)<\/category>/s.exec(result);

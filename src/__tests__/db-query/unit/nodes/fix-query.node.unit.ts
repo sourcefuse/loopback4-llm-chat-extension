@@ -1,5 +1,4 @@
 import {expect, sinon} from '@loopback/testlab';
-import {LangGraphRunnableConfig} from '@langchain/langgraph';
 import {
   EvaluationResult,
   FixQueryNode,
@@ -7,23 +6,23 @@ import {
 } from '../../../../components';
 import {DbSchemaHelperService} from '../../../../components/db-query/services';
 import {DbQueryState} from '../../../../components/db-query/state';
-import {LLMProvider, SupportedDBs} from '../../../../types';
+import {SupportedDBs} from '../../../../types';
+import {createMockLLM, MockLLM} from '../../../test-helper';
 
 describe('FixQueryNode Unit', function () {
   let node: FixQueryNode;
-  let llmStub: sinon.SinonStub;
+  let llm: MockLLM;
   let schemaHelper: DbSchemaHelperService;
 
   beforeEach(() => {
-    llmStub = sinon.stub();
-    const llm = llmStub as unknown as LLMProvider;
+    llm = createMockLLM();
     schemaHelper = {
       asString: sinon.stub().returns('CREATE TABLE users (id INT, name TEXT);'),
       getTablesContext: sinon.stub().returns([]),
     } as unknown as DbSchemaHelperService;
 
     node = new FixQueryNode(
-      llm,
+      llm.model,
       {
         db: {dialect: SupportedDBs.PostgreSQL},
         models: [],
@@ -37,9 +36,7 @@ describe('FixQueryNode Unit', function () {
   });
 
   it('should fix a query and return Pass status with corrected SQL', async () => {
-    llmStub.resolves({
-      content: 'SELECT id, name FROM users WHERE id = 1;',
-    });
+    llm.setText('SELECT id, name FROM users WHERE id = 1;');
 
     const state = {
       prompt: 'Get user by id 1',
@@ -67,20 +64,15 @@ describe('FixQueryNode Unit', function () {
       validationChecklist: undefined,
     };
 
-    const result = await node.execute(
-      state as unknown as DbQueryState,
-      {} as LangGraphRunnableConfig,
-    );
+    const result = await node.execute(state as unknown as DbQueryState, {});
 
     expect(result.status).to.equal(EvaluationResult.Pass);
     expect(result.sql).to.equal('SELECT id, name FROM users WHERE id = 1;');
-    sinon.assert.calledOnce(llmStub);
+    expect(llm.calls).to.equal(1);
   });
 
   it('should return Failed status when LLM returns empty response', async () => {
-    llmStub.resolves({
-      content: '',
-    });
+    llm.setText('');
 
     const state = {
       prompt: 'Get user by id 1',
@@ -92,19 +84,14 @@ describe('FixQueryNode Unit', function () {
       validationChecklist: undefined,
     };
 
-    const result = await node.execute(
-      state as unknown as DbQueryState,
-      {} as LangGraphRunnableConfig,
-    );
+    const result = await node.execute(state as unknown as DbQueryState, {});
 
     expect(result.status).to.equal(GenerationError.Failed);
     expect(result.replyToUser).to.containEql('Failed to fix SQL query');
   });
 
   it('should strip markdown code fences from the LLM response', async () => {
-    llmStub.resolves({
-      content: '```sql\nSELECT * FROM users WHERE id = 1;\n```',
-    });
+    llm.setText('```sql\nSELECT * FROM users WHERE id = 1;\n```');
 
     const state = {
       prompt: 'Get user by id 1',
@@ -127,18 +114,13 @@ describe('FixQueryNode Unit', function () {
       validationChecklist: undefined,
     };
 
-    const result = await node.execute(
-      state as unknown as DbQueryState,
-      {} as LangGraphRunnableConfig,
-    );
+    const result = await node.execute(state as unknown as DbQueryState, {});
 
     expect(result.sql).to.equal('SELECT * FROM users WHERE id = 1;');
   });
 
   it('should trim schema to only error-related tables', async () => {
-    llmStub.resolves({
-      content: 'SELECT u.id, u.name FROM users u;',
-    });
+    llm.setText('SELECT u.id, u.name FROM users u;');
 
     const state = {
       prompt: 'Get users',
@@ -188,10 +170,7 @@ describe('FixQueryNode Unit', function () {
       validationChecklist: undefined,
     };
 
-    await node.execute(
-      state as unknown as DbQueryState,
-      {} as LangGraphRunnableConfig,
-    );
+    await node.execute(state as unknown as DbQueryState, {});
 
     // Verify schemaHelper.asString was called with trimmed schema containing only error tables
     const asStringStub = schemaHelper.asString as sinon.SinonStub;
@@ -203,9 +182,9 @@ describe('FixQueryNode Unit', function () {
   });
 
   it('should merge syntactic and semantic error tables', async () => {
-    llmStub.resolves({
-      content: 'SELECT * FROM users JOIN orders ON users.id = orders.user_id;',
-    });
+    llm.setText(
+      'SELECT * FROM users JOIN orders ON users.id = orders.user_id;',
+    );
 
     const state = {
       prompt: 'Get users with orders',
@@ -242,10 +221,7 @@ describe('FixQueryNode Unit', function () {
       validationChecklist: undefined,
     };
 
-    await node.execute(
-      state as unknown as DbQueryState,
-      {} as LangGraphRunnableConfig,
-    );
+    await node.execute(state as unknown as DbQueryState, {});
 
     const asStringStub = schemaHelper.asString as sinon.SinonStub;
     const trimmedSchema = asStringStub.firstCall.args[0];
@@ -256,9 +232,7 @@ describe('FixQueryNode Unit', function () {
   });
 
   it('should include validation checklist in the prompt when available', async () => {
-    llmStub.resolves({
-      content: 'SELECT * FROM users;',
-    });
+    llm.setText('SELECT * FROM users;');
 
     const state = {
       prompt: 'Get all users',
@@ -271,20 +245,15 @@ describe('FixQueryNode Unit', function () {
         '1. Always use full table names\n2. Include id column',
     };
 
-    await node.execute(
-      state as unknown as DbQueryState,
-      {} as LangGraphRunnableConfig,
-    );
+    await node.execute(state as unknown as DbQueryState, {});
 
-    const prompt = llmStub.firstCall.args[0];
-    expect(prompt.value).to.containEql('Always use full table names');
-    expect(prompt.value).to.containEql('Include id column');
+    const prompt = llm.prompts[0];
+    expect(prompt).to.containEql('Always use full table names');
+    expect(prompt).to.containEql('Include id column');
   });
 
   it('should include historical errors in the prompt when multiple feedbacks exist', async () => {
-    llmStub.resolves({
-      content: 'SELECT * FROM users WHERE id = 1;',
-    });
+    llm.setText('SELECT * FROM users WHERE id = 1;');
 
     const state = {
       prompt: 'Get user by id',
@@ -300,23 +269,18 @@ describe('FixQueryNode Unit', function () {
       validationChecklist: undefined,
     };
 
-    await node.execute(
-      state as unknown as DbQueryState,
-      {} as LangGraphRunnableConfig,
-    );
+    await node.execute(state as unknown as DbQueryState, {});
 
-    const prompt = llmStub.firstCall.args[0];
+    const prompt = llm.prompts[0];
     // Last feedback is the current error
-    expect(prompt.value).to.containEql('Third error: still wrong');
+    expect(prompt).to.containEql('Third error: still wrong');
     // Historical errors should be included
-    expect(prompt.value).to.containEql('First error: syntax issue');
-    expect(prompt.value).to.containEql('Second error: wrong operator');
+    expect(prompt).to.containEql('First error: syntax issue');
+    expect(prompt).to.containEql('Second error: wrong operator');
   });
 
   it('should handle empty error tables gracefully', async () => {
-    llmStub.resolves({
-      content: 'SELECT * FROM users;',
-    });
+    llm.setText('SELECT * FROM users;');
 
     const state = {
       prompt: 'Get all users',
@@ -339,10 +303,7 @@ describe('FixQueryNode Unit', function () {
       validationChecklist: undefined,
     };
 
-    await node.execute(
-      state as unknown as DbQueryState,
-      {} as LangGraphRunnableConfig,
-    );
+    await node.execute(state as unknown as DbQueryState, {});
 
     const asStringStub = schemaHelper.asString as sinon.SinonStub;
     const trimmedSchema = asStringStub.firstCall.args[0];
@@ -350,9 +311,7 @@ describe('FixQueryNode Unit', function () {
   });
 
   it('should pass the current query and prompt to the LLM', async () => {
-    llmStub.resolves({
-      content: 'SELECT * FROM users;',
-    });
+    llm.setText('SELECT * FROM users;');
 
     const state = {
       prompt: 'Get all active users',
@@ -364,16 +323,11 @@ describe('FixQueryNode Unit', function () {
       validationChecklist: undefined,
     };
 
-    await node.execute(
-      state as unknown as DbQueryState,
-      {} as LangGraphRunnableConfig,
-    );
+    await node.execute(state as unknown as DbQueryState, {});
 
-    const prompt = llmStub.firstCall.args[0];
-    expect(prompt.value).to.containEql('Get all active users');
-    expect(prompt.value).to.containEql(
-      'SELECT * FROM usr WHERE active = true;',
-    );
-    expect(prompt.value).to.containEql('Table usr does not exist');
+    const prompt = llm.prompts[0];
+    expect(prompt).to.containEql('Get all active users');
+    expect(prompt).to.containEql('SELECT * FROM usr WHERE active = true;');
+    expect(prompt).to.containEql('Table usr does not exist');
   });
 });

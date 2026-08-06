@@ -1,4 +1,3 @@
-import {AIMessage, ToolMessage} from '@langchain/core/messages';
 import {HttpErrors} from '@loopback/rest';
 import {
   createStubInstance,
@@ -7,6 +6,7 @@ import {
   StubbedInstanceWithSinonAccessor,
 } from '@loopback/testlab'; // Changed import
 import {Message} from '@sourceloop/chat-service';
+import {toolResultMessage} from '../../../graphs/messages';
 import {ChatStore} from '../../../graphs/chat/chat.store';
 import {RunToolNode} from '../../../graphs/chat/nodes/run-tool.node';
 import {ChatState} from '../../../graphs/state';
@@ -43,7 +43,7 @@ describe('RunToolNode Unit', () => {
     const state = {
       id: 'testId',
       aiMessage: new Message(),
-      messages: [new AIMessage({content: 'hello'})],
+      messages: [{role: 'assistant', content: 'hello'}],
     } as unknown as ChatState;
     const config = {} as RunnableConfig;
     const result = await runToolNode.execute(state, config);
@@ -63,7 +63,7 @@ describe('RunToolNode Unit', () => {
 
   it('should throw an error if no chat ID found in state', async () => {
     const state = {
-      messages: [new AIMessage({content: 'hello'})],
+      messages: [{role: 'assistant', content: 'hello'}],
       aiMessage: new Message(),
     } as unknown as ChatState;
     const config = {} as RunnableConfig;
@@ -87,19 +87,20 @@ describe('RunToolNode Unit', () => {
     const state: ChatState = {
       id: 'testId',
       messages: [
-        new AIMessage({
-          content: 'hello',
-          // eslint-disable-next-line @typescript-eslint/naming-convention
-          tool_calls: [
+        {
+          role: 'assistant',
+          content: [
+            {type: 'text', text: 'hello'},
             {
-              id: 'toolCallId',
-              name: 'testTool',
-              args: {input: 'test input'},
+              type: 'tool-call',
+              toolCallId: 'toolCallId',
+              toolName: 'testTool',
+              input: {input: 'test input'},
             },
           ],
-        }),
+        },
       ],
-      aiMessage: new AIMessage({content: 'hello'}),
+      aiMessage: new Message(),
     } as unknown as ChatState;
     const config = {
       writer: writerStub,
@@ -111,15 +112,13 @@ describe('RunToolNode Unit', () => {
     const calls = chatStore.stubs.addToolMessage.getCalls();
     expect(calls).to.have.length(1);
     expect(calls[0].args[0]).to.equal('testId');
-    expect(calls[0].args[1]).to.be.instanceOf(ToolMessage);
-    expect(calls[0].args[1].name).to.equal('testTool');
+    expect(calls[0].args[1]).to.deepEqual({
+      toolName: 'testTool',
+      toolCallId: 'toolCallId',
+      content: 'tool output',
+    });
     expect(result.messages).to.deepEqual([
-      new ToolMessage({
-        name: 'testTool',
-        content: 'tool output',
-        // eslint-disable-next-line @typescript-eslint/naming-convention
-        tool_call_id: 'toolCallId',
-      }),
+      toolResultMessage('toolCallId', 'testTool', 'tool output'),
     ]);
   });
 });

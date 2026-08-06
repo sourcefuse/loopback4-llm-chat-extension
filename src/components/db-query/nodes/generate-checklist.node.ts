@@ -1,13 +1,16 @@
-import {PromptTemplate} from '@langchain/core/prompts';
-import {RunnableSequence} from '@langchain/core/runnables';
-import {LangGraphRunnableConfig} from '@langchain/langgraph';
 import {inject, service} from '@loopback/core';
 import {graphNode} from '../../../decorators';
-import {IGraphNode, LLMStreamEventType} from '../../../graphs';
+import {
+  ModelMessage,
+  IGraphNode,
+  invokeModel,
+  LLMStreamEventType,
+  renderPrompt,
+  RunnableConfig,
+} from '../../../graphs';
 import {AiIntegrationBindings} from '../../../keys';
 import {LLMProvider} from '../../../types';
 import {stripThinkingTokens} from '../../../utils';
-import {AIMessage} from '@langchain/core/messages';
 import {DbQueryAIExtensionBindings} from '../keys';
 import {DbQueryNodes} from '../nodes.enum';
 import {DbSchemaHelperService} from '../services';
@@ -27,7 +30,7 @@ export class GenerateChecklistNode implements IGraphNode<DbQueryState> {
     private readonly checks?: string[],
   ) {}
 
-  prompt = PromptTemplate.fromTemplate(`
+  prompt = `
 <instructions>
 You are given a user question, the tables selected for SQL generation, the relevant database schema, and a numbered list of rules/checks.
 Return ONLY the indexes of the rules that are relevant to the user's question, the selected tables, and the given schema.
@@ -63,11 +66,11 @@ Return only a comma-separated list of the relevant rule indexes.
 Do not include any other text, explanation, or formatting.
 Example: 1,3,5
 If no rules are relevant, return: none
-</output-instructions>`);
+</output-instructions>`;
 
   async execute(
     state: DbQueryState,
-    config: LangGraphRunnableConfig,
+    config: RunnableConfig,
   ): Promise<DbQueryState> {
     const empty = {} as DbQueryState;
     if (this.config.nodes?.generateChecklistNode?.enabled === false) {
@@ -96,7 +99,11 @@ If no rules are relevant, return: none
       data: 'Filtering validation checklist for semantic validation.',
     });
 
-    const mergedIndexes = await this.runParallelChecklist(state, allChecks);
+    const mergedIndexes = await this.runParallelChecklist(
+      state,
+      allChecks,
+      config,
+    );
 
     if (mergedIndexes.size === 0) {
       return empty;
@@ -113,6 +120,7 @@ If no rules are relevant, return: none
   private async runParallelChecklist(
     state: DbQueryState,
     allChecks: string[],
+    config: RunnableConfig,
   ): Promise<Set<number>> {
     const indexedChecks = allChecks
       .map((check, i) => `${i + 1}. ${check}`)
@@ -121,7 +129,6 @@ If no rules are relevant, return: none
     const parallelism =
       this.config.nodes?.generateChecklistNode?.parallelism ?? 1;
 
-    const chain = RunnableSequence.from([this.prompt, this.llm]);
     const invokeArgs = {
       prompt: state.prompt,
       tables: Object.keys(state.schema?.tables ?? {}).join(', '),
@@ -130,7 +137,9 @@ If no rules are relevant, return: none
     };
 
     const results = await Promise.all(
-      Array.from({length: parallelism}, () => chain.invoke(invokeArgs)),
+      Array.from({length: parallelism}, () =>
+        invokeModel(this.llm, renderPrompt(this.prompt, invokeArgs), {config}),
+      ),
     );
 
     const mergedIndexes = new Set<number>();
@@ -142,7 +151,7 @@ If no rules are relevant, return: none
     return mergedIndexes;
   }
 
-  private parseIndexes(output: AIMessage, maxIndex: number): number[] {
+  private parseIndexes(output: ModelMessage, maxIndex: number): number[] {
     const response = stripThinkingTokens(output).trim();
     if (!response || response === 'none') return [];
     return response

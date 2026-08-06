@@ -6,17 +6,17 @@ import {
   SqlGenerationNode,
   SqliteConnector,
 } from '../../../../components';
-import {LLMProvider, SupportedDBs} from '../../../../types';
+import {SupportedDBs} from '../../../../types';
+import {createMockLLM, MockLLM} from '../../../test-helper';
 import {IAuthUserWithPermissions} from 'loopback4-authorization';
 
 describe('SqlGenerationNode Unit', function () {
   let node: SqlGenerationNode;
-  let llmStub: sinon.SinonStub;
+  let llm: MockLLM;
   let schemaHelper: DbSchemaHelperService;
 
   beforeEach(() => {
-    llmStub = sinon.stub();
-    const llm = llmStub as unknown as LLMProvider;
+    llm = createMockLLM();
 
     schemaHelper = new DbSchemaHelperService(
       new SqliteConnector(
@@ -37,8 +37,8 @@ describe('SqlGenerationNode Unit', function () {
       .returns(['Table employees contains employee information']);
 
     node = new SqlGenerationNode(
-      llm,
-      llm,
+      llm.model,
+      llm.model,
       {
         db: {
           dialect: SupportedDBs.SQLite,
@@ -55,9 +55,7 @@ describe('SqlGenerationNode Unit', function () {
   });
 
   it('should generate SQL query based on the provided prompt', async () => {
-    llmStub.resolves({
-      content: '<think>thinking about it</think>SELECT * FROM employees;',
-    });
+    llm.setText('<think>thinking about it</think>SELECT * FROM employees;');
 
     const state = {
       prompt: 'Generate a SQL query to select all employees',
@@ -105,9 +103,9 @@ describe('SqlGenerationNode Unit', function () {
 
     expect(result.sql).to.equal('SELECT * FROM employees;');
 
-    sinon.assert.calledOnce(llmStub);
-    const prompt = llmStub.firstCall.args[0];
-    expect(prompt.value).to.eql(`
+    expect(llm.calls).to.equal(1);
+    const prompt = llm.prompts[0];
+    expect(prompt).to.eql(`
 <instructions>
 You are an expert AI assistant that generates SQL queries based on user questions and a given database schema.
 You try to following the instructions carefully to generate the SQL query that answers the question.
@@ -149,9 +147,7 @@ It should have no other character or symbol or character that is not part of SQL
   });
 
   it('should generate SQL query based on the provided prompt with a single feedback from some validation stage', async () => {
-    llmStub.resolves({
-      content: '<think>thinking about it</think>SELECT * FROM employees;',
-    });
+    llm.setText('<think>thinking about it</think>SELECT * FROM employees;');
 
     const state = {
       prompt: 'Generate a SQL query to select all employees',
@@ -199,9 +195,9 @@ It should have no other character or symbol or character that is not part of SQL
 
     expect(result.sql).to.equal('SELECT * FROM employees;');
 
-    sinon.assert.calledOnce(llmStub);
-    const prompt = llmStub.firstCall.args[0];
-    expect(prompt.value).to.eql(`
+    expect(llm.calls).to.equal(1);
+    const prompt = llm.prompts[0];
+    expect(prompt).to.eql(`
 <instructions>
 You are an expert AI assistant that generates SQL queries based on user questions and a given database schema.
 You try to following the instructions carefully to generate the SQL query that answers the question.
@@ -257,9 +253,7 @@ It should have no other character or symbol or character that is not part of SQL
   });
 
   it('should generate SQL query based on the provided prompt with a multiple feedbacks from from previous loops', async () => {
-    llmStub.resolves({
-      content: '<think>thinking about it</think>SELECT * FROM employees;',
-    });
+    llm.setText('<think>thinking about it</think>SELECT * FROM employees;');
 
     const state = {
       prompt: 'Generate a SQL query to select all employees',
@@ -311,9 +305,9 @@ It should have no other character or symbol or character that is not part of SQL
 
     expect(result.sql).to.equal('SELECT * FROM employees;');
 
-    sinon.assert.calledOnce(llmStub);
-    const prompt = llmStub.firstCall.args[0];
-    expect(prompt.value).to.eql(`
+    expect(llm.calls).to.equal(1);
+    const prompt = llm.prompts[0];
+    expect(prompt).to.eql(`
 <instructions>
 You are an expert AI assistant that generates SQL queries based on user questions and a given database schema.
 You try to following the instructions carefully to generate the SQL query that answers the question.
@@ -373,9 +367,7 @@ It should have no other character or symbol or character that is not part of SQL
   });
 
   it('should generate SQL query with sample queries when no feedbacks but has sample SQL', async () => {
-    llmStub.resolves({
-      content: '<think>thinking about it</think>SELECT * FROM employees;',
-    });
+    llm.setText('<think>thinking about it</think>SELECT * FROM employees;');
 
     const state = {
       prompt: 'Generate a SQL query to select all employees',
@@ -423,21 +415,19 @@ It should have no other character or symbol or character that is not part of SQL
 
     expect(result.sql).to.equal('SELECT * FROM employees;');
 
-    sinon.assert.calledOnce(llmStub);
-    const prompt = llmStub.firstCall.args[0];
-    expect(prompt.value).to.match(
+    expect(llm.calls).to.equal(1);
+    const prompt = llm.prompts[0];
+    expect(prompt).to.match(
       /Here is an example query for reference that is similar to the question asked and has been validated by the user/,
     );
-    expect(prompt.value).to.match(/SELECT name FROM employees WHERE id = 1/);
-    expect(prompt.value).to.match(
+    expect(prompt).to.match(/SELECT name FROM employees WHERE id = 1/);
+    expect(prompt).to.match(
       /This was generated for the following question - \nGet employee name by id/,
     );
   });
 
   it('should generate SQL query with baseline sample queries when no feedbacks and not from cache', async () => {
-    llmStub.resolves({
-      content: '<think>thinking about it</think>SELECT * FROM employees;',
-    });
+    llm.setText('<think>thinking about it</think>SELECT * FROM employees;');
 
     const state = {
       prompt: 'Generate a SQL query to select all employees',
@@ -485,34 +475,31 @@ It should have no other character or symbol or character that is not part of SQL
 
     expect(result.sql).to.equal('SELECT * FROM employees;');
 
-    sinon.assert.calledOnce(llmStub);
-    const prompt = llmStub.firstCall.args[0];
-    expect(prompt.value).to.match(
+    expect(llm.calls).to.equal(1);
+    const prompt = llm.prompts[0];
+    expect(prompt).to.match(
       /Here is the last valid SQL query that was generated for the user that is supposed to be used as the base line for the next query generation\./,
     );
-    expect(prompt.value).to.match(/SELECT name FROM employees WHERE id = 1/);
-    expect(prompt.value).to.match(
+    expect(prompt).to.match(/SELECT name FROM employees WHERE id = 1/);
+    expect(prompt).to.match(
       /This was generated for the following question - \nGet employee name by id/,
     );
   });
 
   describe('Cheap LLM usage optimization', () => {
-    let smartLLMStub: sinon.SinonStub;
-    let cheapLLMStub: sinon.SinonStub;
+    let smartLLM: MockLLM;
+    let cheapLLM: MockLLM;
     let nodeWithTwoLLMs: SqlGenerationNode;
     let originalEnv: string | undefined;
 
     beforeEach(() => {
-      smartLLMStub = sinon.stub();
-      cheapLLMStub = sinon.stub();
+      smartLLM = createMockLLM();
+      cheapLLM = createMockLLM();
       originalEnv = process.env.OPTIMIZE_CACHED_QUERIES;
 
-      const smartLLM = smartLLMStub as unknown as LLMProvider;
-      const cheapLLM = cheapLLMStub as unknown as LLMProvider;
-
       nodeWithTwoLLMs = new SqlGenerationNode(
-        smartLLM,
-        cheapLLM,
+        smartLLM.model,
+        cheapLLM.model,
         {
           db: {
             dialect: SupportedDBs.SQLite,
@@ -533,9 +520,7 @@ It should have no other character or symbol or character that is not part of SQL
     });
 
     it('should use cheap LLM when changeType is Minor', async () => {
-      cheapLLMStub.resolves({
-        content: 'SELECT * FROM employees WHERE id = 1;',
-      });
+      cheapLLM.setText('SELECT * FROM employees WHERE id = 1;');
 
       const state = {
         prompt: 'Get employee by id 1',
@@ -592,15 +577,13 @@ It should have no other character or symbol or character that is not part of SQL
       const result = await nodeWithTwoLLMs.execute(state, {});
 
       expect(result.sql).to.equal('SELECT * FROM employees WHERE id = 1;');
-      sinon.assert.calledOnce(cheapLLMStub);
-      sinon.assert.notCalled(smartLLMStub);
+      expect(cheapLLM.calls).to.equal(1);
+      expect(smartLLM.calls).to.equal(0);
     });
 
     it('should use smart LLM when OPTIMIZE_CACHED_QUERIES is false and sampleSql exists', async () => {
       process.env.OPTIMIZE_CACHED_QUERIES = 'false';
-      smartLLMStub.resolves({
-        content: 'SELECT * FROM employees WHERE id = 1;',
-      });
+      smartLLM.setText('SELECT * FROM employees WHERE id = 1;');
 
       const state = {
         prompt: 'Get employee by id 1',
@@ -657,15 +640,13 @@ It should have no other character or symbol or character that is not part of SQL
       const result = await nodeWithTwoLLMs.execute(state, {});
 
       expect(result.sql).to.equal('SELECT * FROM employees WHERE id = 1;');
-      sinon.assert.calledOnce(smartLLMStub);
-      sinon.assert.notCalled(cheapLLMStub);
+      expect(smartLLM.calls).to.equal(1);
+      expect(cheapLLM.calls).to.equal(0);
     });
 
     it('should use cheap LLM for single table schemas regardless of cache', async () => {
       process.env.OPTIMIZE_CACHED_QUERIES = 'false';
-      cheapLLMStub.resolves({
-        content: 'SELECT * FROM employees;',
-      });
+      cheapLLM.setText('SELECT * FROM employees;');
 
       const state = {
         prompt: 'Get all employees',
@@ -712,16 +693,15 @@ It should have no other character or symbol or character that is not part of SQL
       const result = await nodeWithTwoLLMs.execute(state, {});
 
       expect(result.sql).to.equal('SELECT * FROM employees;');
-      sinon.assert.calledOnce(cheapLLMStub);
-      sinon.assert.notCalled(smartLLMStub);
+      expect(cheapLLM.calls).to.equal(1);
+      expect(smartLLM.calls).to.equal(0);
     });
 
     it('should use smart LLM for multiple tables without cached queries', async () => {
       process.env.OPTIMIZE_CACHED_QUERIES = 'true';
-      smartLLMStub.resolves({
-        content:
-          'SELECT e.name, d.name FROM employees e JOIN departments d ON e.dept_id = d.id;',
-      });
+      smartLLM.setText(
+        'SELECT e.name, d.name FROM employees e JOIN departments d ON e.dept_id = d.id;',
+      );
 
       const state = {
         prompt: 'Get employees with their departments',
@@ -781,14 +761,12 @@ It should have no other character or symbol or character that is not part of SQL
       expect(result.sql).to.equal(
         'SELECT e.name, d.name FROM employees e JOIN departments d ON e.dept_id = d.id;',
       );
-      sinon.assert.calledOnce(smartLLMStub);
-      sinon.assert.notCalled(cheapLLMStub);
+      expect(smartLLM.calls).to.equal(1);
+      expect(cheapLLM.calls).to.equal(0);
     });
 
     it('should use cheap LLM for validation fix retries', async () => {
-      cheapLLMStub.resolves({
-        content: 'SELECT * FROM employees WHERE id = 1;',
-      });
+      cheapLLM.setText('SELECT * FROM employees WHERE id = 1;');
 
       const state = {
         prompt: 'Get employee by id 1',
@@ -847,15 +825,13 @@ It should have no other character or symbol or character that is not part of SQL
       const result = await nodeWithTwoLLMs.execute(state, {});
 
       expect(result.sql).to.equal('SELECT * FROM employees WHERE id = 1;');
-      sinon.assert.calledOnce(cheapLLMStub);
-      sinon.assert.notCalled(smartLLMStub);
+      expect(cheapLLM.calls).to.equal(1);
+      expect(smartLLM.calls).to.equal(0);
     });
 
     it('should use smart LLM when sampleSql is null despite optimization being enabled', async () => {
       process.env.OPTIMIZE_CACHED_QUERIES = 'true';
-      smartLLMStub.resolves({
-        content: 'SELECT * FROM employees, departments;',
-      });
+      smartLLM.setText('SELECT * FROM employees, departments;');
 
       const state = {
         prompt: 'Get all data',
@@ -912,8 +888,8 @@ It should have no other character or symbol or character that is not part of SQL
       const result = await nodeWithTwoLLMs.execute(state, {});
 
       expect(result.sql).to.equal('SELECT * FROM employees, departments;');
-      sinon.assert.calledOnce(smartLLMStub);
-      sinon.assert.notCalled(cheapLLMStub);
+      expect(smartLLM.calls).to.equal(1);
+      expect(cheapLLM.calls).to.equal(0);
     });
   });
 });

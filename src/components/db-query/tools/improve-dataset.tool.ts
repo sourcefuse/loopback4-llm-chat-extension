@@ -2,11 +2,14 @@ import {inject, service} from '@loopback/core';
 import {AnyObject} from '@loopback/repository';
 import {z} from 'zod';
 import {graphTool} from '../../../decorators';
-import {IGraphTool, ToolStatus} from '../../../graphs';
+import {
+  GraphTool,
+  IGraphTool,
+  RunnableConfig,
+  ToolStatus,
+} from '../../../graphs';
 import {DbQueryGraph} from '../db-query.graph';
 import {DbQueryConfig, Errors, GenerationError} from '../types';
-import {StructuredToolInterface} from '@langchain/core/tools';
-import {RunnableToolLike} from '@langchain/core/runnables';
 import {DbQueryAIExtensionBindings} from '../keys';
 import {DEFAULT_MAX_READ_ROWS_FOR_AI} from '../constant';
 
@@ -42,8 +45,7 @@ export class ImproveDatasetTool implements IGraphTool {
     };
   }
 
-  async build(): Promise<StructuredToolInterface | RunnableToolLike> {
-    const graph = await this.queryPipeline.build();
+  async build(config: RunnableConfig): Promise<GraphTool> {
     const schema = z.object({
       datasetId: z
         .string()
@@ -53,8 +55,8 @@ export class ImproveDatasetTool implements IGraphTool {
         .describe(
           `A description of what changes or improvements the user wants in the existing dataset.`,
         ),
-    }) as AnyObject[string];
-    return graph.asTool({
+    });
+    return this.queryPipeline.asTool(config, {
       name: this.key,
       description:
         'Tool for improving an existing dataset based on user feedback. It takes a dataset ID and a prompt describing the desired changes, and returns an updated dataset. Call this only if you have a valid dataset ID available.',

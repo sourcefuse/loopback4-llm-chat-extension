@@ -2,29 +2,31 @@ import {Context} from '@loopback/core';
 import {juggler} from '@loopback/repository';
 import {expect, sinon} from '@loopback/testlab';
 import {AuthenticationBindings} from 'loopback4-authentication';
-import {CallLLMNode, ChatStore, RunnableConfig} from '../../../graphs';
+import {
+  CallLLMNode,
+  ChatStore,
+  humanMessage,
+  RunnableConfig,
+} from '../../../graphs';
 import {AiIntegrationBindings} from '../../../keys';
 import {Chat} from '../../../models';
 import {ChatRepository, MessageRepository} from '../../../repositories';
-import {LLMProvider} from '../../../types';
-import {setupChats, setupMessages, stubUser} from '../../test-helper';
+import {
+  createMockLLM,
+  MockLLM,
+  setupChats,
+  setupMessages,
+  stubUser,
+} from '../../test-helper';
 
 describe('CallLLMNode Unit', function () {
   let node: CallLLMNode;
-  let bindToolsStub: sinon.SinonStub;
-  let llmStub: sinon.SinonStub;
+  let llm: MockLLM;
   let chatStore: ChatStore;
   let baseChat: Chat;
   beforeEach(async () => {
-    bindToolsStub = sinon.stub();
-    llmStub = sinon.stub();
-    const llmProvider = {
-      bindTools: bindToolsStub.callsFake(() => {
-        return {
-          invoke: llmStub,
-        };
-      }),
-    } as unknown as LLMProvider;
+    llm = createMockLLM();
+    const llmProvider = llm.model;
     const context = new Context('test-context');
     context.bind('services.CallLLMNode').toClass(CallLLMNode);
     context.bind('services.ChatStore').toClass(ChatStore);
@@ -63,16 +65,12 @@ describe('CallLLMNode Unit', function () {
   });
 
   it('should call llm with all tools, and add response to messages list, and update chat state', async () => {
-    llmStub.resolves({
-      content: 'This is a response from LLM',
-      // eslint-disable-next-line @typescript-eslint/naming-convention
-      tool_calls: [],
-    });
+    llm.setText('This is a response from LLM');
     await node.execute(
       {
         id: baseChat.id,
         prompt: 'test prompt',
-        messages: [],
+        messages: [humanMessage('test prompt')],
         files: [],
         userMessage: undefined,
         aiMessage: undefined,
@@ -82,7 +80,9 @@ describe('CallLLMNode Unit', function () {
       } as unknown as RunnableConfig,
     );
 
-    expect(bindToolsStub.calledOnceWith([])).to.be.true();
+    // The node no longer calls `bindTools`; it builds tools from the tool
+    // store (empty here) and calls the model once via the AI SDK.
+    expect(llm.calls).to.equal(1);
     const chat = await chatStore.findById(baseChat.id, {
       include: ['messages'],
     });

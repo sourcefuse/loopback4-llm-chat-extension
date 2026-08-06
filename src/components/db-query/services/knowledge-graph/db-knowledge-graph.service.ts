@@ -1,7 +1,7 @@
-import {RunnableSequence} from '@langchain/core/runnables';
 import {BindingScope, inject, injectable} from '@loopback/core';
 import {AnyObject} from '@loopback/repository';
 import {AiIntegrationBindings} from '../../../../keys';
+import {embedTexts, invokeModel} from '../../../../graphs';
 import {EmbeddingProvider, LLMProvider} from '../../../../types';
 import {stripThinkingTokens} from '../../../../utils';
 import {DbQueryAIExtensionBindings} from '../../keys';
@@ -264,7 +264,7 @@ export class DbKnowledgeGraphService implements KnowledgeGraph<
   }
 
   private async generateEmbedding(text: string): Promise<number[]> {
-    return this.embeddingModel.embedDocuments([text]).then(embeddings => {
+    return embedTexts(this.embeddingModel, [text]).then(embeddings => {
       if (embeddings.length === 0 || !embeddings[0]) {
         throw new Error('Failed to generate embedding');
       }
@@ -405,8 +405,9 @@ The output should be JUST a valid JSON and no other markdown or formatting text.
 Focus on the core business concept or data domain. AGAIN, ensure the output is a valid JSON object with no additional text or formatting that can be parsed directly.`;
 
     try {
-      const chain = RunnableSequence.from([this.llm, stripThinkingTokens]);
-      const response = await chain.invoke([{role: 'user', content: prompt}]);
+      const response = stripThinkingTokens(
+        await invokeModel(this.llm, [{role: 'user', content: prompt}]),
+      );
 
       debug(`Extracted concept for cluster ${clusterIndex}:`, response);
       const concept = JSON.parse(response);

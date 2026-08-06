@@ -1,4 +1,3 @@
-import {LLMResult} from '@langchain/core/outputs';
 import {
   createStubInstance,
   expect,
@@ -9,6 +8,7 @@ import {
   ChatState,
   ChatStore,
   EndSessionNode,
+  LLMEndResult,
   LLMStreamEventType,
   RunnableConfig,
 } from '../../../graphs';
@@ -39,7 +39,7 @@ describe('EndSessionNode Unit', function () {
           },
         ],
       ],
-    } as unknown as LLMResult);
+    } as unknown as LLMEndResult);
     // second llm call
     counter.handleLlmStart('2', 'test-2');
     counter.handleLlmEnd('2', {
@@ -58,7 +58,7 @@ describe('EndSessionNode Unit', function () {
           },
         ],
       ],
-    } as unknown as LLMResult);
+    } as unknown as LLMEndResult);
     node = new EndSessionNode(chatStore, counter);
   });
 

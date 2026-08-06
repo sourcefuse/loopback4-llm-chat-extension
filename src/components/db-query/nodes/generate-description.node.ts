@@ -1,11 +1,15 @@
-import {PromptTemplate} from '@langchain/core/prompts';
-import {RunnableSequence} from '@langchain/core/runnables';
-import {LangGraphRunnableConfig} from '@langchain/langgraph';
 import {inject, service} from '@loopback/core';
 import {graphNode} from '../../../decorators';
-import {IGraphNode, LLMStreamEventType} from '../../../graphs';
+import {
+  IGraphNode,
+  invokeModel,
+  LLMStreamEventType,
+  renderPrompt,
+  RunnableConfig,
+} from '../../../graphs';
 import {AiIntegrationBindings} from '../../../keys';
 import {LLMProvider} from '../../../types';
+import {getTextContent} from '../../../utils';
 import {DbQueryAIExtensionBindings} from '../keys';
 import {DbQueryNodes} from '../nodes.enum';
 import {DbSchemaHelperService} from '../services';
@@ -25,7 +29,7 @@ export class GenerateDescriptionNode implements IGraphNode<DbQueryState> {
     private readonly checks?: string[],
   ) {}
 
-  prompt = PromptTemplate.fromTemplate(`
+  prompt = `
 <instructions>
 You are an AI assistant that describes what a SQL query does in plain english.
 Analyze the actual query below and write a concise, bulleted summary of the data it retrieves and any filters/conditions it applies.
@@ -52,11 +56,11 @@ Return a short bulleted list where each bullet is one condition, filter, or piec
 - Do NOT mention tables, columns, joins, CTEs, enums, or any DB concepts.
 - Keep each bullet to one line.
 - Do not add any preamble, heading, or closing text — just the bullets.
-</output-instructions>`);
+</output-instructions>`;
 
   async execute(
     state: DbQueryState,
-    config: LangGraphRunnableConfig,
+    config: RunnableConfig,
   ): Promise<DbQueryState> {
     const generateDesc =
       this.config.nodes?.sqlGenerationNode?.generateDescription !== false;
@@ -70,30 +74,28 @@ Return a short bulleted list where each bullet is one condition, filter, or piec
       data: 'Generating query description.',
     });
 
-    const chain = RunnableSequence.from([this.prompt, this.llm]);
-    const stream = await chain.stream({
-      prompt: state.prompt,
-      sql: state.sql,
-      schema: this.schemaHelper.asString(state.schema),
-      checks: [
-        '<must-follow-rules>',
-        ...(this.checks ?? []),
-        ...this.schemaHelper.getTablesContext(state.schema),
-        '</must-follow-rules>',
-      ].join('\n'),
-    });
+    const result = await invokeModel(
+      this.llm,
+      renderPrompt(this.prompt, {
+        prompt: state.prompt,
+        sql: state.sql,
+        schema: this.schemaHelper.asString(state.schema),
+        checks: [
+          '<must-follow-rules>',
+          ...(this.checks ?? []),
+          ...this.schemaHelper.getTablesContext(state.schema),
+          '</must-follow-rules>',
+        ].join('\n'),
+      }),
+      {config},
+    );
 
-    let output = '';
-    for await (const chunk of stream) {
-      const token =
-        typeof chunk === 'string' ? chunk : (chunk?.content ?? '').toString();
-      if (token) {
-        output += token;
-        config.writer?.({
-          type: LLMStreamEventType.ToolStatus,
-          data: {thinkingToken: token},
-        });
-      }
+    const output = getTextContent(result.content);
+    if (output) {
+      config.writer?.({
+        type: LLMStreamEventType.ToolStatus,
+        data: {thinkingToken: output},
+      });
     }
 
     // Strip thinking tokens from the accumulated string

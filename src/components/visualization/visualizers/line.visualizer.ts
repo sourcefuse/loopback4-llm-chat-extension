@@ -1,4 +1,4 @@
-import {PromptTemplate} from '@langchain/core/prompts';
+import {generateObject} from 'ai';
 import {IVisualizer} from '../types';
 import {AiIntegrationBindings} from '../../../keys';
 import {LLMProvider} from '../../../types';
@@ -6,7 +6,7 @@ import {inject} from '@loopback/core';
 import {AnyObject} from '@loopback/repository';
 import {VisualizationGraphState} from '../state';
 import z from 'zod';
-import {RunnableSequence} from '@langchain/core/runnables';
+import {renderPrompt} from '../../../graphs';
 import {visualizer} from '../decorators/visualizer.decorator';
 
 @visualizer()
@@ -17,7 +17,7 @@ export class LineVisualizer implements IVisualizer {
     `A line chart requires data with exactly 3 columns: one for the x-axis (typically time or sequential data), one for the y-axis (values), and one series type column to distinguish multiple lines/series in the chart. The series type column is important for grouping data into separate lines.`;
 
   description = `Renders the data in a line chart format. Best for showing trends and changes over time or continuous data.`;
-  renderPrompt = PromptTemplate.fromTemplate(`
+  renderPrompt = `
 <instructions>
 You are an expert data visualization assistant. Your task is to create a line chart config based on the provided SQL query, it's description and user prompt. Follow these steps:
 1. Analyze the SQL query results to understand the data structure.
@@ -36,7 +36,7 @@ You are an expert data visualization assistant. Your task is to create a line ch
 <user-prompt>
 {userPrompt}
 </user-prompt>
-</inputs>`);
+</inputs>`;
 
   schema = z.object({
     xAxisColumn: z
@@ -54,7 +54,7 @@ You are an expert data visualization assistant. Your task is to create a line ch
       .describe(
         'Optional column to group data into multiple lines/series, leave it as empty string if not needed. It can cover multiple columns separated by comma if the query needs to show multiple lines based on multiple columns. The UI supports multiple series in line chart by forming a combined key.',
       ),
-  }) as z.AnyZodObject;
+  }) as z.ZodType;
 
   constructor(
     @inject(AiIntegrationBindings.SmartNonThinkingLLM)
@@ -65,20 +65,17 @@ You are an expert data visualization assistant. Your task is to create a line ch
     if (!state.sql || !state.queryDescription || !state.prompt) {
       throw new Error('Invalid State');
     }
-    const llmWithStructuredOutput = this.llm.withStructuredOutput<AnyObject>(
-      this.schema,
-    );
-
-    const chain = RunnableSequence.from([
-      this.renderPrompt,
-      llmWithStructuredOutput,
-    ]);
-
-    const settings = await chain.invoke({
-      sql: state.sql!,
-      description: state.queryDescription!,
-      userPrompt: state.prompt!,
+    const {object} = await generateObject({
+      ...(this.llm.defaultSettings ?? {}),
+      model: this.llm,
+      schema: this.schema,
+      prompt: renderPrompt(this.renderPrompt, {
+        sql: state.sql!,
+        description: state.queryDescription!,
+        userPrompt: state.prompt!,
+      }),
     });
+    const settings = object as AnyObject;
     if (
       settings.seriesColumns === '' ||
       settings.seriesColumns === undefined ||
