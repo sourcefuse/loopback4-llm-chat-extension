@@ -30,11 +30,18 @@ function stringifyVar(value: unknown): string {
   if (value === undefined || value === null) {
     return '';
   }
-  if (typeof value === 'object') {
-    return JSON.stringify(value);
+  if (typeof value === 'string') {
+    return value;
   }
-  // Primitive (string/number/boolean/bigint) — safe to String()-coerce.
-  return String(value);
+  if (
+    typeof value === 'number' ||
+    typeof value === 'boolean' ||
+    typeof value === 'bigint'
+  ) {
+    return String(value);
+  }
+  // Objects/arrays/other — serialize rather than rely on default toString.
+  return JSON.stringify(value) ?? '';
 }
 
 /** Resolves a `{key}` placeholder, throwing on an unknown variable. */
@@ -256,7 +263,7 @@ export async function invokeModel(
   const telemetry = buildTelemetry(options.config, modelName);
 
   const result = await generateText({
-    ...(model.defaultSettings ?? {}),
+    ...model.defaultSettings,
     model,
     ...(system ? {system} : {}),
     messages,

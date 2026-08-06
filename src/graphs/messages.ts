@@ -125,7 +125,9 @@ export async function trimMessages(
   // order-independent, so a single greedy accumulator serves both.
   const ordered = strategy === 'last' ? [...nonSystem].reverse() : nonSystem;
   const kept = accumulateWithinBudget(ordered, budget, tokenCounter);
-  const keptInOrder = strategy === 'last' ? kept.reverse() : kept;
+  if (strategy === 'last') {
+    kept.reverse(); // restore chronological order (in-place on our local copy)
+  }
 
-  return [...systemMessages, ...keptInOrder];
+  return [...systemMessages, ...kept];
 }
