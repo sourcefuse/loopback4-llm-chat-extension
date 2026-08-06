@@ -55,7 +55,7 @@ You are an expert data visualization assistant. Your task is to create a pie cha
       throw new Error('Invalid State');
     }
     const {object} = await generateObject({
-      ...(this.llm.defaultSettings ?? {}),
+      ...this.llm.defaultSettings,
       model: this.llm,
       schema: this.schema,
       prompt: renderPrompt(this.renderPrompt, {

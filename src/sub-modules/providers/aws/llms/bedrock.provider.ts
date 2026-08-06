@@ -40,15 +40,16 @@ export class Bedrock implements Provider<LLMProvider> {
             reasoning_config: {
               type: 'enabled',
               // eslint-disable-next-line @typescript-eslint/naming-convention
-              budget_tokens: parseInt(
+              budget_tokens: Number.parseInt(
                 process.env.CLAUDE_THINKING_BUDGET ?? '1024',
+                10,
               ),
             },
           },
         },
       };
     } else {
-      defaultSettings.temperature = parseInt(
+      defaultSettings.temperature = Number.parseFloat(
         process.env.BEDROCK_TEMPERATURE ?? '0',
       );
     }

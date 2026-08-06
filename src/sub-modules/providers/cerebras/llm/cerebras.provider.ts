@@ -14,14 +14,15 @@ export class Cerebras implements Provider<LLMProvider> {
     });
     const model = provider(process.env.CEREBRAS_MODEL) as LLMProvider;
     const defaultSettings: ModelDefaultSettings = {
-      temperature: parseFloat(process.env.CEREBRAS_TEMPERATURE ?? '0'),
+      temperature: Number.parseFloat(process.env.CEREBRAS_TEMPERATURE ?? '0'),
     };
     if (process.env.CEREBRAS_TOP_P) {
-      defaultSettings.topP = parseFloat(process.env.CEREBRAS_TOP_P);
+      defaultSettings.topP = Number.parseFloat(process.env.CEREBRAS_TOP_P);
     }
     if (process.env.CEREBRAS_MAX_TOKENS) {
-      defaultSettings.maxOutputTokens = parseInt(
+      defaultSettings.maxOutputTokens = Number.parseInt(
         process.env.CEREBRAS_MAX_TOKENS,
+        10,
       );
     }
     model.defaultSettings = defaultSettings;

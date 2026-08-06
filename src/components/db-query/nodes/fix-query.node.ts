@@ -99,7 +99,7 @@ It should have no other character or symbol or character that is not part of SQL
     const errorSchemaString = this.schemaHelper.asString(trimmedSchema);
 
     const feedbacks = state.feedbacks ?? [];
-    const lastFeedback = feedbacks[feedbacks.length - 1] ?? '';
+    const lastFeedback = feedbacks.at(-1) ?? '';
     const historicalErrors = feedbacks.slice(0, -1);
 
     const output = await invokeModel(

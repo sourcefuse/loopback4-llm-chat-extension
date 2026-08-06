@@ -179,43 +179,53 @@ export class ChatStore {
 
   async toMessage(message: Message): Promise<SavedMessage | undefined> {
     if (message.metadata?.type === MessageMetadataType.User) {
-      let messageContent = message.body;
-      for (const fileMessage of message.messages ?? []) {
-        if (fileMessage.metadata?.type === MessageMetadataType.Attachment) {
-          messageContent = mergeAttachments(
-            messageContent,
-            fileMessage.metadata.fileName,
-            fileMessage.body,
-          );
-        }
-      }
-      return {role: 'user', content: messageContent};
-    } else if (message.metadata?.type === MessageMetadataType.AI) {
-      const text = (message.body ?? '').trim();
-      const toolCalls = (message.messages ?? [])
-        .filter(
-          (v): v is Message & {metadata: ToolMessageMetadata} =>
-            v.metadata.type === MessageMetadataType.Tool,
-        )
-        .map(msg => ({
-          type: 'tool-call' as const,
-          toolCallId: msg.metadata.id,
-          toolName: msg.metadata.toolName,
-          input: msg.metadata.args ?? {},
-        }));
-      const content = toolCalls.length
-        ? [...(text ? [{type: 'text' as const, text}] : []), ...toolCalls]
-        : text;
-      return {role: 'assistant', content};
-    } else if (message.metadata?.type === MessageMetadataType.Tool) {
+      return this._toUserMessage(message);
+    }
+    if (message.metadata?.type === MessageMetadataType.AI) {
+      return this._toAssistantMessage(message);
+    }
+    if (message.metadata?.type === MessageMetadataType.Tool) {
       return toolResultMessage(
         message.metadata.id,
         message.metadata.toolName,
         message.body,
       );
-    } else {
-      // do nothing for other types
     }
+    // do nothing for other types
+    return undefined;
+  }
+
+  private _toUserMessage(message: Message): SavedMessage {
+    let messageContent = message.body;
+    for (const fileMessage of message.messages ?? []) {
+      if (fileMessage.metadata?.type === MessageMetadataType.Attachment) {
+        messageContent = mergeAttachments(
+          messageContent,
+          fileMessage.metadata.fileName,
+          fileMessage.body,
+        );
+      }
+    }
+    return {role: 'user', content: messageContent};
+  }
+
+  private _toAssistantMessage(message: Message): SavedMessage {
+    const text = (message.body ?? '').trim();
+    const toolCalls = (message.messages ?? [])
+      .filter(
+        (v): v is Message & {metadata: ToolMessageMetadata} =>
+          v.metadata.type === MessageMetadataType.Tool,
+      )
+      .map(msg => ({
+        type: 'tool-call' as const,
+        toolCallId: msg.metadata.id,
+        toolName: msg.metadata.toolName,
+        input: msg.metadata.args ?? {},
+      }));
+    const content = toolCalls.length
+      ? [...(text ? [{type: 'text' as const, text}] : []), ...toolCalls]
+      : text;
+    return {role: 'assistant', content};
   }
 
   private mergeCountMap(metadata: TokenMetadata, newData: TokenMetadata) {

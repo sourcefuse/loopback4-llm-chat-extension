@@ -11,40 +11,21 @@ export class DbQueryGraph extends BaseGraph<DbQueryState> {
     DbQueryGraphStateAnnotation as unknown as z.ZodType<DbQueryState>;
 
   build() {
-    // --- leaf steps (DI-resolved nodes) ---
-    const isImprovement = this._toStep(DbQueryNodes.IsImprovement);
-    const getColumns = this._toStep(DbQueryNodes.GetColumns);
-    const generateChecklist = this._toStep(DbQueryNodes.GenerateChecklist);
-    const failed = this._toStep(DbQueryNodes.Failed);
-    const saveDataset = this._toStep(DbQueryNodes.SaveDataset);
-    const fixQuery = this._toStep(DbQueryNodes.FixQuery);
-    const getTables = this._toStep(DbQueryNodes.GetTables);
-
-    // --- parallel fan-outs (superstep + reducer fan-in) ---
-    const discover = this._toParallelStep(DbQueryNodes.PostCacheAndTables, [
-      DbQueryNodes.CheckCache,
-      DbQueryNodes.GetTables,
-      DbQueryNodes.CheckTemplates,
-      DbQueryNodes.ClassifyChange,
-    ]);
-    const generateSql = this._toParallelStep('db_query_generate_sql', [
-      DbQueryNodes.SqlGeneration,
-      DbQueryNodes.VerifyChecklist,
-    ]);
-    const preValidation = this._toFnStep(
-      DbQueryNodes.PreValidation,
-      () => ({}),
-    );
-    const validate = this._toParallelStep('db_query_validate', [
-      DbQueryNodes.SyntacticValidator,
-      DbQueryNodes.SemanticValidator,
-      DbQueryNodes.GenerateDescription,
-    ]);
-    const postValidation = this._toFnStep(
-      DbQueryNodes.PostValidation,
-      (state: DbQueryState) => this._mergeValidationResults(state),
-    );
-    const noop = this._toFnStep('db_query_noop', () => ({}));
+    const {
+      isImprovement,
+      getColumns,
+      generateChecklist,
+      failed,
+      saveDataset,
+      fixQuery,
+      getTables,
+      discover,
+      generateSql,
+      preValidation,
+      validate,
+      postValidation,
+      noop,
+    } = this._buildSteps();
 
     // --- regeneration from freshly reselected tables (ReselectTables edge) ---
     const reselectTables = createWorkflow({
@@ -228,6 +209,42 @@ export class DbQueryGraph extends BaseGraph<DbQueryState> {
         ])
         .commit()
     );
+  }
+
+  /** Creates all leaf/parallel/merge steps the workflow chains together. */
+  private _buildSteps() {
+    return {
+      // --- leaf steps (DI-resolved nodes) ---
+      isImprovement: this._toStep(DbQueryNodes.IsImprovement),
+      getColumns: this._toStep(DbQueryNodes.GetColumns),
+      generateChecklist: this._toStep(DbQueryNodes.GenerateChecklist),
+      failed: this._toStep(DbQueryNodes.Failed),
+      saveDataset: this._toStep(DbQueryNodes.SaveDataset),
+      fixQuery: this._toStep(DbQueryNodes.FixQuery),
+      getTables: this._toStep(DbQueryNodes.GetTables),
+      // --- parallel fan-outs (superstep + reducer fan-in) ---
+      discover: this._toParallelStep(DbQueryNodes.PostCacheAndTables, [
+        DbQueryNodes.CheckCache,
+        DbQueryNodes.GetTables,
+        DbQueryNodes.CheckTemplates,
+        DbQueryNodes.ClassifyChange,
+      ]),
+      generateSql: this._toParallelStep('db_query_generate_sql', [
+        DbQueryNodes.SqlGeneration,
+        DbQueryNodes.VerifyChecklist,
+      ]),
+      preValidation: this._toFnStep(DbQueryNodes.PreValidation, () => ({})),
+      validate: this._toParallelStep('db_query_validate', [
+        DbQueryNodes.SyntacticValidator,
+        DbQueryNodes.SemanticValidator,
+        DbQueryNodes.GenerateDescription,
+      ]),
+      postValidation: this._toFnStep(
+        DbQueryNodes.PostValidation,
+        (state: DbQueryState) => this._mergeValidationResults(state),
+      ),
+      noop: this._toFnStep('db_query_noop', () => ({})),
+    };
   }
 
   private _mergeValidationResults(state: DbQueryState) {

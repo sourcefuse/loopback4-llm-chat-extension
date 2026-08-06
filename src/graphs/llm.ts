@@ -5,7 +5,7 @@
  * `llm.bindTools` with thin wrappers over the Vercel AI SDK (`generateText`,
  * `embed`, `embedMany`). Messages are native AI SDK `ModelMessage` objects.
  */
-import {randomUUID} from 'crypto';
+import {randomUUID} from 'node:crypto';
 import {
   embed,
   embedMany,
@@ -20,10 +20,30 @@ import {
 import {AnyObject} from '@loopback/repository';
 import {LLMProvider} from '../types';
 import {Messages} from './messages';
-import {GraphTool, LLMEndResult, RunnableConfig} from './types';
+import {GraphTool, LLMCallbacks, LLMEndResult, RunnableConfig} from './types';
 
 /** An AI SDK model augmented with the optional file builder + default settings. */
 export type ConfiguredModel = LLMProvider;
+
+/** Coerces a template variable to its rendered string (null/undefined → ''). */
+function stringifyVar(value: unknown): string {
+  if (value === undefined || value === null) {
+    return '';
+  }
+  if (typeof value === 'object') {
+    return JSON.stringify(value);
+  }
+  // Primitive (string/number/boolean/bigint) — safe to String()-coerce.
+  return String(value);
+}
+
+/** Resolves a `{key}` placeholder, throwing on an unknown variable. */
+function resolveVar(key: string, vars: Record<string, unknown>): string {
+  if (!(key in vars)) {
+    throw new Error(`Missing value for input variable "${key}"`);
+  }
+  return stringifyVar(vars[key]);
+}
 
 /**
  * Renders an f-string template with the exact `{var}` / `{{` / `}}` semantics of
@@ -50,15 +70,10 @@ export function renderPrompt(
       if (end === -1) {
         result += template[i];
         i += 1;
-        continue;
+      } else {
+        result += resolveVar(template.slice(i + 1, end).trim(), vars);
+        i = end + 1;
       }
-      const key = template.slice(i + 1, end).trim();
-      if (!(key in vars)) {
-        throw new Error(`Missing value for input variable "${key}"`);
-      }
-      const value = vars[key];
-      result += value === undefined || value === null ? '' : String(value);
-      i = end + 1;
     } else {
       result += template[i];
       i += 1;
@@ -137,24 +152,13 @@ function buildTelemetry(
 }
 
 /**
- * Calls the model once and returns the assistant `ModelMessage` (with any
- * tool-call parts). Fires the run's `handleLLMStart`/`handleLLMEnd` callbacks so
- * token accounting keeps working. Replaces `llm.invoke` /
- * `llm.bindTools(tools).invoke(...)`.
+ * Hoists system-role content into a single `system` string (the AI SDK expects
+ * system content out of `messages`), returning the remaining non-system turns.
  */
-export async function invokeModel(
-  model: ConfiguredModel,
-  input: string | Messages,
-  options: InvokeOptions = {},
-): Promise<ModelMessage> {
-  const settings = model.defaultSettings ?? {};
-  const all: ModelMessage[] =
-    typeof input === 'string' ? [{role: 'user', content: input}] : input;
-
-  // The AI SDK rejects system-role entries inside `messages` ("System messages
-  // are not allowed... use the instructions option instead"), so hoist any
-  // system content (from a system message in the list or the `system` option)
-  // into the top-level `system` parameter and keep only non-system turns.
+function hoistSystem(
+  all: ModelMessage[],
+  optionSystem?: string,
+): {system?: string; messages: ModelMessage[]} {
   const systemParts: string[] = [];
   const messages: ModelMessage[] = [];
   for (const message of all) {
@@ -166,43 +170,21 @@ export async function invokeModel(
       messages.push(message);
     }
   }
-  if (options.system) {
-    systemParts.unshift(options.system);
+  if (optionSystem) {
+    systemParts.unshift(optionSystem);
   }
-  const system = systemParts.filter(Boolean).join('\n\n') || undefined;
-
-  const runId = randomUUID();
-  const modelName = getModelId(model);
-  const callbacks = options.config?.callbacks ?? [];
-  for (const cb of callbacks) {
-    cb.handleLLMStart?.(runId, modelName);
-  }
-
-  const toolSet =
-    options.tools && options.tools.length > 0
-      ? toToolSet(options.tools)
-      : undefined;
-
-  const telemetry = buildTelemetry(options.config, modelName);
-
-  const result = await generateText({
-    ...settings,
-    model,
-    ...(system ? {system} : {}),
+  return {
+    system: systemParts.filter(Boolean).join('\n\n') || undefined,
     messages,
-    ...(toolSet ? {tools: toolSet} : {}),
-    ...(options.temperature !== undefined
-      ? {temperature: options.temperature}
-      : {}),
-    abortSignal: options.config?.signal,
-    ...(telemetry
-      ? // eslint-disable-next-line @typescript-eslint/naming-convention
-        {experimental_telemetry: telemetry}
-      : {}),
-  });
+  };
+}
 
-  const usage = result.usage ?? {inputTokens: 0, outputTokens: 0};
-  const endResult: LLMEndResult = {
+/** Builds the `LLMEndResult` shape the token-counter / Langfuse callbacks expect. */
+function toEndResult(usage: {
+  inputTokens?: number;
+  outputTokens?: number;
+}): LLMEndResult {
+  return {
     generations: [
       [
         {
@@ -219,24 +201,82 @@ export async function invokeModel(
       ],
     ],
   };
-  for (const cb of callbacks) {
-    cb.handleLLMEnd?.(runId, endResult);
-  }
+}
 
+/** Converts an AI SDK generate result into an assistant message content value. */
+function toAssistantContent(result: {
+  text?: string;
+  toolCalls?: Array<{toolCallId: string; toolName: string; input: unknown}>;
+}): AssistantContent {
   const toolCalls = result.toolCalls ?? [];
-  const content: AssistantContent = toolCalls.length
-    ? [
-        ...(result.text ? [{type: 'text' as const, text: result.text}] : []),
-        ...toolCalls.map(tc => ({
-          type: 'tool-call' as const,
-          toolCallId: tc.toolCallId,
-          toolName: tc.toolName,
-          input: tc.input,
-        })),
-      ]
-    : (result.text ?? '');
+  if (toolCalls.length === 0) {
+    return result.text ?? '';
+  }
+  return [
+    ...(result.text ? [{type: 'text' as const, text: result.text}] : []),
+    ...toolCalls.map(tc => ({
+      type: 'tool-call' as const,
+      toolCallId: tc.toolCallId,
+      toolName: tc.toolName,
+      input: tc.input,
+    })),
+  ];
+}
 
-  return {role: 'assistant', content};
+function fireCallbacks(
+  callbacks: LLMCallbacks[],
+  fn: (cb: LLMCallbacks) => void,
+): void {
+  for (const cb of callbacks) {
+    fn(cb);
+  }
+}
+
+/**
+ * Calls the model once and returns the assistant `ModelMessage` (with any
+ * tool-call parts). Fires the run's `handleLLMStart`/`handleLLMEnd` callbacks so
+ * token accounting keeps working. Replaces `llm.invoke` /
+ * `llm.bindTools(tools).invoke(...)`.
+ */
+export async function invokeModel(
+  model: ConfiguredModel,
+  input: string | Messages,
+  options: InvokeOptions = {},
+): Promise<ModelMessage> {
+  const all: ModelMessage[] =
+    typeof input === 'string' ? [{role: 'user', content: input}] : input;
+  const {system, messages} = hoistSystem(all, options.system);
+
+  const runId = randomUUID();
+  const modelName = getModelId(model);
+  const callbacks = options.config?.callbacks ?? [];
+  fireCallbacks(callbacks, cb => cb.handleLLMStart?.(runId, modelName));
+
+  const toolSet = options.tools?.length ? toToolSet(options.tools) : undefined;
+  const telemetry = buildTelemetry(options.config, modelName);
+
+  const result = await generateText({
+    ...(model.defaultSettings ?? {}),
+    model,
+    ...(system ? {system} : {}),
+    messages,
+    ...(toolSet ? {tools: toolSet} : {}),
+    ...(options.temperature !== undefined
+      ? {temperature: options.temperature}
+      : {}),
+    abortSignal: options.config?.signal,
+    ...(telemetry
+      ? // eslint-disable-next-line @typescript-eslint/naming-convention
+        {experimental_telemetry: telemetry}
+      : {}),
+  });
+
+  const endResult = toEndResult(
+    result.usage ?? {inputTokens: 0, outputTokens: 0},
+  );
+  fireCallbacks(callbacks, cb => cb.handleLLMEnd?.(runId, endResult));
+
+  return {role: 'assistant', content: toAssistantContent(result)};
 }
 
 /** Embeds a single string. Replaces LangChain embeddings `.embedQuery`. */

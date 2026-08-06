@@ -116,7 +116,7 @@ ${placeholderText}
       return {};
     }
 
-    const matchResult = trimmed.match(/^match\s+(\d+)$/);
+    const matchResult = /^match\s+(\d+)$/.exec(trimmed);
     if (!matchResult) {
       config.writer?.({
         type: LLMStreamEventType.Log,

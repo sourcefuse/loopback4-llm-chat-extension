@@ -15,15 +15,18 @@ export class Claude implements Provider<LLMProvider> {
     const model = provider(process.env.CLAUDE_MODEL) as LLMProvider;
     const defaultSettings: ModelDefaultSettings = {};
     if (process.env.CLAUDE_TEMPERATURE) {
-      defaultSettings.temperature = parseInt(process.env.CLAUDE_TEMPERATURE);
+      defaultSettings.temperature = Number.parseFloat(
+        process.env.CLAUDE_TEMPERATURE,
+      );
     }
     if (process.env.CLAUDE_THINKING === 'true') {
       defaultSettings.providerOptions = {
         anthropic: {
           thinking: {
             type: 'enabled',
-            budgetTokens: parseInt(
+            budgetTokens: Number.parseInt(
               process.env.CLAUDE_THINKING_BUDGET ?? '1024',
+              10,
             ),
           },
         },

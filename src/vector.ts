@@ -236,6 +236,8 @@ export class PgVectorStoreImpl extends VectorStore {
         row.column_name !== this.cols.id
       ) {
         this.cols.content = row.column_name;
+      } else {
+        // Unrecognized column — leave the default column mapping untouched.
       }
     }
   }

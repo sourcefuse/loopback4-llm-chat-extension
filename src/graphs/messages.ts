@@ -36,14 +36,11 @@ export function contentToText(content: ModelMessage['content']): string {
 export function getToolCalls(
   message: ModelMessage | undefined,
 ): ToolCallPart[] {
-  if (
-    !message ||
-    message.role !== 'assistant' ||
-    typeof message.content === 'string'
-  ) {
+  const content = message?.role === 'assistant' ? message.content : undefined;
+  if (!content || typeof content === 'string') {
     return [];
   }
-  return message.content.filter(
+  return content.filter(
     (part): part is ToolCallPart => part.type === 'tool-call',
   );
 }
@@ -91,6 +88,22 @@ export interface TrimMessagesOptions {
  * always retaining leading system messages when `includeSystem` is set.
  * Provider-agnostic — the token counter is supplied by the caller.
  */
+/** Greedily keeps messages from the front of `ordered` until the budget is hit. */
+function accumulateWithinBudget(
+  ordered: ModelMessage[],
+  budget: number,
+  tokenCounter: (messages: ModelMessage[]) => number,
+): ModelMessage[] {
+  const kept: ModelMessage[] = [];
+  for (const message of ordered) {
+    if (tokenCounter([...kept, message]) > budget && kept.length > 0) {
+      break;
+    }
+    kept.push(message);
+  }
+  return kept;
+}
+
 export async function trimMessages(
   messages: ModelMessage[],
   options: TrimMessagesOptions,
@@ -101,26 +114,18 @@ export async function trimMessages(
   const systemMessages = includeSystem
     ? messages.filter(m => m.role === 'system')
     : [];
-  const rest = includeSystem
+  const nonSystem = includeSystem
     ? messages.filter(m => m.role !== 'system')
     : messages.slice();
 
   const budget = maxTokens - tokenCounter(systemMessages);
-  const kept: ModelMessage[] = [];
 
-  const ordered = strategy === 'last' ? rest.slice().reverse() : rest;
-  for (const message of ordered) {
-    const candidate =
-      strategy === 'last' ? [message, ...kept] : [...kept, message];
-    if (tokenCounter(candidate) > budget && kept.length > 0) {
-      break;
-    }
-    if (strategy === 'last') {
-      kept.unshift(message);
-    } else {
-      kept.push(message);
-    }
-  }
+  // `last` retains the most recent messages: walk newest-first, then restore
+  // chronological order. `first` walks oldest-first as-is. Token counting is
+  // order-independent, so a single greedy accumulator serves both.
+  const ordered = strategy === 'last' ? [...nonSystem].reverse() : nonSystem;
+  const kept = accumulateWithinBudget(ordered, budget, tokenCounter);
+  const keptInOrder = strategy === 'last' ? kept.reverse() : kept;
 
-  return [...systemMessages, ...kept];
+  return [...systemMessages, ...keptInOrder];
 }

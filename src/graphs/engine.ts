@@ -84,6 +84,13 @@ export class AsyncEventQueue<T> implements AsyncIterable<T> {
     this.close();
   }
 
+  /** Rethrows a stored failure at end-of-stream (no-op on a clean close). */
+  private _throwIfFailed(): void {
+    if (this.error) {
+      throw this.error;
+    }
+  }
+
   async *[Symbol.asyncIterator](): AsyncIterator<T> {
     for (;;) {
       if (this.buffer.length) {
@@ -91,18 +98,14 @@ export class AsyncEventQueue<T> implements AsyncIterable<T> {
         continue;
       }
       if (this.done) {
-        if (this.error) {
-          throw this.error;
-        }
+        this._throwIfFailed();
         return;
       }
       const result = await new Promise<IteratorResult<T>>(resolve =>
         this.resolvers.push(resolve),
       );
       if (result.done) {
-        if (this.error) {
-          throw this.error;
-        }
+        this._throwIfFailed();
         return;
       }
       yield result.value;

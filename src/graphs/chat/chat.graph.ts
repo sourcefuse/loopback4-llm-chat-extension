@@ -77,7 +77,7 @@ export class ChatGraph extends BaseGraph<ChatState> {
   }
 
   private _lastMessage(state: ChatState): ModelMessage | undefined {
-    return state.messages[state.messages.length - 1];
+    return state.messages.at(-1);
   }
 
   private _hasToolCalls(state: ChatState): boolean {

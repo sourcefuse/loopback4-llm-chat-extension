@@ -33,7 +33,7 @@ export class RunToolNode implements IGraphNode<ChatState> {
     }
     const newMessages: ModelMessage[] = [];
     const tools = this.tools.map;
-    const lastMessage = state.messages[state.messages.length - 1];
+    const lastMessage = state.messages.at(-1);
     const toolCalls = getToolCalls(lastMessage);
     if (toolCalls.length === 0) {
       return state;

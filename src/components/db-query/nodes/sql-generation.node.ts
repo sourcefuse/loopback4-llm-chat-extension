@@ -100,9 +100,7 @@ In the last attempt, you generated this SQL query -
     // Use cheap LLM for validation fix retries — the query is close, just needs small corrections
     const isValidationFixRetry =
       state.feedbacks?.length &&
-      state.feedbacks[state.feedbacks.length - 1].startsWith(
-        'Query Validation Failed',
-      );
+      state.feedbacks.at(-1)?.startsWith('Query Validation Failed');
 
     // Use changeType from ClassifyChangeNode to pick the right LLM
     if (
@@ -174,7 +172,7 @@ In the last attempt, you generated this SQL query -
 
   async getFeedbacks(state: DbQueryState) {
     if (state.feedbacks?.length) {
-      const lastFeedback = state.feedbacks[state.feedbacks.length - 1];
+      const lastFeedback = state.feedbacks.at(-1) ?? '';
       const otherFeedbacks = state.feedbacks.slice(0, -1);
       const feedbacks = renderPrompt(this.feedbackPrompt, {
         query: state.sql,
