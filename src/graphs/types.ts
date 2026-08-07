@@ -20,13 +20,47 @@ export interface LLMEndResult {
   >;
 }
 
+/** The prompt handed to a model call, surfaced to callbacks for observability. */
+export interface LLMStartInput {
+  system?: string;
+  messages: ModelMessage[];
+}
+
+/** The assistant output of a model call, surfaced to callbacks. */
+export interface LLMEndOutput {
+  text?: string;
+  content: ModelMessage['content'];
+}
+
 /**
- * Observation hooks fired around each LLM call. Replaces the LangChain
- * callbacks array; `TokenCounter` and the Langfuse `ObfHandler` implement it.
+ * Observation hooks fired around each LLM call, plus an optional `traceRun`
+ * wrapper for whole graph/node runs. Replaces the LangChain callbacks array;
+ * `TokenCounter` implements the LLM hooks (ignoring the optional input/output),
+ * while the Langfuse `ObfHandler` implements all of them to build the nested
+ * trace (`traceRun` opens the graph/node observation, the LLM hooks record the
+ * generation with its messages and token usage).
  */
 export interface LLMCallbacks {
-  handleLLMStart?: (runId: string, modelName: string) => void;
-  handleLLMEnd?: (runId: string, result: LLMEndResult) => void;
+  handleLLMStart?: (
+    runId: string,
+    modelName: string,
+    input?: LLMStartInput,
+  ) => void;
+  handleLLMEnd?: (
+    runId: string,
+    result: LLMEndResult,
+    output?: LLMEndOutput,
+  ) => void;
+  /**
+   * Runs `fn` inside a backend observation named `name` (with `input` as its
+   * input and `fn`'s result as its output), so graph runs and nodes appear as a
+   * nested trace. Optional — omitted by handlers that only track token usage.
+   */
+  traceRun?: <T>(
+    name: string,
+    input: unknown,
+    fn: () => Promise<T>,
+  ) => Promise<T>;
 }
 
 /**

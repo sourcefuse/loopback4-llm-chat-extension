@@ -52,6 +52,9 @@ export namespace AiIntegrationBindings {
   export const ObfHandler = BindingKey.create<Function>(
     'services.ai-reporting.obf-handler',
   );
+  export const LangsmithHandler = BindingKey.create<Function>(
+    'services.ai-reporting.langsmith-handler',
+  );
   export const SystemContext = BindingKey.create<string[]>(
     `services.ai-reporting.system-context`,
   );

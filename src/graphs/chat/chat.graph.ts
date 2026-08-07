@@ -28,6 +28,8 @@ export class ChatGraph extends BaseGraph<ChatState> {
     private readonly tokenCounter: TokenCounter,
     @inject(AiIntegrationBindings.ObfHandler, {optional: true})
     protected readonly obfHandler?: AnyObject[string],
+    @inject(AiIntegrationBindings.LangsmithHandler, {optional: true})
+    protected readonly langsmithHandler?: AnyObject[string],
   ) {
     super();
   }
@@ -66,6 +68,9 @@ export class ChatGraph extends BaseGraph<ChatState> {
     ];
     if (this.obfHandler) {
       callbacks.push(this.obfHandler as LLMCallbacks);
+    }
+    if (this.langsmithHandler) {
+      callbacks.push(this.langsmithHandler as LLMCallbacks);
     }
 
     return this.streamEvents(inputs, {

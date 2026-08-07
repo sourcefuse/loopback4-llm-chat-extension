@@ -65,6 +65,31 @@ export abstract class BaseGraph<T extends object> {
     };
   }
 
+  /**
+   * Wraps a graph run or a node in an observation across every registered
+   * observability backend, by composing the `traceRun` of every bound handler
+   * (e.g. Langfuse `ObfHandler`, LangSmith `LangsmithHandler`) around `fn`. The
+   * engine stays backend-agnostic — a backend participates purely by binding a
+   * handler with a `traceRun`. Used for both the whole graph and each node
+   * (`name` distinguishes them; `input` is the state in, `fn`'s result the state
+   * out). A no-op pass-through when no tracing handler is bound.
+   */
+  protected _traceRun<R>(
+    name: string,
+    input: unknown,
+    fn: () => Promise<R>,
+  ): Promise<R> {
+    let wrapped = fn;
+    for (const cb of this._callbacks) {
+      if (typeof cb.traceRun === 'function') {
+        const inner = wrapped;
+        const traceRun = cb.traceRun.bind(cb);
+        wrapped = () => traceRun(name, input, inner);
+      }
+    }
+    return wrapped();
+  }
+
   protected async _resolveNode(key: string): Promise<IGraphNode<T>> {
     const bindings = this.context.findByTag({
       [GRAPH_NODE_NAME]: key,
@@ -104,7 +129,11 @@ export abstract class BaseGraph<T extends object> {
       execute: async ({state, setState, abortSignal}) => {
         const node = await this._resolveNode(key);
         const config = this.buildConfig(abortSignal);
-        const result = (await node.execute(state, config)) as Partial<T>;
+        // Each node is its own child run/observation (state in → partial out),
+        // nested under the graph run; any model call nests below it.
+        const result = (await this._traceRun(key, state, () =>
+          node.execute(state, config),
+        )) as Partial<T>;
         await this._applyResult(state, result, setState);
         return {};
       },
@@ -125,8 +154,12 @@ export abstract class BaseGraph<T extends object> {
       execute: async ({state, setState, abortSignal}) => {
         const config = this.buildConfig(abortSignal);
         const nodes = await Promise.all(keys.map(k => this._resolveNode(k)));
+        // Each parallel node gets its own child run/observation (named after its
+        // key), all nested under the graph run.
         const results = await Promise.all(
-          nodes.map(n => n.execute(state, config)),
+          nodes.map((n, i) =>
+            this._traceRun(keys[i], state, () => n.execute(state, config)),
+          ),
         );
         let merged = state;
         for (const result of results) {
@@ -151,7 +184,11 @@ export abstract class BaseGraph<T extends object> {
       stateSchema: this.stateSchema,
       execute: async ({state, setState, abortSignal}) => {
         const config = this.buildConfig(abortSignal);
-        const result = await fn(state, config);
+        // Inline routing/merge nodes are traced too, so they appear as runs in
+        // the tree alongside the DI-resolved nodes.
+        const result = await this._traceRun(id, state, async () =>
+          fn(state, config),
+        );
         await this._applyResult(state, result, setState);
         return {};
       },
@@ -189,8 +226,13 @@ export abstract class BaseGraph<T extends object> {
       });
     }
     // `start` runs the workflow to completion (`startAsync` is fire-and-forget).
-    await run.start({inputData: {}, initialState});
-    return this._latestState;
+    // Wrapped so every model call groups into one trace per backend, with the
+    // initial state as the run's inputs and the final state as its outputs (a
+    // no-op pass-through where a backend is disabled).
+    return this._traceRun(this.constructor.name, initialState, async () => {
+      await run.start({inputData: {}, initialState});
+      return this._latestState as T;
+    });
   }
 
   /**
@@ -217,7 +259,13 @@ export abstract class BaseGraph<T extends object> {
     // Run to completion in the background; nodes push events to the queue via
     // `config.writer` as steps execute, and we close the queue when done.
     // (`start` executes the steps; `startAsync` would return before they run.)
-    run.start({inputData: {}, initialState}).then(
+    // Wrapped so every model call groups into one trace per backend, with the
+    // initial state as the run's inputs and the final state as its outputs (a
+    // no-op pass-through where a backend is disabled).
+    this._traceRun(this.constructor.name, initialState, async () => {
+      await run.start({inputData: {}, initialState});
+      return this._latestState as T;
+    }).then(
       () => queue.close(),
       (error: unknown) => queue.fail(error),
     );

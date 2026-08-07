@@ -56,6 +56,10 @@
     "./langfuse": {
       "type": "./dist/sub-modules/obf/langfuse/index.d.ts",
       "default": "./dist/sub-modules/obf/langfuse/index.js"
+    },
+    "./langsmith": {
+      "type": "./dist/sub-modules/obf/langsmith/index.d.ts",
+      "default": "./dist/sub-modules/obf/langsmith/index.js"
     }
   },
   "typesVersions": {
@@ -92,6 +96,9 @@
       ],
       "langfuse": [
         "dist/sub-modules/obf/langfuse/index.d.ts"
+      ],
+      "langsmith": [
+        "dist/sub-modules/obf/langsmith/index.d.ts"
       ]
     }
   },
@@ -150,7 +157,8 @@
     "@sourceloop/chat-service": "^17.0.6",
     "@sourceloop/core": "^20.0.6",
     "@sourceloop/file-utils": "^0.5.6",
-    "ai": "^7.0.30",
+    "ai": "^7.0.55",
+    "langsmith": "^0.8.9",
     "loopback4-authentication": "^13.0.4",
     "loopback4-authorization": "^8.1.5",
     "ollama-ai-provider-v2": "^4.0.1",

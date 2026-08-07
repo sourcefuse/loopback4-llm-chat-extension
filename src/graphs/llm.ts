@@ -119,46 +119,6 @@ function getModelId(model: LanguageModel): string {
 }
 
 /**
- * Builds the AI SDK `experimental_telemetry` option so each model call emits
- * standard OpenTelemetry gen-ai spans. These are backend-agnostic: any exporter
- * the host registers on the global OTEL tracer consumes them — Langfuse
- * (`@langfuse/otel`), LangSmith (its OTLP endpoint), or a generic OTLP
- * collector. Gated by env so there's no overhead (and no PII in spans) when
- * tracing is disabled; when no tracer is registered the AI SDK falls back to a
- * no-op tracer, so this is always safe to pass.
- */
-function buildTelemetry(
-  config: RunnableConfig | undefined,
-  modelName: string,
-):
-  | {
-      isEnabled: true;
-      functionId: string;
-      metadata: Record<string, string>;
-    }
-  | undefined {
-  const enabled =
-    process.env.AI_SDK_TELEMETRY === '1' ||
-    process.env.LANGSMITH_TRACING === 'true' ||
-    !!+(process.env.ENABLE_TRACING ?? 0);
-  if (!enabled) {
-    return undefined;
-  }
-  const functionId =
-    (config?.configurable?.functionId as string | undefined) ?? 'invokeModel';
-  return {
-    isEnabled: true,
-    functionId,
-    metadata: {
-      model: modelName,
-      ...(process.env.LANGSMITH_PROJECT
-        ? {'langsmith.metadata.project': process.env.LANGSMITH_PROJECT}
-        : {}),
-    },
-  };
-}
-
-/**
  * Hoists system-role content into a single `system` string (the AI SDK expects
  * system content out of `messages`), returning the remaining non-system turns.
  */
@@ -257,10 +217,11 @@ export async function invokeModel(
   const runId = randomUUID();
   const modelName = getModelId(model);
   const callbacks = options.config?.callbacks ?? [];
-  fireCallbacks(callbacks, cb => cb.handleLLMStart?.(runId, modelName));
+  fireCallbacks(callbacks, cb =>
+    cb.handleLLMStart?.(runId, modelName, {system, messages}),
+  );
 
   const toolSet = options.tools?.length ? toToolSet(options.tools) : undefined;
-  const telemetry = buildTelemetry(options.config, modelName);
 
   const result = await generateText({
     ...model.defaultSettings,
@@ -272,18 +233,17 @@ export async function invokeModel(
       ? {temperature: options.temperature}
       : {}),
     abortSignal: options.config?.signal,
-    ...(telemetry
-      ? // eslint-disable-next-line @typescript-eslint/naming-convention
-        {experimental_telemetry: telemetry}
-      : {}),
   });
 
+  const content = toAssistantContent(result);
   const endResult = toEndResult(
     result.usage ?? {inputTokens: 0, outputTokens: 0},
   );
-  fireCallbacks(callbacks, cb => cb.handleLLMEnd?.(runId, endResult));
+  fireCallbacks(callbacks, cb =>
+    cb.handleLLMEnd?.(runId, endResult, {text: result.text, content}),
+  );
 
-  return {role: 'assistant', content: toAssistantContent(result)};
+  return {role: 'assistant', content};
 }
 
 /** Embeds a single string. Replaces LangChain embeddings `.embedQuery`. */
