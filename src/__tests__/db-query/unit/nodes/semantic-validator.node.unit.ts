@@ -8,6 +8,7 @@ import {
   DbSchemaHelperService,
   TableSearchService,
 } from '../../../../components/db-query/services';
+import {LlmService} from '../../../../services/llm.service';
 import {createMockLLM, MockLLM} from '../../../test-helper';
 
 describe('SemanticValidatorNode Unit', function () {
@@ -24,6 +25,7 @@ describe('SemanticValidatorNode Unit', function () {
     tableSearchStub.getTables.resolves([]);
 
     node = new SemanticValidatorNode(
+      new LlmService(),
       llm.model,
       llm.model,
       {models: []},
@@ -177,6 +179,7 @@ describe('SemanticValidatorNode Unit', function () {
     } as unknown as DbSchemaHelperService;
 
     const nodeWithTables = new SemanticValidatorNode(
+      new LlmService(),
       llm.model,
       llm.model,
       {models: []},

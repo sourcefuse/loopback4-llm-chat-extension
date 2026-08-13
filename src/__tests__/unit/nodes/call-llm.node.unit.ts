@@ -11,6 +11,7 @@ import {
 import {AiIntegrationBindings} from '../../../keys';
 import {Chat} from '../../../models';
 import {ChatRepository, MessageRepository} from '../../../repositories';
+import {LlmService} from '../../../services/llm.service';
 import {
   createMockLLM,
   MockLLM,
@@ -29,6 +30,7 @@ describe('CallLLMNode Unit', function () {
     const llmProvider = llm.model;
     const context = new Context('test-context');
     context.bind('services.CallLLMNode').toClass(CallLLMNode);
+    context.bind('services.LlmService').toClass(LlmService);
     context.bind('services.ChatStore').toClass(ChatStore);
     context.bind('repositories.ChatRepository').toClass(ChatRepository);
     context.bind('repositories.MessageRepository').toClass(MessageRepository);

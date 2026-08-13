@@ -1,6 +1,7 @@
 import {expect, sinon} from '@loopback/testlab';
 import {ChangeType, ClassifyChangeNode} from '../../../../components';
 import {DbQueryState} from '../../../../components/db-query/state';
+import {LlmService} from '../../../../services/llm.service';
 import {createMockLLM, MockLLM} from '../../../test-helper';
 
 describe('ClassifyChangeNode Unit', function () {
@@ -9,7 +10,7 @@ describe('ClassifyChangeNode Unit', function () {
 
   beforeEach(() => {
     llm = createMockLLM();
-    node = new ClassifyChangeNode(llm.model);
+    node = new ClassifyChangeNode(new LlmService(), llm.model);
   });
 
   afterEach(() => {

@@ -1,12 +1,8 @@
 import {Context, inject} from '@loopback/context';
+import {service} from '@loopback/core';
 import {graphNode} from '../../../decorators';
-import {
-  IGraphNode,
-  invokeModel,
-  LLMStreamEventType,
-  renderPrompt,
-  RunnableConfig,
-} from '../../../graphs';
+import {IGraphNode, LLMStreamEventType, RunnableConfig} from '../../../graphs';
+import {LlmService} from '../../../services/llm.service';
 import {AiIntegrationBindings} from '../../../keys';
 import {LLMProvider} from '../../../types';
 import {VisualizationGraphState} from '../state';
@@ -60,6 +56,8 @@ none: reason why the visualization is not possible with the current prompt.
 </output-format>
 `;
   constructor(
+    @service(LlmService)
+    private readonly llmService: LlmService,
     @inject(AiIntegrationBindings.CheapLLM)
     private readonly llm: LLMProvider,
     @inject.context()
@@ -93,9 +91,9 @@ none: reason why the visualization is not possible with the current prompt.
       },
     });
     const output = stripThinkingTokens(
-      await invokeModel(
+      await this.llmService.invoke(
         this.llm,
-        renderPrompt(this.prompt, {
+        this.llmService.render(this.prompt, {
           prompt: state.prompt,
           sql: state.sql,
           description: state.queryDescription,

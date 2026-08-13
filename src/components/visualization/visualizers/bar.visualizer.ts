@@ -2,11 +2,11 @@ import {generateObject} from 'ai';
 import {IVisualizer} from '../types';
 import {AiIntegrationBindings} from '../../../keys';
 import {LLMProvider} from '../../../types';
-import {inject} from '@loopback/core';
+import {inject, service} from '@loopback/core';
 import {AnyObject} from '@loopback/repository';
 import {VisualizationGraphState} from '../state';
 import z from 'zod';
-import {renderPrompt} from '../../../graphs';
+import {LlmService} from '../../../services/llm.service';
 import {visualizer} from '../decorators/visualizer.decorator';
 
 @visualizer()
@@ -52,6 +52,8 @@ You are an expert data visualization assistant. Your task is to create a bar cha
   }) as z.ZodType;
 
   constructor(
+    @service(LlmService)
+    private readonly llmService: LlmService,
     @inject(AiIntegrationBindings.CheapLLM)
     private readonly llm: LLMProvider,
   ) {}
@@ -64,7 +66,7 @@ You are an expert data visualization assistant. Your task is to create a bar cha
       ...this.llm.defaultSettings,
       model: this.llm,
       schema: this.schema,
-      prompt: renderPrompt(this.renderPrompt, {
+      prompt: this.llmService.render(this.renderPrompt, {
         sql: state.sql!,
         description: state.queryDescription!,
         userPrompt: state.prompt!,

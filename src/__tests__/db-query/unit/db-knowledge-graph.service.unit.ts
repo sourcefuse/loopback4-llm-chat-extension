@@ -2,6 +2,8 @@ import {expect} from '@loopback/testlab';
 import {MockEmbeddingModelV3} from 'ai/test';
 import {DbKnowledgeGraphService} from '../../../components';
 import {EmbeddingProvider} from '../../../types';
+import {LlmService} from '../../../services/llm.service';
+import {EmbeddingService} from '../../../services/embedding.service';
 import {createMockLLM, MockLLM} from '../../test-helper';
 
 describe(`DbKnowledgeGraphService Unit`, function () {
@@ -32,15 +34,21 @@ describe(`DbKnowledgeGraphService Unit`, function () {
         warnings: [],
       }),
     }) as unknown as EmbeddingProvider;
-    service = new DbKnowledgeGraphService(llm.model, embeddingModel, {
-      models: [],
-      knowledgeGraph: {
-        graphWeight: 0.5,
-        vectorWeight: 0.5,
-        clusterThreshold: 0.7,
-        conceptThreshold: 0.8,
+    service = new DbKnowledgeGraphService(
+      new LlmService(),
+      new EmbeddingService(),
+      llm.model,
+      embeddingModel,
+      {
+        models: [],
+        knowledgeGraph: {
+          graphWeight: 0.5,
+          vectorWeight: 0.5,
+          clusterThreshold: 0.7,
+          conceptThreshold: 0.8,
+        },
       },
-    });
+    );
   });
 
   it('should generate a knowledge graph for a schema and should be able to find from it', async () => {

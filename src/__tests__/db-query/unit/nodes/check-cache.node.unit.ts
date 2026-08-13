@@ -13,6 +13,7 @@ import {
   QueryCacheMetadata,
 } from '../../../../components';
 import {BaseRetriever} from '../../../../vector';
+import {LlmService} from '../../../../services/llm.service';
 import {createMockLLM, MockLLM} from '../../../test-helper';
 
 describe('CheckCacheNode Unit', function () {
@@ -29,7 +30,12 @@ describe('CheckCacheNode Unit', function () {
       invoke: cacheStub,
     } as unknown as BaseRetriever<QueryCacheMetadata>;
 
-    node = new CheckCacheNode(cache, llm.model, datasetHelperStub);
+    node = new CheckCacheNode(
+      new LlmService(),
+      cache,
+      llm.model,
+      datasetHelperStub,
+    );
     datasetHelperStub.stubs.checkPermissions.resolves([]);
   });
 

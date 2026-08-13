@@ -1,13 +1,8 @@
 import {inject} from '@loopback/context';
 import {service} from '@loopback/core';
 import {graphNode} from '../../../decorators';
-import {
-  IGraphNode,
-  invokeModel,
-  LLMStreamEventType,
-  renderPrompt,
-  RunnableConfig,
-} from '../../../graphs';
+import {IGraphNode, LLMStreamEventType, RunnableConfig} from '../../../graphs';
+import {LlmService} from '../../../services/llm.service';
 import {AiIntegrationBindings} from '../../../keys';
 import {LLMProvider} from '../../../types';
 import {stripThinkingTokens} from '../../../utils';
@@ -26,6 +21,8 @@ import {
 @graphNode(DbQueryNodes.GetColumns)
 export class GetColumnsNode implements IGraphNode<DbQueryState> {
   constructor(
+    @service(LlmService)
+    private readonly llmService: LlmService,
     @inject(AiIntegrationBindings.CheapLLM)
     private readonly llm: LLMProvider,
     @service(DbSchemaHelperService)
@@ -134,9 +131,9 @@ Use these errors to refine your column selection. Consider if you need additiona
 
     while (attempts < 3) {
       attempts++;
-      const result = await invokeModel(
+      const result = await this.llmService.invoke(
         this.llm,
-        renderPrompt(this.prompt, {
+        this.llmService.render(this.prompt, {
           tablesWithColumns: tablesWithColumns.join('\n\n'),
           query: state.prompt,
           feedbacks: await this.getFeedbacks(state),
@@ -227,7 +224,7 @@ Use these errors to refine your column selection. Consider if you need additiona
   async getFeedbacks(state: DbQueryState) {
     if (state.feedbacks) {
       const lastColumns = this._getSelectedColumnsFromSchema(state.schema);
-      const feedbacks = renderPrompt(this.feedbackPrompt, {
+      const feedbacks = this.llmService.render(this.feedbackPrompt, {
         feedback: state.feedbacks.join('\n'),
         lastColumns: JSON.stringify(lastColumns, null, 2),
       });

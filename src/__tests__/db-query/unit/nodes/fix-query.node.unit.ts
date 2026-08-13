@@ -7,6 +7,7 @@ import {
 import {DbSchemaHelperService} from '../../../../components/db-query/services';
 import {DbQueryState} from '../../../../components/db-query/state';
 import {SupportedDBs} from '../../../../types';
+import {LlmService} from '../../../../services/llm.service';
 import {createMockLLM, MockLLM} from '../../../test-helper';
 
 describe('FixQueryNode Unit', function () {
@@ -22,6 +23,7 @@ describe('FixQueryNode Unit', function () {
     } as unknown as DbSchemaHelperService;
 
     node = new FixQueryNode(
+      new LlmService(),
       llm.model,
       {
         db: {dialect: SupportedDBs.PostgreSQL},

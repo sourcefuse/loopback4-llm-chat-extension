@@ -12,6 +12,7 @@ import {
   SqliteConnector,
   TableSearchService,
 } from '../../../../components';
+import {LlmService} from '../../../../services/llm.service';
 import {createMockLLM, MockLLM} from '../../../test-helper';
 import {
   Currency,
@@ -49,6 +50,7 @@ describe('GetTablesNode Unit', function () {
     schemaStore = new SchemaStore();
     tableSearchStub = createStubInstance(TableSearchService);
     node = new GetTablesNode(
+      new LlmService(),
       dumbLlm.model,
       dumbLlm.model,
       {
@@ -130,6 +132,7 @@ failed attempt: reason for failure
 
   it('should return state with minimal schema based on prompt and table search with smart llm', async () => {
     node = new GetTablesNode(
+      new LlmService(),
       dumbLlm.model,
       smartLlm.model,
       {

@@ -2,13 +2,8 @@ import {inject} from '@loopback/context';
 import {service} from '@loopback/core';
 import z from 'zod';
 import {graphTool} from '../../../decorators';
-import {
-  GraphTool,
-  IGraphTool,
-  invokeModel,
-  renderPrompt,
-  RunnableConfig,
-} from '../../../graphs';
+import {GraphTool, IGraphTool, RunnableConfig} from '../../../graphs';
+import {LlmService} from '../../../services/llm.service';
 import {AiIntegrationBindings} from '../../../keys';
 import {LLMProvider} from '../../../types';
 import {stripThinkingTokens} from '../../../utils';
@@ -20,6 +15,8 @@ import {IDataSetStore} from '../types';
 @graphTool()
 export class AskAboutDatasetTool implements IGraphTool {
   constructor(
+    @service(LlmService)
+    private readonly llmService: LlmService,
     @inject(DbQueryAIExtensionBindings.DatasetStore)
     private readonly store: IDataSetStore,
     @inject(AiIntegrationBindings.CheapLLM)
@@ -68,9 +65,9 @@ export class AskAboutDatasetTool implements IGraphTool {
         const {query, tables} = await this.store.findById(args.datasetId);
         const compressedSchema = this.schemaStore.filteredSchema(tables);
         return stripThinkingTokens(
-          await invokeModel(
+          await this.llmService.invoke(
             this.sqlllm,
-            renderPrompt(this.prompt, {
+            this.llmService.render(this.prompt, {
               query,
               question: args.question,
               schema: compressedSchema,

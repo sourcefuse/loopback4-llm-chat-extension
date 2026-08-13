@@ -1,12 +1,7 @@
 import {inject, service} from '@loopback/core';
 import {graphNode} from '../../../decorators';
-import {
-  IGraphNode,
-  invokeModel,
-  LLMStreamEventType,
-  renderPrompt,
-  RunnableConfig,
-} from '../../../graphs';
+import {IGraphNode, LLMStreamEventType, RunnableConfig} from '../../../graphs';
+import {LlmService} from '../../../services/llm.service';
 import {AiIntegrationBindings} from '../../../keys';
 import {LLMProvider} from '../../../types';
 import {stripThinkingTokens} from '../../../utils';
@@ -23,6 +18,8 @@ import {DbQueryConfig, EvaluationResult} from '../types';
 @graphNode(DbQueryNodes.SemanticValidator)
 export class SemanticValidatorNode implements IGraphNode<DbQueryState> {
   constructor(
+    @service(LlmService)
+    private readonly llmService: LlmService,
     @inject(AiIntegrationBindings.SmartLLM)
     private readonly smartllm: LLMProvider,
     @inject(AiIntegrationBindings.CheapLLM)
@@ -117,9 +114,9 @@ Keep these feedbacks in mind while validating the new query.
     const tableList =
       (await this.tableSearchService.getTables(state.prompt)) ?? [];
     const accessibleTables = this._filterByPermissions(tableList);
-    const output = await invokeModel(
+    const output = await this.llmService.invoke(
       llm,
-      renderPrompt(this.prompt, {
+      this.llmService.render(this.prompt, {
         userPrompt: state.prompt,
         query: state.sql,
         schema: this.schemaHelper.asString(state.schema),
@@ -162,7 +159,7 @@ Keep these feedbacks in mind while validating the new query.
 
   async getFeedbacks(state: DbQueryState) {
     if (state.feedbacks?.length) {
-      const feedbacks = renderPrompt(this.feedbackPrompt, {
+      const feedbacks = this.llmService.render(this.feedbackPrompt, {
         feedback: state.feedbacks.join('\n'),
       });
       return feedbacks;

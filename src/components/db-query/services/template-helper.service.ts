@@ -1,5 +1,6 @@
-import {inject} from '@loopback/core';
+import {inject, service} from '@loopback/core';
 import {AiIntegrationBindings} from '../../../keys';
+import {LlmService} from '../../../services/llm.service';
 import {LLMProvider} from '../../../types';
 import {stripThinkingTokens} from '../../../utils';
 import {
@@ -8,7 +9,7 @@ import {
   QueryTemplateMetadata,
   TemplatePlaceholder,
 } from '../types';
-import {invokeModel, renderPrompt, RunnableConfig} from '../../../graphs';
+import {RunnableConfig} from '../../../graphs';
 
 const MAX_TEMPLATE_RECURSION_DEPTH = 3;
 
@@ -19,6 +20,8 @@ type ResolvedTemplate = {
 
 export class TemplateHelper {
   constructor(
+    @service(LlmService)
+    private readonly llmService: LlmService,
     @inject(AiIntegrationBindings.CheapLLM)
     private readonly llm: LLMProvider,
   ) {}
@@ -69,9 +72,9 @@ Do not return any other text or explanation, just the XML tags.
       .join('\n');
 
     const response = stripThinkingTokens(
-      await invokeModel(
+      await this.llmService.invoke(
         this.llm,
-        renderPrompt(this.extractionPrompt, {
+        this.llmService.render(this.extractionPrompt, {
           prompt,
           template: sqlTemplate,
           placeholders: placeholderDescriptions,

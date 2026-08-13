@@ -1,12 +1,7 @@
-import {inject} from '@loopback/core';
+import {inject, service} from '@loopback/core';
 import {graphNode} from '../../../decorators';
-import {
-  IGraphNode,
-  invokeModel,
-  LLMStreamEventType,
-  renderPrompt,
-  RunnableConfig,
-} from '../../../graphs';
+import {IGraphNode, LLMStreamEventType, RunnableConfig} from '../../../graphs';
+import {LlmService} from '../../../services/llm.service';
 import {AiIntegrationBindings} from '../../../keys';
 import {LLMProvider} from '../../../types';
 import {stripThinkingTokens} from '../../../utils';
@@ -41,6 +36,8 @@ Do not include any other text, explanation, or formatting.
 </output-instructions>`;
 
   constructor(
+    @service(LlmService)
+    private readonly llmService: LlmService,
     @inject(AiIntegrationBindings.CheapLLM)
     private readonly llm: LLMProvider,
   ) {}
@@ -58,9 +55,9 @@ Do not include any other text, explanation, or formatting.
       data: 'Classifying the level of change required for the query.',
     });
 
-    const output = await invokeModel(
+    const output = await this.llmService.invoke(
       this.llm,
-      renderPrompt(this.prompt, {
+      this.llmService.render(this.prompt, {
         originalDescription: state.sampleSqlPrompt ?? '',
         newDescription: state.prompt,
       }),

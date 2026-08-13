@@ -1,12 +1,7 @@
 import {inject, service} from '@loopback/core';
 import {graphNode} from '../../../decorators';
-import {
-  IGraphNode,
-  invokeModel,
-  LLMStreamEventType,
-  renderPrompt,
-  RunnableConfig,
-} from '../../../graphs';
+import {IGraphNode, LLMStreamEventType, RunnableConfig} from '../../../graphs';
+import {LlmService} from '../../../services/llm.service';
 import {AiIntegrationBindings} from '../../../keys';
 import {LLMProvider, SupportedDBs} from '../../../types';
 import {stripThinkingTokens} from '../../../utils';
@@ -77,6 +72,8 @@ In the last attempt, you generated this SQL query -
 {historicalErrors}
 </feedback-instructions>`;
   constructor(
+    @service(LlmService)
+    private readonly llmService: LlmService,
     @inject(AiIntegrationBindings.SmartLLM)
     private readonly sqlLLM: LLMProvider,
     @inject(AiIntegrationBindings.CheapLLM)
@@ -124,9 +121,9 @@ In the last attempt, you generated this SQL query -
       },
     });
 
-    const output = await invokeModel(
+    const output = await this.llmService.invoke(
       llm,
-      renderPrompt(this.sqlGenerationPrompt, {
+      this.llmService.render(this.sqlGenerationPrompt, {
         dialect: this.config.db?.dialect ?? SupportedDBs.PostgreSQL,
         question: state.prompt,
         dbschema: this.schemaHelper.asString(state.schema),
@@ -174,7 +171,7 @@ In the last attempt, you generated this SQL query -
     if (state.feedbacks?.length) {
       const lastFeedback = state.feedbacks.at(-1) ?? '';
       const otherFeedbacks = state.feedbacks.slice(0, -1);
-      const feedbacks = renderPrompt(this.feedbackPrompt, {
+      const feedbacks = this.llmService.render(this.feedbackPrompt, {
         query: state.sql,
         feedback: `This was the error in the latest query you generated - \n${lastFeedback}`,
         historicalErrors: otherFeedbacks.length

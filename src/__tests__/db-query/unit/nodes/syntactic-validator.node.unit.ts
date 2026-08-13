@@ -7,6 +7,7 @@ import {
   SqliteConnector,
   SyntacticValidatorNode,
 } from '../../../../components';
+import {LlmService} from '../../../../services/llm.service';
 import {createMockLLM, MockLLM} from '../../../test-helper';
 import {IAuthUserWithPermissions} from 'loopback4-authorization';
 
@@ -38,7 +39,7 @@ describe('SyntacticValidatorNode Unit', function () {
       {} as unknown as IAuthUserWithPermissions,
     );
 
-    node = new SyntacticValidatorNode(llm.model, connector);
+    node = new SyntacticValidatorNode(new LlmService(), llm.model, connector);
   });
 
   it('should return pass status in state if it is valid', async () => {

@@ -10,7 +10,7 @@
  * and migrations are unchanged.
  */
 import * as pg from 'pg';
-import {embedText, embedTexts} from './graphs/llm';
+import {EmbeddingService} from './services/embedding.service';
 import {EmbeddingProvider} from './types';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -46,7 +46,10 @@ export type DocumentInterface<
 const DEFAULT_K = 4;
 
 export abstract class VectorStore {
-  constructor(protected readonly embeddings: EmbeddingProvider) {}
+  constructor(
+    protected readonly embedder: EmbeddingService,
+    protected readonly embeddings: EmbeddingProvider,
+  ) {}
 
   abstract addDocuments(documents: Document[]): Promise<void>;
   abstract similaritySearch(
@@ -67,25 +70,12 @@ export abstract class VectorStore {
   }
 }
 
-function cosineSimilarity(a: number[], b: number[]): number {
-  let dot = 0;
-  let normA = 0;
-  let normB = 0;
-  for (let i = 0; i < a.length; i++) {
-    dot += a[i] * b[i];
-    normA += a[i] * a[i];
-    normB += b[i] * b[i];
-  }
-  const denom = Math.sqrt(normA) * Math.sqrt(normB);
-  return denom === 0 ? 0 : dot / denom;
-}
-
 /** In-memory cosine-similarity store (replaces `@langchain/classic` MemoryVectorStore). */
 export class MemoryVectorStore extends VectorStore {
   private vectors: Array<{embedding: number[]; document: Document}> = [];
 
   async addDocuments(documents: Document[]): Promise<void> {
-    const embeddings = await embedTexts(
+    const embeddings = await this.embedder.embedTexts(
       this.embeddings,
       documents.map(d => d.pageContent),
     );
@@ -99,16 +89,22 @@ export class MemoryVectorStore extends VectorStore {
     k = DEFAULT_K,
     filter?: RetrieverFilter,
   ): Promise<Document[]> {
-    const queryEmbedding = await embedText(this.embeddings, query);
+    const queryEmbedding = await this.embedder.embedText(
+      this.embeddings,
+      query,
+    );
     const predicate =
       typeof filter === 'function'
         ? filter
-        : (doc: Document) => matchesObjectFilter(doc, filter);
+        : (doc: Document) => MemoryVectorStore.matchesObjectFilter(doc, filter);
     return this.vectors
       .filter(entry => predicate(entry.document))
       .map(entry => ({
         document: entry.document,
-        score: cosineSimilarity(queryEmbedding, entry.embedding),
+        score: MemoryVectorStore.cosineSimilarity(
+          queryEmbedding,
+          entry.embedding,
+        ),
       }))
       .sort((a, b) => b.score - a.score)
       .slice(0, k)
@@ -119,17 +115,32 @@ export class MemoryVectorStore extends VectorStore {
   async delete(_params?: any): Promise<void> {
     // no-op, matching the previous MemoryVectorStore override
   }
-}
 
-function matchesObjectFilter(
-  doc: Document,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  filter?: Record<string, any>,
-): boolean {
-  if (!filter) {
-    return true;
+  private static cosineSimilarity(a: number[], b: number[]): number {
+    let dot = 0;
+    let normA = 0;
+    let normB = 0;
+    for (let i = 0; i < a.length; i++) {
+      dot += a[i] * b[i];
+      normA += a[i] * a[i];
+      normB += b[i] * b[i];
+    }
+    const denom = Math.sqrt(normA) * Math.sqrt(normB);
+    return denom === 0 ? 0 : dot / denom;
   }
-  return Object.keys(filter).every(key => doc.metadata?.[key] === filter[key]);
+
+  private static matchesObjectFilter(
+    doc: Document,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    filter?: Record<string, any>,
+  ): boolean {
+    if (!filter) {
+      return true;
+    }
+    return Object.keys(filter).every(
+      key => doc.metadata?.[key] === filter[key],
+    );
+  }
 }
 
 export interface PgVectorStoreConfig {
@@ -165,10 +176,11 @@ export class PgVectorStoreImpl extends VectorStore {
   private vectorSchema?: string;
 
   constructor(
+    embedder: EmbeddingService,
     embeddings: EmbeddingProvider,
     private readonly config: PgVectorStoreConfig,
   ) {
-    super(embeddings);
+    super(embedder, embeddings);
   }
 
   private get qualifiedTable(): string {
@@ -247,7 +259,7 @@ export class PgVectorStoreImpl extends VectorStore {
       return;
     }
     await this.ensureTable();
-    const embeddings = await embedTexts(
+    const embeddings = await this.embedder.embedTexts(
       this.embeddings,
       documents.map(d => d.pageContent),
     );
@@ -256,7 +268,7 @@ export class PgVectorStoreImpl extends VectorStore {
       await this.config.pool.query(
         `INSERT INTO ${this.qualifiedTable} ("${this.cols.vector}", "${this.cols.content}", "${this.cols.metadata}") VALUES ($1::${this.vectorType}, $2, $3)`,
         [
-          toVectorLiteral(embeddings[i]),
+          PgVectorStoreImpl.toVectorLiteral(embeddings[i]),
           doc.pageContent,
           JSON.stringify(doc.metadata ?? {}),
         ],
@@ -270,8 +282,13 @@ export class PgVectorStoreImpl extends VectorStore {
     filter?: RetrieverFilter,
   ): Promise<Document[]> {
     await this.ensureTable();
-    const queryEmbedding = await embedText(this.embeddings, query);
-    const params: unknown[] = [toVectorLiteral(queryEmbedding)];
+    const queryEmbedding = await this.embedder.embedText(
+      this.embeddings,
+      query,
+    );
+    const params: unknown[] = [
+      PgVectorStoreImpl.toVectorLiteral(queryEmbedding),
+    ];
     let where = '';
     if (filter && typeof filter !== 'function') {
       params.push(JSON.stringify(filter));
@@ -314,8 +331,8 @@ export class PgVectorStoreImpl extends VectorStore {
       );
     }
   }
-}
 
-function toVectorLiteral(embedding: number[]): string {
-  return `[${embedding.join(',')}]`;
+  private static toVectorLiteral(embedding: number[]): string {
+    return `[${embedding.join(',')}]`;
+  }
 }

@@ -6,12 +6,11 @@ import {AuthenticationBindings} from 'loopback4-authentication';
 import {graphNode} from '../../../decorators';
 import {
   IGraphNode,
-  invokeModel,
   LLMStreamEventType,
-  renderPrompt,
   RunnableConfig,
   ToolStatus,
 } from '../../../graphs';
+import {LlmService} from '../../../services/llm.service';
 import {AiIntegrationBindings} from '../../../keys';
 import {LLMProvider} from '../../../types';
 import {stripThinkingTokens} from '../../../utils';
@@ -26,6 +25,8 @@ import {DbSchemaHelperService} from '../services';
 @graphNode(DbQueryNodes.SaveDataset)
 export class SaveDataSetNode implements IGraphNode<DbQueryState> {
   constructor(
+    @service(LlmService)
+    private readonly llmService: LlmService,
     @inject(AiIntegrationBindings.CheapLLM)
     private readonly llm: LLMProvider,
     @inject(DbQueryAIExtensionBindings.DatasetStore)
@@ -69,9 +70,9 @@ export class SaveDataSetNode implements IGraphNode<DbQueryState> {
     }
 
     if (!state.description) {
-      const output = await invokeModel(
+      const output = await this.llmService.invoke(
         this.llm,
-        renderPrompt(this.prompt, {
+        this.llmService.render(this.prompt, {
           checks: [
             'You must keep these additional details in consideration while describing the query -',
             ...(this.checks ?? []),

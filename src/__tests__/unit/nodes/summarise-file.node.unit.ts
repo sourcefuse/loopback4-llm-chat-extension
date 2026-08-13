@@ -12,6 +12,7 @@ import {
   SummariseFileNode,
 } from '../../../graphs';
 import {Message} from '../../../models';
+import {LlmService} from '../../../services/llm.service';
 import {buildFileStub, createMockLLM, MockLLM} from '../../test-helper';
 
 describe(`SummariseFileNode Unit`, function () {
@@ -32,7 +33,7 @@ describe(`SummariseFileNode Unit`, function () {
     llm = createMockLLM();
     writerStub = sinon.stub();
     chatStore = createStubInstance(ChatStore);
-    node = new SummariseFileNode(llm.model, chatStore);
+    node = new SummariseFileNode(new LlmService(), llm.model, chatStore);
   });
 
   it('should throw an error if no chat ID is found in state', async () => {

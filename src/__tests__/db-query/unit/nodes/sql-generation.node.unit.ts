@@ -7,6 +7,7 @@ import {
   SqliteConnector,
 } from '../../../../components';
 import {SupportedDBs} from '../../../../types';
+import {LlmService} from '../../../../services/llm.service';
 import {createMockLLM, MockLLM} from '../../../test-helper';
 import {IAuthUserWithPermissions} from 'loopback4-authorization';
 
@@ -37,6 +38,7 @@ describe('SqlGenerationNode Unit', function () {
       .returns(['Table employees contains employee information']);
 
     node = new SqlGenerationNode(
+      new LlmService(),
       llm.model,
       llm.model,
       {
@@ -498,6 +500,7 @@ It should have no other character or symbol or character that is not part of SQL
       originalEnv = process.env.OPTIMIZE_CACHED_QUERIES;
 
       nodeWithTwoLLMs = new SqlGenerationNode(
+        new LlmService(),
         smartLLM.model,
         cheapLLM.model,
         {

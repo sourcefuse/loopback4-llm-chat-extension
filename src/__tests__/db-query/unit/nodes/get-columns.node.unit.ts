@@ -7,6 +7,7 @@ import {
   GetColumnsNode,
   SqliteConnector,
 } from '../../../../components';
+import {LlmService} from '../../../../services/llm.service';
 import {createMockLLM, MockLLM} from '../../../test-helper';
 import {Employee, ExchangeRate} from '../../../fixtures/models';
 import {IAuthUserWithPermissions} from 'loopback4-authorization';
@@ -33,6 +34,7 @@ describe('GetColumnsNode Unit', function () {
     );
 
     node = new GetColumnsNode(
+      new LlmService(),
       llm.model,
       schemaHelper,
       {

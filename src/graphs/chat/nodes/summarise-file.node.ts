@@ -7,7 +7,7 @@ import {AiIntegrationBindings} from '../../../keys';
 import {LLMProvider} from '../../../types';
 import {mergeAttachments, stripThinkingTokens} from '../../../utils';
 import {LLMStreamEventType} from '../../event.types';
-import {defaultFileContent, invokeModel, renderPrompt} from '../../llm';
+import {LlmService} from '../../../services/llm.service';
 import {humanMessage, ModelMessage, Messages} from '../../messages';
 import {ChatState} from '../../state';
 import {IGraphNode, RunnableConfig} from '../../types';
@@ -19,6 +19,8 @@ const debug = require('debug')('ai-integration:chat:summarise-file.node');
 @graphNode(ChatNodes.SummariseFile)
 export class SummariseFileNode implements IGraphNode<ChatState> {
   constructor(
+    @service(LlmService)
+    private readonly llmService: LlmService,
     @inject(AiIntegrationBindings.FileLLM)
     private readonly llm: LLMProvider,
     @service(ChatStore)
@@ -59,7 +61,7 @@ export class SummariseFileNode implements IGraphNode<ChatState> {
       const prompt: Messages = [
         {
           role: 'system',
-          content: renderPrompt(this.prompt, {
+          content: this.llmService.render(this.prompt, {
             prompt: state.prompt,
           }),
         },
@@ -70,7 +72,7 @@ export class SummariseFileNode implements IGraphNode<ChatState> {
       ];
 
       const summary = stripThinkingTokens(
-        await invokeModel(this.llm, prompt, {config}),
+        await this.llmService.invoke(this.llm, prompt, {config}),
       );
 
       await this.chatStore.addAttachmentMessage(
@@ -116,7 +118,7 @@ export class SummariseFileNode implements IGraphNode<ChatState> {
     if (this.llm.getFile) {
       return this.llm.getFile(file);
     } else {
-      return defaultFileContent(file);
+      return this.llmService.defaultFileContent(file);
     }
   }
 }

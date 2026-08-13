@@ -3,12 +3,11 @@ import {BaseRetriever, DocumentInterface} from '../../../vector';
 import {graphNode} from '../../../decorators';
 import {
   IGraphNode,
-  invokeModel,
   LLMStreamEventType,
-  renderPrompt,
   RunnableConfig,
   ToolStatus,
 } from '../../../graphs';
+import {LlmService} from '../../../services/llm.service';
 import {AiIntegrationBindings} from '../../../keys';
 import {LLMProvider} from '../../../types';
 import {stripThinkingTokens} from '../../../utils';
@@ -22,6 +21,8 @@ import {DatasetActionType} from '../constant';
 @graphNode(DbQueryNodes.CheckCache)
 export class CheckCacheNode implements IGraphNode<DbQueryState> {
   constructor(
+    @service(LlmService)
+    private readonly llmService: LlmService,
     @inject(DbQueryAIExtensionBindings.QueryCache)
     private readonly cache: BaseRetriever<QueryCacheMetadata>,
     @inject(AiIntegrationBindings.CheapLLM)
@@ -71,9 +72,9 @@ If no queries are relevant, return '${CacheResults.NotRelevant}' and nothing els
       return {};
     }
     const response = stripThinkingTokens(
-      await invokeModel(
+      await this.llmService.invoke(
         this.smartLLM,
-        renderPrompt(this.prompt, {
+        this.llmService.render(this.prompt, {
           queries: relevantDocs
             .map(
               (doc, index) =>

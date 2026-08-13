@@ -1,13 +1,8 @@
 import {inject, service} from '@loopback/core';
 import {BaseRetriever} from '../../../vector';
 import {graphNode} from '../../../decorators';
-import {
-  IGraphNode,
-  invokeModel,
-  LLMStreamEventType,
-  renderPrompt,
-  RunnableConfig,
-} from '../../../graphs';
+import {IGraphNode, LLMStreamEventType, RunnableConfig} from '../../../graphs';
+import {LlmService} from '../../../services/llm.service';
 import {AiIntegrationBindings} from '../../../keys';
 import {LLMProvider} from '../../../types';
 import {stripThinkingTokens} from '../../../utils';
@@ -22,6 +17,8 @@ import {TemplateHelper} from '../services/template-helper.service';
 @graphNode(DbQueryNodes.CheckTemplates)
 export class CheckTemplatesNode implements IGraphNode<DbQueryState> {
   constructor(
+    @service(LlmService)
+    private readonly llmService: LlmService,
     @inject(DbQueryAIExtensionBindings.TemplateCache)
     private readonly templateCache: BaseRetriever<QueryTemplateMetadata>,
     @inject(AiIntegrationBindings.CheapLLM)
@@ -97,9 +94,9 @@ ${placeholderText}
       .join('\n');
 
     const response = stripThinkingTokens(
-      await invokeModel(
+      await this.llmService.invoke(
         this.llm,
-        renderPrompt(this.matchPrompt, {
+        this.llmService.render(this.matchPrompt, {
           prompt: state.prompt,
           templates: templatesText,
         }),

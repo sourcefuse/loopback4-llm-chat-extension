@@ -6,7 +6,7 @@ import {AiIntegrationBindings} from '../../../keys';
 import {LLMProvider, ToolStore} from '../../../types';
 import {getTextContent} from '../../../utils';
 import {LLMStreamEventType} from '../../event.types';
-import {invokeModel} from '../../llm';
+import {LlmService} from '../../../services/llm.service';
 import {ModelMessage} from '../../messages';
 import {ChatState} from '../../state';
 import {IGraphNode, RunnableConfig} from '../../types';
@@ -18,6 +18,8 @@ const debug = require('debug')('ai-integration:chat:call-llm.node');
 @graphNode(ChatNodes.CallLLM)
 export class CallLLMNode implements IGraphNode<ChatState> {
   constructor(
+    @service(LlmService)
+    private readonly llmService: LlmService,
     @inject(AiIntegrationBindings.ChatLLM)
     private readonly llm: LLMProvider,
     @inject(AiIntegrationBindings.Tools)
@@ -34,10 +36,14 @@ export class CallLLMNode implements IGraphNode<ChatState> {
       'Calling LLM with tools:',
       tools.map(tool => tool.name),
     );
-    const response: ModelMessage = await invokeModel(this.llm, state.messages, {
-      tools,
-      config,
-    });
+    const response: ModelMessage = await this.llmService.invoke(
+      this.llm,
+      state.messages,
+      {
+        tools,
+        config,
+      },
+    );
     const text = getTextContent(response.content).trim();
     if (!state.id) {
       debug('No chat ID found in state, this is unexpected');

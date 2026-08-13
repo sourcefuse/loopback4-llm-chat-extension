@@ -3,11 +3,10 @@ import {graphNode} from '../../../decorators';
 import {
   ModelMessage,
   IGraphNode,
-  invokeModel,
   LLMStreamEventType,
-  renderPrompt,
   RunnableConfig,
 } from '../../../graphs';
+import {LlmService} from '../../../services/llm.service';
 import {AiIntegrationBindings} from '../../../keys';
 import {LLMProvider} from '../../../types';
 import {stripThinkingTokens} from '../../../utils';
@@ -20,6 +19,8 @@ import {DbQueryConfig} from '../types';
 @graphNode(DbQueryNodes.VerifyChecklist)
 export class VerifyChecklistNode implements IGraphNode<DbQueryState> {
   constructor(
+    @service(LlmService)
+    private readonly llmService: LlmService,
     @inject(AiIntegrationBindings.SmartLLM)
     private readonly smartLlm: LLMProvider,
     @inject(DbQueryAIExtensionBindings.Config)
@@ -159,9 +160,9 @@ If no rules are relevant:
         ? this.evaluationOutputInstructions
         : this.simpleOutputInstructions);
 
-    return invokeModel(
+    return this.llmService.invoke(
       this.llm,
-      renderPrompt(template, {
+      this.llmService.render(template, {
         prompt: state.prompt,
         tables: Object.keys(state.schema?.tables ?? {}).join(', '),
         schema: this.schemaHelper.asString(state.schema),

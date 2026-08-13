@@ -3,11 +3,10 @@ import {graphNode} from '../../../decorators';
 import {
   ModelMessage,
   IGraphNode,
-  invokeModel,
   LLMStreamEventType,
-  renderPrompt,
   RunnableConfig,
 } from '../../../graphs';
+import {LlmService} from '../../../services/llm.service';
 import {AiIntegrationBindings} from '../../../keys';
 import {LLMProvider} from '../../../types';
 import {stripThinkingTokens} from '../../../utils';
@@ -20,6 +19,8 @@ import {DbQueryConfig} from '../types';
 @graphNode(DbQueryNodes.GenerateChecklist)
 export class GenerateChecklistNode implements IGraphNode<DbQueryState> {
   constructor(
+    @service(LlmService)
+    private readonly llmService: LlmService,
     @inject(AiIntegrationBindings.CheapLLM)
     private readonly llm: LLMProvider,
     @inject(DbQueryAIExtensionBindings.Config)
@@ -138,7 +139,11 @@ If no rules are relevant, return: none
 
     const results = await Promise.all(
       Array.from({length: parallelism}, () =>
-        invokeModel(this.llm, renderPrompt(this.prompt, invokeArgs), {config}),
+        this.llmService.invoke(
+          this.llm,
+          this.llmService.render(this.prompt, invokeArgs),
+          {config},
+        ),
       ),
     );
 

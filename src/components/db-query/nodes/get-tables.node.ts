@@ -1,13 +1,8 @@
 import {inject} from '@loopback/context';
 import {service} from '@loopback/core';
 import {graphNode} from '../../../decorators';
-import {
-  IGraphNode,
-  invokeModel,
-  LLMStreamEventType,
-  renderPrompt,
-  RunnableConfig,
-} from '../../../graphs';
+import {IGraphNode, LLMStreamEventType, RunnableConfig} from '../../../graphs';
+import {LlmService} from '../../../services/llm.service';
 import {AiIntegrationBindings} from '../../../keys';
 import {LLMProvider} from '../../../types';
 import {stripThinkingTokens} from '../../../utils';
@@ -22,6 +17,8 @@ import {DatabaseSchema, DbQueryConfig, GenerationError} from '../types';
 @graphNode(DbQueryNodes.GetTables)
 export class GetTablesNode implements IGraphNode<DbQueryState> {
   constructor(
+    @service(LlmService)
+    private readonly llmService: LlmService,
     @inject(AiIntegrationBindings.CheapLLM)
     private readonly llmCheap: LLMProvider,
     @inject(AiIntegrationBindings.SmartLLM)
@@ -120,9 +117,9 @@ Use these if they are relevant to the table selection, otherwise ignore them, th
     let requiredTables: string[] = [];
     while (attempts < 2) {
       attempts++;
-      const result = await invokeModel(
+      const result = await this.llmService.invoke(
         llm,
-        renderPrompt(this.prompt, {
+        this.llmService.render(this.prompt, {
           tables: allTables.join('\n\n'),
           query: state.prompt,
           feedbacks: await this.getFeedbacks(state),
@@ -187,7 +184,7 @@ Use these if they are relevant to the table selection, otherwise ignore them, th
 
   async getFeedbacks(state: DbQueryState) {
     if (state.feedbacks) {
-      const feedbacks = renderPrompt(this.feedbackPrompt, {
+      const feedbacks = this.llmService.render(this.feedbackPrompt, {
         query: state.sql,
         feedback: state.feedbacks.join('\n'),
         lastTables: this._tableListFromSchema(state.schema).join(', '),

@@ -2,6 +2,7 @@ import {expect} from '@loopback/testlab';
 import {fail} from 'assert';
 import {PieVisualizer} from '../../../../components/visualization/visualizers/pie.visualizer';
 import {VisualizationGraphState} from '../../../../components';
+import {LlmService} from '../../../../services/llm.service';
 import {createMockLLM, MockLLM} from '../../../test-helper';
 
 describe('PieVisualizer Unit', function () {
@@ -10,7 +11,7 @@ describe('PieVisualizer Unit', function () {
 
   beforeEach(() => {
     llm = createMockLLM();
-    visualizer = new PieVisualizer(llm.model);
+    visualizer = new PieVisualizer(new LlmService(), llm.model);
   });
 
   it('should have correct name and description', () => {

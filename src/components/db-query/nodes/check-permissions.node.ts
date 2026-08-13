@@ -1,12 +1,8 @@
 import {inject} from '@loopback/context';
 import {service} from '@loopback/core';
 import {graphNode} from '../../../decorators';
-import {
-  IGraphNode,
-  invokeModel,
-  renderPrompt,
-  RunnableConfig,
-} from '../../../graphs';
+import {IGraphNode, RunnableConfig} from '../../../graphs';
+import {LlmService} from '../../../services/llm.service';
 import {AiIntegrationBindings} from '../../../keys';
 import {LLMProvider} from '../../../types';
 import {stripThinkingTokens} from '../../../utils';
@@ -18,6 +14,8 @@ import {Errors} from '../types';
 @graphNode(DbQueryNodes.CheckPermissions)
 export class CheckPermissionsNode implements IGraphNode<DbQueryState> {
   constructor(
+    @service(LlmService)
+    private readonly llmService: LlmService,
     @inject(AiIntegrationBindings.CheapLLM)
     private readonly llm: LLMProvider, // Replace with actual type if available
 
@@ -49,9 +47,9 @@ export class CheckPermissionsNode implements IGraphNode<DbQueryState> {
 
     if (missingPermissions.length > 0) {
       const response = stripThinkingTokens(
-        await invokeModel(
+        await this.llmService.invoke(
           this.llm,
-          renderPrompt(this.prompt, {
+          this.llmService.render(this.prompt, {
             prompt: state.prompt,
             tables: this.getTableNames(state).join(', '),
             missingPermissions: missingPermissions.join(', '),

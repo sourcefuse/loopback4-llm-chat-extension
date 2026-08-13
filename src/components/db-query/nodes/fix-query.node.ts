@@ -1,12 +1,7 @@
 import {inject, service} from '@loopback/core';
 import {graphNode} from '../../../decorators';
-import {
-  IGraphNode,
-  invokeModel,
-  LLMStreamEventType,
-  renderPrompt,
-  RunnableConfig,
-} from '../../../graphs';
+import {IGraphNode, LLMStreamEventType, RunnableConfig} from '../../../graphs';
+import {LlmService} from '../../../services/llm.service';
 import {AiIntegrationBindings} from '../../../keys';
 import {LLMProvider, SupportedDBs} from '../../../types';
 import {stripThinkingTokens} from '../../../utils';
@@ -67,6 +62,8 @@ It should have no other character or symbol or character that is not part of SQL
 </output-instructions>`;
 
   constructor(
+    @service(LlmService)
+    private readonly llmService: LlmService,
     @inject(AiIntegrationBindings.CheapLLM)
     private readonly llm: LLMProvider,
     @inject(DbQueryAIExtensionBindings.Config)
@@ -102,9 +99,9 @@ It should have no other character or symbol or character that is not part of SQL
     const lastFeedback = feedbacks.at(-1) ?? '';
     const historicalErrors = feedbacks.slice(0, -1);
 
-    const output = await invokeModel(
+    const output = await this.llmService.invoke(
       this.llm,
-      renderPrompt(this.fixPrompt, {
+      this.llmService.render(this.fixPrompt, {
         dialect: this.config.db?.dialect ?? SupportedDBs.PostgreSQL,
         question: state.prompt,
         currentQuery: state.sql ?? '',

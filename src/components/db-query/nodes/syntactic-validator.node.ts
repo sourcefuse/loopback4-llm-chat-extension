@@ -1,12 +1,8 @@
 import {inject} from '@loopback/context';
+import {service} from '@loopback/core';
 import {graphNode} from '../../../decorators';
-import {
-  IGraphNode,
-  invokeModel,
-  LLMStreamEventType,
-  renderPrompt,
-  RunnableConfig,
-} from '../../../graphs';
+import {IGraphNode, LLMStreamEventType, RunnableConfig} from '../../../graphs';
+import {LlmService} from '../../../services/llm.service';
 import {AiIntegrationBindings} from '../../../keys';
 import {LLMProvider} from '../../../types';
 import {stripThinkingTokens} from '../../../utils';
@@ -18,6 +14,8 @@ import {EvaluationResult, IDbConnector} from '../types';
 @graphNode(DbQueryNodes.SyntacticValidator)
 export class SyntacticValidatorNode implements IGraphNode<DbQueryState> {
   constructor(
+    @service(LlmService)
+    private readonly llmService: LlmService,
     @inject(AiIntegrationBindings.CheapLLM)
     private readonly llm: LLMProvider,
     @inject(DbQueryAIExtensionBindings.Connector)
@@ -72,9 +70,9 @@ Return your response in exactly this format with no other text:
       } as DbQueryState;
     } catch (error) {
       const tableNames = Object.keys(state.schema?.tables ?? {});
-      const output = await invokeModel(
+      const output = await this.llmService.invoke(
         this.llm,
-        renderPrompt(this.prompt, {
+        this.llmService.render(this.prompt, {
           error: error.message,
           query: state.sql,
           tableNames: tableNames.join(', '),

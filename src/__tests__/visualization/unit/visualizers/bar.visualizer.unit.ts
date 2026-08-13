@@ -2,6 +2,7 @@ import {expect} from '@loopback/testlab';
 import {fail} from 'assert';
 import {BarVisualizer} from '../../../../components/visualization/visualizers/bar.visualizer';
 import {VisualizationGraphState} from '../../../../components';
+import {LlmService} from '../../../../services/llm.service';
 import {createMockLLM, MockLLM} from '../../../test-helper';
 
 describe('BarVisualizer Unit', function () {
@@ -10,7 +11,7 @@ describe('BarVisualizer Unit', function () {
 
   beforeEach(() => {
     llm = createMockLLM();
-    visualizer = new BarVisualizer(llm.model);
+    visualizer = new BarVisualizer(new LlmService(), llm.model);
   });
 
   it('should have correct name and description', () => {

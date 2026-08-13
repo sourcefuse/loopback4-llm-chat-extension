@@ -6,6 +6,7 @@ import {
   Errors,
   PermissionHelper,
 } from '../../../../components';
+import {LlmService} from '../../../../services/llm.service';
 import {createMockLLM, MockLLM} from '../../../test-helper';
 import {Currency, Employee, ExchangeRate} from '../../../fixtures/models';
 
@@ -38,7 +39,11 @@ describe('CheckPermissionsNode Unit', function () {
         permissions: ['1'],
       } as unknown as IAuthUserWithPermissions,
     );
-    node = new CheckPermissionsNode(llm.model, permissionHelper);
+    node = new CheckPermissionsNode(
+      new LlmService(),
+      llm.model,
+      permissionHelper,
+    );
   });
 
   it('should return state as it is if no permission is missing', async () => {

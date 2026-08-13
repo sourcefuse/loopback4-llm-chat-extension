@@ -2,6 +2,7 @@ import {expect} from '@loopback/testlab';
 import {fail} from 'assert';
 import {LineVisualizer} from '../../../../components/visualization/visualizers/line.visualizer';
 import {VisualizationGraphState} from '../../../../components';
+import {LlmService} from '../../../../services/llm.service';
 import {createMockLLM, MockLLM} from '../../../test-helper';
 
 describe('LineVisualizer Unit', function () {
@@ -10,7 +11,7 @@ describe('LineVisualizer Unit', function () {
 
   beforeEach(() => {
     llm = createMockLLM();
-    visualizer = new LineVisualizer(llm.model);
+    visualizer = new LineVisualizer(new LlmService(), llm.model);
   });
 
   it('should have correct name and description', () => {
