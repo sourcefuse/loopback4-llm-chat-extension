@@ -207,7 +207,7 @@
     "underscore": "1.13.8",
     "tar": "7.5.12",
     "minimatch": "10.2.4",
-    "undici": "8.5.0",
+    "undici": "8.9.0",
     "ignore": "7.0.5",
     "@sourceloop/file-utils": {
       "@loopback/context": "8.0.11"
