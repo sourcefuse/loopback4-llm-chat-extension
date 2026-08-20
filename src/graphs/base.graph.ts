@@ -66,13 +66,11 @@ export abstract class BaseGraph<T extends object> {
   }
 
   /**
-   * Wraps a graph run or a node in an observation across every registered
-   * observability backend, by composing the `traceRun` of every bound handler
-   * (e.g. Langfuse `ObfHandler`, LangSmith `LangsmithHandler`) around `fn`. The
-   * engine stays backend-agnostic — a backend participates purely by binding a
-   * handler with a `traceRun`. Used for both the whole graph and each node
-   * (`name` distinguishes them; `input` is the state in, `fn`'s result the state
-   * out). A no-op pass-through when no tracing handler is bound.
+   * Wraps a graph run or a node in an observation by composing the `traceRun` of
+   * every handler in the run's callbacks (the `ObfHandler` bound by the host,
+   * e.g. Langfuse/LangSmith) around `fn`. Used for both the whole graph and each
+   * node (`name` distinguishes them; `input` is the state in, `fn`'s result the
+   * state out). A no-op pass-through when no tracing handler is bound.
    */
   protected _traceRun<R>(
     name: string,

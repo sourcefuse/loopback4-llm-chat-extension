@@ -26,7 +26,8 @@ function ensureRegistered(): void {
 }
 
 /**
- * Observability handler bound to `AiIntegrationBindings.LangsmithHandler`.
+ * Observability handler bound to `AiIntegrationBindings.ObfHandler` (via
+ * `LangsmithComponent`).
  *
  * The LangSmith sibling of `LangfuseObfProvider` — same component+provider
  * shape, and, like it, uses its backend SDK (`langsmith`) directly. Before the
