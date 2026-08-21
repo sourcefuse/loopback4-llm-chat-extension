@@ -22,7 +22,7 @@ import {
   SqliteConnector,
 } from '../../components';
 import {AiIntegrationBindings} from '../../keys';
-import {InMemoryVectorStore} from '../../providers';
+import {InMemoryVectorStore} from './inmemory-vector-store.provider';
 import {SupportedDBs} from '../../types';
 import {Currency, ExchangeRate} from './models';
 import {Employee} from './models/employee.model';
