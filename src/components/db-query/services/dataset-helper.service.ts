@@ -1,4 +1,3 @@
-import {VectorStore} from '@langchain/core/vectorstores';
 import {inject, service} from '@loopback/core';
 import {Filter} from '@loopback/repository';
 import {HttpErrors} from '@loopback/rest';
@@ -7,6 +6,7 @@ import {DbQueryAIExtensionBindings} from '../keys';
 import {DbQueryStoredTypes, IDataSet, IDataSetStore} from '../types';
 import {PermissionHelper} from './permission-helper.service';
 import {DatasetUpdateDTO} from '../models/dataset-update-dto.model';
+import {VectorStore} from '../../../vector';
 
 export class DataSetHelper {
   constructor(

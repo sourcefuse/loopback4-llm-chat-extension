@@ -194,7 +194,7 @@ function populateStreamMetrics(
   const finalDescription = body.filter(
     (v: LLMStreamEvent) =>
       v.type === LLMStreamEventType.ToolStatus &&
-      v.data.status?.startsWith('DESCRIPTION:'),
+      (v.data as {status?: string}).status?.startsWith('DESCRIPTION:'),
   );
   const lastDescription = finalDescription.at(-1) as
     LLMStreamToolStatusEvent | undefined;
@@ -207,18 +207,21 @@ function populateStreamMetrics(
   result.generationCount = body.filter(
     (v: LLMStreamEvent) =>
       v.type === LLMStreamEventType.ToolStatus &&
-      v.data.status === 'Generating SQL query from the prompt',
+      (v.data as {status?: string}).status ===
+        'Generating SQL query from the prompt',
   ).length;
   result.usedCache = body.some(
     (v: LLMStreamEvent) =>
       v.type === LLMStreamEventType.ToolStatus &&
-      (v.data.status === 'Found relevant query in cache' ||
-        v.data.status === 'Found similar query in cache, using it as example'),
+      ((v.data as {status?: string}).status ===
+        'Found relevant query in cache' ||
+        (v.data as {status?: string}).status ===
+          'Found similar query in cache, using it as example'),
   );
   result.usedTemplate = body.some(
     (v: LLMStreamEvent) =>
       v.type === LLMStreamEventType.ToolStatus &&
-      v.data.status === 'Matched query template',
+      (v.data as {status?: string}).status === 'Matched query template',
   );
 }
 

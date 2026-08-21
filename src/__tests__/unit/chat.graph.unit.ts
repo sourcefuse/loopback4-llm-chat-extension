@@ -6,6 +6,24 @@ import {AiIntegrationBindings} from '../../keys';
 import {TokenCounter} from '../../services';
 import {buildFileStub, buildNodeStub} from '../test-helper';
 
+/**
+ * `graph.execute` now returns an event queue and runs the Mastra workflow in
+ * the background, closing the queue when the run finishes. Draining the queue
+ * therefore waits for the workflow to run to completion — the behavioural
+ * replacement for `await`-ing the old compiled LangGraph invocation.
+ */
+async function runGraph(
+  graph: ChatGraph,
+  query: string,
+  files: Express.Multer.File[] | Express.Multer.File,
+) {
+  const queue = await graph.execute(query, files, new AbortController().signal);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  for await (const event of queue) {
+    // Ignore emitted events; we only need the run to finish.
+  }
+}
+
 describe(`ChatGraph Unit`, function () {
   let graph: ChatGraph;
   let stubMap: Record<ChatNodes, sinon.SinonStub>;
@@ -39,7 +57,7 @@ describe(`ChatGraph Unit`, function () {
   });
 
   it('should init session, and end session on user prompt', async () => {
-    await graph.execute('test prompt', [], new AbortController().signal);
+    await runGraph(graph, 'test prompt', []);
 
     expect(stubMap[ChatNodes.InitSession].calledOnce).to.be.true();
     expect(stubMap[ChatNodes.CallLLM].calledOnce).to.be.true();
@@ -61,11 +79,7 @@ describe(`ChatGraph Unit`, function () {
       };
     });
 
-    await graph.execute(
-      'test prompt',
-      [buildFileStub(), buildFileStub()],
-      new AbortController().signal,
-    );
+    await runGraph(graph, 'test prompt', [buildFileStub(), buildFileStub()]);
 
     expect(stubMap[ChatNodes.InitSession].calledOnce).to.be.true();
     expect(stubMap[ChatNodes.CallLLM].calledOnce).to.be.true();
@@ -87,11 +101,7 @@ describe(`ChatGraph Unit`, function () {
       };
     });
 
-    await graph.execute(
-      'test prompt',
-      buildFileStub(),
-      new AbortController().signal,
-    );
+    await runGraph(graph, 'test prompt', buildFileStub());
 
     expect(stubMap[ChatNodes.InitSession].calledOnce).to.be.true();
     expect(stubMap[ChatNodes.CallLLM].calledOnce).to.be.true();
@@ -112,12 +122,7 @@ describe(`ChatGraph Unit`, function () {
           ...state,
           messages: [
             ...state.messages,
-            {
-              role: 'assistant',
-              content: 'This is a response from LLM',
-              // eslint-disable-next-line @typescript-eslint/naming-convention
-              tool_calls: [],
-            },
+            {role: 'assistant', content: 'This is a response from LLM'},
           ],
         };
       }
@@ -128,14 +133,13 @@ describe(`ChatGraph Unit`, function () {
           ...state.messages,
           {
             role: 'assistant',
-            content: 'This is a response from LLM',
-            // eslint-disable-next-line @typescript-eslint/naming-convention
-            tool_calls: [
+            content: [
+              {type: 'text', text: 'This is a response from LLM'},
               {
-                id: 'tool-call-1',
-                name: 'test-tool',
-                type: 'function',
-                arguments: {},
+                type: 'tool-call',
+                toolCallId: 'tool-call-1',
+                toolName: 'test-tool',
+                input: {},
               },
             ],
           },
@@ -143,7 +147,29 @@ describe(`ChatGraph Unit`, function () {
       };
     });
 
-    await graph.execute('test prompt', [], new AbortController().signal);
+    // The tool loop continues only while the last message is a tool result, so
+    // the RunTool node must append one. The generic node stub returns the state
+    // unchanged, which would end the loop after a single LLM call; here we make
+    // it emit the tool message the real node would produce.
+    stubMap[ChatNodes.RunTool].callsFake((state: ChatState) => ({
+      ...state,
+      messages: [
+        ...state.messages,
+        {
+          role: 'tool',
+          content: [
+            {
+              type: 'tool-result',
+              toolCallId: 'tool-call-1',
+              toolName: 'test-tool',
+              output: {type: 'text', value: 'tool result'},
+            },
+          ],
+        },
+      ],
+    }));
+
+    await runGraph(graph, 'test prompt', []);
 
     expect(stubMap[ChatNodes.InitSession].calledOnce).to.be.true();
     // this should called twice

@@ -1,9 +1,8 @@
-import {PromptTemplate} from '@langchain/core/prompts';
-import {RunnableSequence} from '@langchain/core/runnables';
 import {inject} from '@loopback/context';
 import {service} from '@loopback/core';
 import {graphNode} from '../../../decorators';
 import {IGraphNode, LLMStreamEventType, RunnableConfig} from '../../../graphs';
+import {LlmService} from '../../../services/llm.service';
 import {AiIntegrationBindings} from '../../../keys';
 import {LLMProvider} from '../../../types';
 import {stripThinkingTokens} from '../../../utils';
@@ -18,6 +17,8 @@ import {DatabaseSchema, DbQueryConfig, GenerationError} from '../types';
 @graphNode(DbQueryNodes.GetTables)
 export class GetTablesNode implements IGraphNode<DbQueryState> {
   constructor(
+    @service(LlmService)
+    private readonly llmService: LlmService,
     @inject(AiIntegrationBindings.CheapLLM)
     private readonly llmCheap: LLMProvider,
     @inject(AiIntegrationBindings.SmartLLM)
@@ -35,7 +36,7 @@ export class GetTablesNode implements IGraphNode<DbQueryState> {
     @service(PermissionHelper)
     private readonly permissionHelper?: PermissionHelper,
   ) {}
-  prompt = PromptTemplate.fromTemplate(`
+  prompt = `
 <instructions>
 You are an AI assistant that extracts table names that are relevant to the users query that will be used to generate an SQL query later.
 - Consider not just the user query but also the context and the table descriptions while selecting the tables.
@@ -69,9 +70,9 @@ failed attempt: <reason for failure>
 <example-failure>
 failed attempt: reason for failure
 </example-failure>
-</output-format>`);
+</output-format>`;
 
-  feedbackPrompt = PromptTemplate.fromTemplate(`
+  feedbackPrompt = `
 <feedback-instructions>
 We also need to consider the errors from last attempt at query generation.
 
@@ -83,7 +84,7 @@ But it was rejected with the following errors:
 
 Use these if they are relevant to the table selection, otherwise ignore them, they would be considered again during the SQL generation step.
 </feedback-instructions>
-`);
+`;
   async execute(
     state: DbQueryState,
     config: RunnableConfig,
@@ -105,7 +106,6 @@ Use these if they are relevant to the table selection, otherwise ignore them, th
     const useSmartLLM = this.config.nodes?.getTablesNode?.useSmartLLM ?? false;
     const llm = useSmartLLM ? this.llmSmart : this.llmCheap;
 
-    const chain = RunnableSequence.from([this.prompt, llm]);
     config.writer?.({
       type: LLMStreamEventType.ToolStatus,
       data: {
@@ -117,19 +117,23 @@ Use these if they are relevant to the table selection, otherwise ignore them, th
     let requiredTables: string[] = [];
     while (attempts < 2) {
       attempts++;
-      const result = await chain.invoke({
-        tables: allTables.join('\n\n'),
-        query: state.prompt,
-        feedbacks: await this.getFeedbacks(state),
-        checks: [
-          `<must-follow-rules>`,
-          ...(this.checks ?? []).map(check => `- ${check}`),
-          ...this.schemaHelper
-            .getTablesContext(dbSchema)
-            .map(check => `- ${check}`),
-          `</must-follow-rules>`,
-        ].join('\n'),
-      });
+      const result = await this.llmService.invoke(
+        llm,
+        this.llmService.render(this.prompt, {
+          tables: allTables.join('\n\n'),
+          query: state.prompt,
+          feedbacks: await this.getFeedbacks(state),
+          checks: [
+            `<must-follow-rules>`,
+            ...(this.checks ?? []).map(check => `- ${check}`),
+            ...this.schemaHelper
+              .getTablesContext(dbSchema)
+              .map(check => `- ${check}`),
+            `</must-follow-rules>`,
+          ].join('\n'),
+        }),
+        {config},
+      );
 
       const output = stripThinkingTokens(result);
 
@@ -180,7 +184,7 @@ Use these if they are relevant to the table selection, otherwise ignore them, th
 
   async getFeedbacks(state: DbQueryState) {
     if (state.feedbacks) {
-      const feedbacks = await this.feedbackPrompt.format({
+      const feedbacks = this.llmService.render(this.feedbackPrompt, {
         query: state.sql,
         feedback: state.feedbacks.join('\n'),
         lastTables: this._tableListFromSchema(state.schema).join(', '),

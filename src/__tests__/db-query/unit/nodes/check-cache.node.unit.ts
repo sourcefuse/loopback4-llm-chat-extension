@@ -1,4 +1,3 @@
-import {BaseRetriever} from '@langchain/core/retrievers';
 import {
   createStubInstance,
   expect,
@@ -13,31 +12,35 @@ import {
   DbQueryState,
   QueryCacheMetadata,
 } from '../../../../components';
-import {LLMProvider} from '../../../../types';
+import {BaseRetriever} from '../../../../vector';
+import {LlmService} from '../../../../services/llm.service';
+import {createMockLLM, MockLLM} from '../../../test-helper';
 
 describe('CheckCacheNode Unit', function () {
   let node: CheckCacheNode;
   let cacheStub: sinon.SinonStub;
-  let llmStub: sinon.SinonStub;
+  let llm: MockLLM;
   let datasetHelperStub: StubbedInstanceWithSinonAccessor<DataSetHelper>;
 
   beforeEach(() => {
     cacheStub = sinon.stub();
-    llmStub = sinon.stub();
+    llm = createMockLLM();
     datasetHelperStub = createStubInstance(DataSetHelper);
     const cache = {
       invoke: cacheStub,
     } as unknown as BaseRetriever<QueryCacheMetadata>;
-    const llm = llmStub as unknown as LLMProvider;
 
-    node = new CheckCacheNode(cache, llm, datasetHelperStub);
+    node = new CheckCacheNode(
+      new LlmService(),
+      cache,
+      llm.model,
+      datasetHelperStub,
+    );
     datasetHelperStub.stubs.checkPermissions.resolves([]);
   });
 
   it('should return state as it is if no relevant query found in cache', async () => {
-    llmStub.resolves({
-      content: CacheResults.NotRelevant,
-    });
+    llm.setText(CacheResults.NotRelevant);
     cacheStub.resolves([]);
     const state = {
       prompt: 'What is the salary of Akshat?',
@@ -49,9 +52,7 @@ describe('CheckCacheNode Unit', function () {
   });
 
   it('should return state with sampleSql if relevant query found in cache', async () => {
-    llmStub.resolves({
-      content: CacheResults.Similar + ' 1',
-    });
+    llm.setText(CacheResults.Similar + ' 1');
     cacheStub.resolves([
       {
         pageContent: 'What is the salary of Akshat?',
@@ -71,9 +72,7 @@ describe('CheckCacheNode Unit', function () {
   });
 
   it('should return state with datasetId and fromCache true if exact query found in cache with matching permissions, and if user has liked it in the past', async () => {
-    llmStub.resolves({
-      content: CacheResults.AsIs + ' 1',
-    });
+    llm.setText(CacheResults.AsIs + ' 1');
     datasetHelperStub.stubs.checkPermissions.resolves([]);
     datasetHelperStub.stubs.find.resolves([
       {
@@ -112,9 +111,7 @@ describe('CheckCacheNode Unit', function () {
   });
 
   it('should return state with datasetId and fromCache true if exact query found in cache with matching permissions, and if user has not seen it in past', async () => {
-    llmStub.resolves({
-      content: CacheResults.AsIs + ' 1',
-    });
+    llm.setText(CacheResults.AsIs + ' 1');
     datasetHelperStub.stubs.checkPermissions.resolves([]);
     datasetHelperStub.stubs.find.resolves([
       {
@@ -159,9 +156,7 @@ describe('CheckCacheNode Unit', function () {
   });
 
   it('should not return state with datasetId and fromCache true even if exact query found in cache with matching permissions, if it was disliked by the user', async () => {
-    llmStub.resolves({
-      content: CacheResults.AsIs + ' 1',
-    });
+    llm.setText(CacheResults.AsIs + ' 1');
     datasetHelperStub.stubs.checkPermissions.resolves([]);
     datasetHelperStub.stubs.find.resolves([
       {
@@ -202,9 +197,7 @@ describe('CheckCacheNode Unit', function () {
   });
 
   it('should return existing state if exact query found in cache but with missing permissions', async () => {
-    llmStub.resolves({
-      content: `${CacheResults.AsIs} 1`,
-    });
+    llm.setText(`${CacheResults.AsIs} 1`);
     datasetHelperStub.stubs.checkPermissions.resolves(['some permission']);
     cacheStub.resolves([
       {
@@ -234,13 +227,11 @@ describe('CheckCacheNode Unit', function () {
 
     expect(result).to.deepEqual({});
     sinon.assert.notCalled(cacheStub);
-    sinon.assert.notCalled(llmStub);
+    expect(llm.calls).to.equal(0);
   });
 
   it('should return state as is if LLM returns invalid index', async () => {
-    llmStub.resolves({
-      content: `${CacheResults.AsIs} 5`,
-    }); // Index out of bounds
+    llm.setText(`${CacheResults.AsIs} 5`); // Index out of bounds
     cacheStub.resolves([
       {
         pageContent: 'What is the salary of Akshat?',
@@ -260,9 +251,7 @@ describe('CheckCacheNode Unit', function () {
   });
 
   it('should return state as is if LLM returns non-numeric index', async () => {
-    llmStub.resolves({
-      content: `${CacheResults.AsIs} abc`,
-    });
+    llm.setText(`${CacheResults.AsIs} abc`);
     cacheStub.resolves([
       {
         pageContent: 'What is the salary of Akshat?',
@@ -282,9 +271,7 @@ describe('CheckCacheNode Unit', function () {
   });
 
   it('should return state as is if LLM returns not-relevant', async () => {
-    llmStub.resolves({
-      content: `${CacheResults.NotRelevant} 1`,
-    });
+    llm.setText(`${CacheResults.NotRelevant} 1`);
     cacheStub.resolves([
       {
         pageContent: 'What is the salary of Akshat?',

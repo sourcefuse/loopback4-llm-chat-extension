@@ -1,6 +1,5 @@
-import {AIMessage} from '@langchain/core/messages';
-import {LLMResult} from '@langchain/core/outputs';
 import {BindingScope, injectable} from '@loopback/core';
+import {LLMEndResult} from '../graphs/types';
 
 @injectable({scope: BindingScope.REQUEST})
 export class TokenCounter {
@@ -26,12 +25,10 @@ export class TokenCounter {
     this.runMap.set(runId, modelName);
   }
 
-  handleLlmEnd(runId: string, message: LLMResult) {
+  handleLlmEnd(runId: string, message: LLMEndResult) {
     const llmName = this.runMap.get(runId) ?? 'unknown';
     this.runMap.delete(runId);
-    const usageMetadata = (
-      message.generations[0][0] as unknown as {message: AIMessage}
-    ).message.usage_metadata;
+    const usageMetadata = message.generations[0][0].message.usage_metadata;
     const prev = this.countMap.get(llmName) ?? {
       inputTokens: 0,
       outputTokens: 0,

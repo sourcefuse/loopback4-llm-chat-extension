@@ -1,6 +1,11 @@
-import {ChatBedrockConverseInput} from '@langchain/aws';
+import {ModelDefaultSettings} from '../../../types';
 
 export type BedrockInstanceConfig = {
   model: string;
-  config?: Partial<ChatBedrockConverseInput>;
+  config?: {
+    region?: string;
+    accessKeyId?: string;
+    secretAccessKey?: string;
+    defaultSettings?: ModelDefaultSettings;
+  };
 };

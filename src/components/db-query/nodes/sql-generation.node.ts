@@ -1,9 +1,7 @@
-import {PromptTemplate} from '@langchain/core/prompts';
-import {RunnableSequence} from '@langchain/core/runnables';
-import {LangGraphRunnableConfig} from '@langchain/langgraph';
 import {inject, service} from '@loopback/core';
 import {graphNode} from '../../../decorators';
-import {IGraphNode, LLMStreamEventType} from '../../../graphs';
+import {IGraphNode, LLMStreamEventType, RunnableConfig} from '../../../graphs';
+import {LlmService} from '../../../services/llm.service';
 import {AiIntegrationBindings} from '../../../keys';
 import {LLMProvider, SupportedDBs} from '../../../types';
 import {stripThinkingTokens} from '../../../utils';
@@ -20,7 +18,7 @@ import {
 
 @graphNode(DbQueryNodes.SqlGeneration)
 export class SqlGenerationNode implements IGraphNode<DbQueryState> {
-  sqlGenerationPrompt = PromptTemplate.fromTemplate(`
+  sqlGenerationPrompt = `
 <instructions>
 You are an expert AI assistant that generates SQL queries based on user questions and a given database schema.
 You try to following the instructions carefully to generate the SQL query that answers the question.
@@ -51,14 +49,14 @@ Adhere to these rules:
 </context>
 <output-instructions>
 {outputFormat}
-</output-instructions>`);
+</output-instructions>`;
 
   outputFormat = `
 Output should only be a valid SQL query with no other special character or formatting.
 Contains the required valid SQL satisfying all the constraints.
 It should have no other character or symbol or character that is not part of SQLs.`;
 
-  feedbackPrompt = PromptTemplate.fromTemplate(`
+  feedbackPrompt = `
 <feedback-instructions>
 We also need to consider the users feedback on the last attempt at query generation.
 Make sure you fix the provided error without introducing any new or past errors.
@@ -72,8 +70,10 @@ In the last attempt, you generated this SQL query -
 </last-error>
 
 {historicalErrors}
-</feedback-instructions>`);
+</feedback-instructions>`;
   constructor(
+    @service(LlmService)
+    private readonly llmService: LlmService,
     @inject(AiIntegrationBindings.SmartLLM)
     private readonly sqlLLM: LLMProvider,
     @inject(AiIntegrationBindings.CheapLLM)
@@ -87,7 +87,7 @@ In the last attempt, you generated this SQL query -
   ) {}
   async execute(
     state: DbQueryState,
-    config: LangGraphRunnableConfig,
+    config: RunnableConfig,
   ): Promise<DbQueryState> {
     let llm;
 
@@ -97,9 +97,7 @@ In the last attempt, you generated this SQL query -
     // Use cheap LLM for validation fix retries — the query is close, just needs small corrections
     const isValidationFixRetry =
       state.feedbacks?.length &&
-      state.feedbacks[state.feedbacks.length - 1].startsWith(
-        'Query Validation Failed',
-      );
+      state.feedbacks.at(-1)?.startsWith('Query Validation Failed');
 
     // Use changeType from ClassifyChangeNode to pick the right LLM
     if (
@@ -112,8 +110,6 @@ In the last attempt, you generated this SQL query -
       llm = this.sqlLLM;
     }
 
-    const chain = RunnableSequence.from([this.sqlGenerationPrompt, llm]);
-
     config.writer?.({
       type: LLMStreamEventType.Log,
       data: `Generating SQL query from the prompt - ${state.prompt}`,
@@ -125,17 +121,21 @@ In the last attempt, you generated this SQL query -
       },
     });
 
-    const output = await chain.invoke({
-      dialect: this.config.db?.dialect ?? SupportedDBs.PostgreSQL,
-      question: state.prompt,
-      dbschema: this.schemaHelper.asString(state.schema),
-      checks: this._buildChecks(state),
-      feedbacks: await this.getFeedbacks(state),
-      exampleQueries: state.feedbacks?.length
-        ? ''
-        : await this.sampleQueries(state),
-      outputFormat: this.outputFormat,
-    });
+    const output = await this.llmService.invoke(
+      llm,
+      this.llmService.render(this.sqlGenerationPrompt, {
+        dialect: this.config.db?.dialect ?? SupportedDBs.PostgreSQL,
+        question: state.prompt,
+        dbschema: this.schemaHelper.asString(state.schema),
+        checks: this._buildChecks(state),
+        feedbacks: await this.getFeedbacks(state),
+        exampleQueries: state.feedbacks?.length
+          ? ''
+          : await this.sampleQueries(state),
+        outputFormat: this.outputFormat,
+      }),
+      {config},
+    );
     const response = stripThinkingTokens(output);
 
     const sql =
@@ -169,9 +169,9 @@ In the last attempt, you generated this SQL query -
 
   async getFeedbacks(state: DbQueryState) {
     if (state.feedbacks?.length) {
-      const lastFeedback = state.feedbacks[state.feedbacks.length - 1];
+      const lastFeedback = state.feedbacks.at(-1) ?? '';
       const otherFeedbacks = state.feedbacks.slice(0, -1);
-      const feedbacks = await this.feedbackPrompt.format({
+      const feedbacks = this.llmService.render(this.feedbackPrompt, {
         query: state.sql,
         feedback: `This was the error in the latest query you generated - \n${lastFeedback}`,
         historicalErrors: otherFeedbacks.length

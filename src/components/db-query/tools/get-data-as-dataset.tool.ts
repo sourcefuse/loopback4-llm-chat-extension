@@ -2,11 +2,14 @@ import {inject, service} from '@loopback/core';
 import {AnyObject} from '@loopback/repository';
 import {z} from 'zod';
 import {graphTool} from '../../../decorators';
-import {IGraphTool, ToolStatus} from '../../../graphs';
+import {
+  GraphTool,
+  IGraphTool,
+  RunnableConfig,
+  ToolStatus,
+} from '../../../graphs';
 import {DbQueryGraph} from '../db-query.graph';
 import {DbQueryConfig, Errors, GenerationError} from '../types';
-import {StructuredToolInterface} from '@langchain/core/tools';
-import {RunnableToolLike} from '@langchain/core/runnables';
 import {DbQueryAIExtensionBindings} from '../keys';
 import {DEFAULT_MAX_READ_ROWS_FOR_AI} from '../constant';
 
@@ -42,16 +45,15 @@ export class GetDataAsDatasetTool implements IGraphTool {
     };
   }
 
-  async build(): Promise<StructuredToolInterface | RunnableToolLike> {
-    const graph = await this.queryPipeline.build();
+  async build(config: RunnableConfig): Promise<GraphTool> {
     const schema = z.object({
       prompt: z
         .string()
         .describe(
           `Prompt from the user that will be used for generating an SQL query and create a dataset from it.`,
         ),
-    }) as AnyObject[string];
-    return graph.asTool({
+    });
+    return this.queryPipeline.asTool(config, {
       name: this.key,
       description: `Query tool for generating SQL queries for a users request. Use it only when the user needs raw tabular data from the database.
                 Do not use this tool if the user's request involves trends, growth, decline, comparisons, distributions, patterns, or any form of analytical insight — use the 'generate-visualization' tool instead.

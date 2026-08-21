@@ -1,5 +1,5 @@
 import {Provider} from '@loopback/core';
-import {ChatGroq} from '@langchain/groq';
+import {createGroq} from '@ai-sdk/groq';
 import {LLMProvider} from '../../../../types';
 
 export class Groq implements Provider<LLMProvider> {
@@ -9,10 +9,13 @@ export class Groq implements Provider<LLMProvider> {
         'GROQ_MODEL and GROQ_API_KEY environment variable is not set.',
       );
     }
-    return new ChatGroq({
-      model: 'llama-3.3-70b-versatile',
-      temperature: 0,
-      maxTokens: undefined,
+    const provider = createGroq({
+      apiKey: process.env.GROQ_API_KEY,
     });
+    const model = provider(process.env.GROQ_MODEL) as LLMProvider;
+    model.defaultSettings = {
+      temperature: 0,
+    };
+    return model;
   }
 }

@@ -1,5 +1,6 @@
 import {Context} from '@loopback/core';
 import {Client, expect, sinon} from '@loopback/testlab';
+import {MockEmbeddingModelV3} from 'ai/test';
 import {AuthenticationBindings} from 'loopback4-authentication';
 import {IAuthUserWithPermissions} from 'loopback4-authorization';
 import {DataSet} from '../../../components/db-query/models';
@@ -20,7 +21,6 @@ describe('DatasetController', () => {
   let app: TestApp;
   let client: Client;
   let dummyDataset: DataSet;
-  let llmStub: sinon.SinonStub;
   let repo: DataSetRepository;
 
   before('setupApplication', async () => {
@@ -28,12 +28,17 @@ describe('DatasetController', () => {
       noKnowledgeGraph: true,
       llmStub: sinon.stub(),
     }));
-    llmStub = sinon.stub();
-    llmStub.resolves([[0.1, 0.2, 0.3]]);
 
-    app.bind(AiIntegrationBindings.EmbeddingModel).to({
-      embedDocuments: llmStub,
-    } as unknown as EmbeddingProvider);
+    // A real AI SDK embedding double — the store now embeds via `embedMany`,
+    // which rejects the old hand-rolled `{embedDocuments}` object.
+    app.bind(AiIntegrationBindings.EmbeddingModel).to(
+      new MockEmbeddingModelV3({
+        doEmbed: async ({values}: {values: string[]}) => ({
+          embeddings: values.map(() => [0.1, 0.2, 0.3]),
+          warnings: [],
+        }),
+      }) as unknown as EmbeddingProvider,
+    );
     await seedEmployees(app);
     await seedDataset(app);
     repo = await getRepo(app, DataSetRepository.name);

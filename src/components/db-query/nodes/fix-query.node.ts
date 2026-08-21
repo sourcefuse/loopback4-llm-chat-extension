@@ -1,9 +1,7 @@
-import {PromptTemplate} from '@langchain/core/prompts';
-import {RunnableSequence} from '@langchain/core/runnables';
-import {LangGraphRunnableConfig} from '@langchain/langgraph';
 import {inject, service} from '@loopback/core';
 import {graphNode} from '../../../decorators';
-import {IGraphNode, LLMStreamEventType} from '../../../graphs';
+import {IGraphNode, LLMStreamEventType, RunnableConfig} from '../../../graphs';
+import {LlmService} from '../../../services/llm.service';
 import {AiIntegrationBindings} from '../../../keys';
 import {LLMProvider, SupportedDBs} from '../../../types';
 import {stripThinkingTokens} from '../../../utils';
@@ -20,7 +18,7 @@ import {
 
 @graphNode(DbQueryNodes.FixQuery)
 export class FixQueryNode implements IGraphNode<DbQueryState> {
-  fixPrompt = PromptTemplate.fromTemplate(`
+  fixPrompt = `
 <instructions>
 You are an expert AI assistant that fixes SQL query errors.
 You are given a SQL query that has validation errors related to specific tables.
@@ -61,9 +59,11 @@ Rules:
 Output should only be a valid SQL query with no other special character or formatting.
 Contains the required valid SQL with the error fixed.
 It should have no other character or symbol or character that is not part of SQLs.
-</output-instructions>`);
+</output-instructions>`;
 
   constructor(
+    @service(LlmService)
+    private readonly llmService: LlmService,
     @inject(AiIntegrationBindings.CheapLLM)
     private readonly llm: LLMProvider,
     @inject(DbQueryAIExtensionBindings.Config)
@@ -74,7 +74,7 @@ It should have no other character or symbol or character that is not part of SQL
 
   async execute(
     state: DbQueryState,
-    config: LangGraphRunnableConfig,
+    config: RunnableConfig,
   ): Promise<DbQueryState> {
     config.writer?.({
       type: LLMStreamEventType.ToolStatus,
@@ -96,26 +96,29 @@ It should have no other character or symbol or character that is not part of SQL
     const errorSchemaString = this.schemaHelper.asString(trimmedSchema);
 
     const feedbacks = state.feedbacks ?? [];
-    const lastFeedback = feedbacks[feedbacks.length - 1] ?? '';
+    const lastFeedback = feedbacks.at(-1) ?? '';
     const historicalErrors = feedbacks.slice(0, -1);
 
-    const chain = RunnableSequence.from([this.fixPrompt, this.llm]);
-    const output = await chain.invoke({
-      dialect: this.config.db?.dialect ?? SupportedDBs.PostgreSQL,
-      question: state.prompt,
-      currentQuery: state.sql ?? '',
-      errorSchema: errorSchemaString,
-      errorFeedback: lastFeedback,
-      checks: this.buildChecks(state, trimmedSchema),
-      historicalErrors: historicalErrors.length
-        ? [
-            `<historical-errors>`,
-            `You already faced following issues in the past -`,
-            historicalErrors.join('\n'),
-            `</historical-errors>`,
-          ].join('\n')
-        : '',
-    });
+    const output = await this.llmService.invoke(
+      this.llm,
+      this.llmService.render(this.fixPrompt, {
+        dialect: this.config.db?.dialect ?? SupportedDBs.PostgreSQL,
+        question: state.prompt,
+        currentQuery: state.sql ?? '',
+        errorSchema: errorSchemaString,
+        errorFeedback: lastFeedback,
+        checks: this.buildChecks(state, trimmedSchema),
+        historicalErrors: historicalErrors.length
+          ? [
+              `<historical-errors>`,
+              `You already faced following issues in the past -`,
+              historicalErrors.join('\n'),
+              `</historical-errors>`,
+            ].join('\n')
+          : '',
+      }),
+      {config},
+    );
 
     const response = stripThinkingTokens(output);
     const sql =

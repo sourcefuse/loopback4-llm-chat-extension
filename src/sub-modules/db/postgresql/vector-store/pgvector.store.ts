@@ -1,22 +1,23 @@
 import {
-  PGVectorStore as PGStore,
-  PGVectorStoreArgs,
-} from '@langchain/community/vectorstores/pgvector';
-import {VectorStore} from '@langchain/core/vectorstores';
-import {
   BindingScope,
   inject,
   injectable,
   Provider,
+  service,
   ValueOrPromise,
 } from '@loopback/core';
 import * as pg from 'pg';
 import {EmbeddingProvider} from '../../../../types';
 import {AiIntegrationBindings} from '../../../../keys';
 import {juggler} from '@loopback/repository';
+import {EmbeddingService} from '../../../../services/embedding.service';
+import {PgVectorStoreImpl, VectorStore} from '../../../../vector';
+
 @injectable({scope: BindingScope.SINGLETON})
 export class PgVectorStore implements Provider<VectorStore> {
   constructor(
+    @service(EmbeddingService)
+    private readonly embedder: EmbeddingService,
     @inject(AiIntegrationBindings.EmbeddingModel)
     private readonly embeddingModel: EmbeddingProvider,
     @inject(`datasources.writerdb`)
@@ -36,18 +37,10 @@ export class PgVectorStore implements Provider<VectorStore> {
     const reusablePool = this.pgDataSource.connector?.pg as pg.Pool;
     const dsConfig = this.pgDataSource.connector?.settings;
 
-    const config: PGVectorStoreArgs = {
+    return new PgVectorStoreImpl(this.embedder, this.embeddingModel, {
       pool: reusablePool,
       schemaName: dsConfig.schema || 'public',
       tableName: 'semantic_cache',
-      extensionSchemaName: dsConfig.schema || 'public',
-      columns: {
-        idColumnName: 'id',
-        vectorColumnName: 'vector',
-        contentColumnName: 'content',
-        metadataColumnName: 'metadata',
-      },
-    };
-    return PGStore.initialize(this.embeddingModel, config);
+    });
   }
 }

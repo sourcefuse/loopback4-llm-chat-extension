@@ -1,18 +1,8 @@
-import {ChatAnthropic} from '@langchain/anthropic';
-import {BedrockEmbeddings, ChatBedrockConverse} from '@langchain/aws';
-import {ChatCerebras} from '@langchain/cerebras';
-import {
-  ChatGoogleGenerativeAI,
-  GoogleGenerativeAIEmbeddings,
-} from '@langchain/google-genai';
-import {BaseCheckpointSaver} from '@langchain/langgraph';
-import {ChatOllama, OllamaEmbeddings} from '@langchain/ollama';
-import {ChatOpenAI, OpenAIEmbeddings} from '@langchain/openai';
+import {type EmbeddingModel, type LanguageModel} from 'ai';
+import {type MastraStorage} from '@mastra/core/storage';
 import {Provider} from '@loopback/core';
 import {AnyObject} from '@loopback/repository';
 import {IGraphTool} from './graphs/types';
-import {ChatGroq} from '@langchain/groq';
-import {ChatOpenRouter} from '@langchain/openrouter';
 
 export enum SupportedDBs {
   PostgreSQL = 'PostgreSQL',
@@ -37,27 +27,32 @@ export type AIIntegrationConfig = {
 
 export type FileMessageBuilder = (file: Express.Multer.File) => AnyObject;
 
-export type LLMProviderType =
-  | ChatOllama
-  | ChatCerebras
-  | ChatOpenAI
-  | ChatAnthropic
-  | ChatBedrockConverse
-  | ChatGoogleGenerativeAI
-  | ChatGroq
-  | ChatOpenRouter;
+/** Per-call model settings carried on a provider (temperature, reasoning, etc.). */
+export type ModelDefaultSettings = {
+  temperature?: number;
+  maxOutputTokens?: number;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  providerOptions?: Record<string, any>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  [key: string]: any;
+};
+
+/**
+ * An AI SDK language model, optionally augmented with a provider-specific file
+ * builder (e.g. Bedrock PDF parts) and default per-call settings. The binding
+ * keys (`SmartLLM`, `CheapLLM`, ...) are unchanged; only the value type moved
+ * from a LangChain chat model to an AI SDK model.
+ */
+export type LLMProviderType = LanguageModel;
 
 export type LLMProvider = LLMProviderType & {
   getFile?: FileMessageBuilder;
+  defaultSettings?: ModelDefaultSettings;
 };
 
-export type EmbeddingProvider =
-  | OpenAIEmbeddings
-  | OllamaEmbeddings
-  | BedrockEmbeddings
-  | GoogleGenerativeAIEmbeddings;
+export type EmbeddingProvider = EmbeddingModel;
 
-export type CheckpointerProvider = Provider<BaseCheckpointSaver>;
+export type CheckpointerProvider = Provider<MastraStorage>;
 
 export type ToolStore = {
   list: IGraphTool[];

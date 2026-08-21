@@ -1,13 +1,13 @@
 import {Context, inject} from '@loopback/context';
+import {service} from '@loopback/core';
 import {graphNode} from '../../../decorators';
 import {IGraphNode, LLMStreamEventType, RunnableConfig} from '../../../graphs';
+import {LlmService} from '../../../services/llm.service';
 import {AiIntegrationBindings} from '../../../keys';
 import {LLMProvider} from '../../../types';
 import {VisualizationGraphState} from '../state';
 import {VisualizationGraphNodes} from '../nodes.enum';
-import {PromptTemplate} from '@langchain/core/prompts';
 import {stripThinkingTokens} from '../../../utils';
-import {RunnableSequence} from '@langchain/core/runnables';
 import {VISUALIZATION_KEY} from '../keys';
 import {IVisualizer} from '../types';
 import {POST_DATASET_TAG} from '../../db-query';
@@ -16,7 +16,7 @@ import {POST_DATASET_TAG} from '../../db-query';
   [POST_DATASET_TAG]: true,
 })
 export class SelectVisualizationNode implements IGraphNode<VisualizationGraphState> {
-  prompt = PromptTemplate.fromTemplate(`
+  prompt = `
 <instructions>
 You are expert Data Analysis Agent whose job is to suggest visualisations that would be best suited to display the results for a particular user prompt and the data extracted based on that prompt.
 You are provided with 2 inputs -
@@ -54,8 +54,10 @@ type-of-visualization
 none: reason why the visualization is not possible with the current prompt.
 </output-example-2>
 </output-format>
-`);
+`;
   constructor(
+    @service(LlmService)
+    private readonly llmService: LlmService,
     @inject(AiIntegrationBindings.CheapLLM)
     private readonly llm: LLMProvider,
     @inject.context()
@@ -82,25 +84,26 @@ none: reason why the visualization is not possible with the current prompt.
         visualizerName: selected.name,
       };
     }
-    const chain = RunnableSequence.from([
-      this.prompt,
-      this.llm,
-      stripThinkingTokens,
-    ]);
     config.writer?.({
       type: LLMStreamEventType.ToolStatus,
       data: {
         status: 'Selecting best visualization for the data',
       },
     });
-    const output = await chain.invoke({
-      prompt: state.prompt,
-      sql: state.sql,
-      description: state.queryDescription,
-      visualizations: visualizations
-        .map(v => `- ${v.name}: ${v.description}`)
-        .join('\n'),
-    });
+    const output = stripThinkingTokens(
+      await this.llmService.invoke(
+        this.llm,
+        this.llmService.render(this.prompt, {
+          prompt: state.prompt,
+          sql: state.sql,
+          description: state.queryDescription,
+          visualizations: visualizations
+            .map(v => `- ${v.name}: ${v.description}`)
+            .join('\n'),
+        }),
+        {config},
+      ),
+    );
     if (output.trim().startsWith('none')) {
       return {
         ...state,
