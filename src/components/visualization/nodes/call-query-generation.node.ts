@@ -21,9 +21,7 @@ export class CallQueryGenerationNode implements IGraphNode<VisualizationGraphSta
       return state;
     }
 
-    const queryGraph = await this.queryPipeline.build();
-
-    const result = await queryGraph.invoke(
+    const result = await this.queryPipeline.invoke(
       {
         datasetId: state.datasetId,
         directCall: true,

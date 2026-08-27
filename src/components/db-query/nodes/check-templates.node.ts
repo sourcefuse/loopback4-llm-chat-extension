@@ -1,9 +1,8 @@
-import {PromptTemplate} from '@langchain/core/prompts';
-import {BaseRetriever} from '@langchain/core/retrievers';
-import {RunnableSequence} from '@langchain/core/runnables';
 import {inject, service} from '@loopback/core';
+import {BaseRetriever} from '../../../vector';
 import {graphNode} from '../../../decorators';
 import {IGraphNode, LLMStreamEventType, RunnableConfig} from '../../../graphs';
+import {LlmService} from '../../../services/llm.service';
 import {AiIntegrationBindings} from '../../../keys';
 import {LLMProvider} from '../../../types';
 import {stripThinkingTokens} from '../../../utils';
@@ -18,6 +17,8 @@ import {TemplateHelper} from '../services/template-helper.service';
 @graphNode(DbQueryNodes.CheckTemplates)
 export class CheckTemplatesNode implements IGraphNode<DbQueryState> {
   constructor(
+    @service(LlmService)
+    private readonly llmService: LlmService,
     @inject(DbQueryAIExtensionBindings.TemplateCache)
     private readonly templateCache: BaseRetriever<QueryTemplateMetadata>,
     @inject(AiIntegrationBindings.CheapLLM)
@@ -30,7 +31,7 @@ export class CheckTemplatesNode implements IGraphNode<DbQueryState> {
     private readonly schemaStore: SchemaStore,
   ) {}
 
-  matchPrompt = PromptTemplate.fromTemplate(`
+  matchPrompt = `
 <instructions>
 You are an expert at matching user prompts to query templates.
 Given a user prompt and a list of query templates with their canonical prompts and placeholders, determine if any template can EXACTLY fulfill the user's request.
@@ -58,7 +59,7 @@ If a template is an exact match, return: match <index-starting-from-1>
 If no template exactly matches, return: no_match
 
 Do not return any other text or explanation.
-</output-format>`);
+</output-format>`;
 
   async execute(
     state: DbQueryState,
@@ -72,12 +73,6 @@ Do not return any other text or explanation.
       });
       return {};
     }
-
-    const chain = RunnableSequence.from([
-      this.matchPrompt,
-      this.llm,
-      stripThinkingTokens,
-    ]);
 
     const templatesText = relevantDocs
       .map((doc, index) => {
@@ -98,12 +93,15 @@ ${placeholderText}
       })
       .join('\n');
 
-    const response = await chain.invoke(
-      {
-        prompt: state.prompt,
-        templates: templatesText,
-      },
-      config,
+    const response = stripThinkingTokens(
+      await this.llmService.invoke(
+        this.llm,
+        this.llmService.render(this.matchPrompt, {
+          prompt: state.prompt,
+          templates: templatesText,
+        }),
+        {config},
+      ),
     );
 
     const trimmed = response.trim();
@@ -115,7 +113,7 @@ ${placeholderText}
       return {};
     }
 
-    const matchResult = trimmed.match(/^match\s+(\d+)$/);
+    const matchResult = /^match\s+(\d+)$/.exec(trimmed);
     if (!matchResult) {
       config.writer?.({
         type: LLMStreamEventType.Log,

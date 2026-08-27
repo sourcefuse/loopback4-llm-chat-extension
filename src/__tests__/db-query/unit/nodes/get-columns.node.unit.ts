@@ -1,5 +1,5 @@
 import {juggler} from '@loopback/repository';
-import {expect, sinon} from '@loopback/testlab';
+import {expect} from '@loopback/testlab';
 import {
   DbQueryState,
   DbSchemaHelperService,
@@ -7,18 +7,18 @@ import {
   GetColumnsNode,
   SqliteConnector,
 } from '../../../../components';
-import {LLMProvider} from '../../../../types';
+import {LlmService} from '../../../../services/llm.service';
+import {createMockLLM, MockLLM} from '../../../test-helper';
 import {Employee, ExchangeRate} from '../../../fixtures/models';
 import {IAuthUserWithPermissions} from 'loopback4-authorization';
 
 describe('GetColumnsNode Unit', function () {
   let node: GetColumnsNode;
-  let llmStub: sinon.SinonStub;
+  let llm: MockLLM;
   let schemaHelper: DbSchemaHelperService;
 
   beforeEach(async () => {
-    llmStub = sinon.stub();
-    const llm = llmStub as unknown as LLMProvider;
+    llm = createMockLLM();
 
     schemaHelper = new DbSchemaHelperService(
       new SqliteConnector(
@@ -34,7 +34,8 @@ describe('GetColumnsNode Unit', function () {
     );
 
     node = new GetColumnsNode(
-      llm,
+      new LlmService(),
+      llm.model,
       schemaHelper,
       {
         models: [],
@@ -71,10 +72,9 @@ describe('GetColumnsNode Unit', function () {
     } as unknown as DbQueryState;
 
     // Mock LLM response with selected columns
-    llmStub.resolves({
-      content:
-        '{\n  "employees": ["name", "salary", "currency_id"],\n  "exchange_rates": ["currency_id", "rate"]\n}',
-    });
+    llm.setText(
+      '{\n  "employees": ["name", "salary", "currency_id"],\n  "exchange_rates": ["currency_id", "rate"]\n}',
+    );
 
     const result = await node.execute(state, {});
 
@@ -114,10 +114,9 @@ describe('GetColumnsNode Unit', function () {
       schema: filteredSchema,
     } as unknown as DbQueryState;
 
-    llmStub.resolves({
-      content:
-        'failed attempt: Query is too ambiguous to determine relevant columns',
-    });
+    llm.setText(
+      'failed attempt: Query is too ambiguous to determine relevant columns',
+    );
 
     const result = await node.execute(state, {});
 
@@ -153,9 +152,7 @@ describe('GetColumnsNode Unit', function () {
     } as unknown as DbQueryState;
 
     // Mock LLM response that doesn't include primary key
-    llmStub.resolves({
-      content: '{\n  "employees": ["name"]\n}',
-    });
+    llm.setText('{\n  "employees": ["name"]\n}');
 
     const result = await node.execute(state, {});
 

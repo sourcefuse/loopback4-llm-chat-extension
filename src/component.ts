@@ -49,7 +49,9 @@ import {RedisCache, RedisCacheRepository} from './providers/cache/redis';
 import {ChatRepository, MessageRepository} from './repositories';
 import {
   ChatCountStrategy,
+  EmbeddingService,
   GenerationService,
+  LlmService,
   TokenCountPerUserStrategy,
   TokenCountStrategy,
 } from './services';
@@ -86,6 +88,8 @@ export class AiIntegrationsComponent implements Component {
     this.services = [
       // utils
       TokenCounter,
+      LlmService,
+      EmbeddingService,
       GenerationService,
       ChatStore,
       // graph

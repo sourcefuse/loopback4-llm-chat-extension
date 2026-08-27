@@ -1,4 +1,3 @@
-import {BaseMessage, trimMessages} from '@langchain/core/messages';
 import {inject} from '@loopback/core';
 import {DEFAULT_MAX_TOKEN_COUNT} from '../../../constant';
 import {graphNode} from '../../../decorators';
@@ -6,6 +5,7 @@ import {AiIntegrationBindings} from '../../../keys';
 import {AIIntegrationConfig} from '../../../types';
 import {approxTokenCounter} from '../../../utils';
 import {LLMStreamEventType} from '../../event.types';
+import {ModelMessage, trimMessages} from '../../messages';
 import {ChatState} from '../../state';
 import {IGraphNode, RunnableConfig} from '../../types';
 import {ChatNodes} from '../nodes.enum';
@@ -36,7 +36,7 @@ export class ContextCompressionNode implements IGraphNode<ChatState> {
       const trimmed = await trimMessages(state.messages, {
         maxTokens: maxTokenCount,
         strategy: 'last',
-        tokenCounter: (messages: BaseMessage[]) =>
+        tokenCounter: (messages: ModelMessage[]) =>
           messages.reduce(
             (count, message) => count + approxTokenCounter(message.content),
             0,

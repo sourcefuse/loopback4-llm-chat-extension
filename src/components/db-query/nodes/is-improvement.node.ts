@@ -1,7 +1,6 @@
-import {LangGraphRunnableConfig} from '@langchain/langgraph';
 import {inject} from '@loopback/context';
 import {graphNode} from '../../../decorators';
-import {IGraphNode} from '../../../graphs';
+import {IGraphNode, RunnableConfig} from '../../../graphs';
 import {DbQueryAIExtensionBindings} from '../keys';
 import {DbQueryNodes} from '../nodes.enum';
 import {DbQueryState} from '../state';
@@ -16,7 +15,7 @@ export class IsImprovementNode implements IGraphNode<DbQueryState> {
 
   async execute(
     state: DbQueryState,
-    config: LangGraphRunnableConfig,
+    config: RunnableConfig,
   ): Promise<DbQueryState> {
     if (state.datasetId) {
       const dataset = await this.store.findById(state.datasetId);

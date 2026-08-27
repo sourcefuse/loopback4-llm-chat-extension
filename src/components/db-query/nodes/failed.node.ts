@@ -1,6 +1,10 @@
-import {LangGraphRunnableConfig} from '@langchain/langgraph';
 import {graphNode} from '../../../decorators';
-import {IGraphNode, LLMStreamEventType, ToolStatus} from '../../../graphs';
+import {
+  IGraphNode,
+  LLMStreamEventType,
+  RunnableConfig,
+  ToolStatus,
+} from '../../../graphs';
 import {DbQueryNodes} from '../nodes.enum';
 import {DbQueryState} from '../state';
 
@@ -8,7 +12,7 @@ import {DbQueryState} from '../state';
 export class FailedNode implements IGraphNode<DbQueryState> {
   async execute(
     state: DbQueryState,
-    config: LangGraphRunnableConfig,
+    config: RunnableConfig,
   ): Promise<DbQueryState> {
     config.writer?.({
       type: LLMStreamEventType.ToolStatus,

@@ -6,11 +6,13 @@ import {
   givenHttpServerConfig,
   sinon,
 } from '@loopback/testlab';
+import {MockLanguageModelV3} from 'ai/test';
 import {config} from 'dotenv';
 import {sign} from 'jsonwebtoken';
 import {AuthenticationBindings} from 'loopback4-authentication';
 import {IAuthUserWithPermissions} from 'loopback4-authorization';
 import {IDataSetStore} from '../components';
+import {LLMProvider} from '../types';
 import {DataSetRepository} from '../components/db-query/repositories';
 import {
   CurrencyRepository,
@@ -262,4 +264,129 @@ export async function getRepo(app: Application, repo: string) {
 export interface AppWithClient {
   app: TestApp;
   client: Client;
+}
+
+interface MockToolCall {
+  toolCallId: string;
+  toolName: string;
+  input: object;
+}
+
+/**
+ * A fake LLM built on the Vercel AI SDK test double. Replaces the old sinon
+ * stubs that impersonated a LangChain chat model (`.invoke`/`.bindTools`).
+ * Nodes now call `invokeModel`/`generateText`/`generateObject`, so a real
+ * `LanguageModelV3` double is required. It records the prompt text handed to
+ * each call so tests can assert on what was sent to the model.
+ */
+export interface MockLLM {
+  model: LLMProvider;
+  readonly prompts: string[];
+  readonly calls: number;
+  /** Sets the text the next generation(s) will return. */
+  setText(text: string): void;
+  /**
+   * Queues a distinct text per generation, in order. Once the queue is
+   * exhausted the last entry is reused for any further generations. Replaces
+   * the old `stub.onFirstCall()/onSecondCall()` sequencing for nodes that
+   * call the model more than once (e.g. retry loops).
+   */
+  setTextSequence(texts: string[]): void;
+  /** Makes the next generation(s) return the given tool calls. */
+  setToolCalls(toolCalls: MockToolCall[]): void;
+  /** Makes the next generation(s) reject with the given error. */
+  rejectWith(error: Error): void;
+}
+
+function extractPromptText(prompt: unknown): string {
+  if (!Array.isArray(prompt)) {
+    return '';
+  }
+  return (prompt as Array<{content: unknown}>)
+    .map(message => {
+      const content = message.content;
+      if (typeof content === 'string') {
+        return content;
+      }
+      if (Array.isArray(content)) {
+        return (content as Array<{text?: string}>)
+          .map(part => part.text ?? '')
+          .join('');
+      }
+      return '';
+    })
+    .join('\n');
+}
+
+export function createMockLLM(initialText = ''): MockLLM {
+  const state = {
+    text: initialText,
+    textQueue: [] as string[],
+    toolCalls: [] as MockToolCall[],
+    error: undefined as Error | undefined,
+    prompts: [] as string[],
+    calls: 0,
+  };
+
+  const doGenerate = (async (options: {prompt: unknown}) => {
+    state.calls++;
+    state.prompts.push(extractPromptText(options.prompt));
+    if (state.error) {
+      throw state.error;
+    }
+    let text = state.text;
+    if (state.textQueue.length > 0) {
+      // Consume one queued response per call; keep the last one afterwards.
+      text =
+        state.textQueue.length > 1
+          ? (state.textQueue.shift() as string)
+          : state.textQueue[0];
+    }
+    const content: Array<Record<string, unknown>> = [{type: 'text', text}];
+    for (const call of state.toolCalls) {
+      content.push({
+        type: 'tool-call',
+        toolCallId: call.toolCallId,
+        toolName: call.toolName,
+        input: JSON.stringify(call.input),
+      });
+    }
+    return {
+      finishReason: state.toolCalls.length > 0 ? 'tool-calls' : 'stop',
+      usage: {inputTokens: {total: 1}, outputTokens: {total: 1}},
+      content,
+      warnings: [],
+    };
+  }) as unknown as NonNullable<
+    ConstructorParameters<typeof MockLanguageModelV3>[0]
+  >['doGenerate'];
+
+  const model = new MockLanguageModelV3({doGenerate}) as unknown as LLMProvider;
+  // Nodes call `invokeModel`, which spreads `model.defaultSettings` into the AI
+  // SDK call. `allowSystemInMessages` lets nodes that build their own system
+  // message inline (e.g. summarise-file) pass it through `messages` — the AI
+  // SDK otherwise rejects system-role entries in `messages` by default.
+  model.defaultSettings = {allowSystemInMessages: true};
+
+  return {
+    model,
+    get prompts() {
+      return state.prompts;
+    },
+    get calls() {
+      return state.calls;
+    },
+    setText(text: string) {
+      state.text = text;
+    },
+    setTextSequence(texts: string[]) {
+      state.textQueue = [...texts];
+    },
+    setToolCalls(toolCalls: MockToolCall[]) {
+      state.toolCalls = toolCalls;
+    },
+    rejectWith(error: Error) {
+      state.error = error;
+    },
+  };
 }

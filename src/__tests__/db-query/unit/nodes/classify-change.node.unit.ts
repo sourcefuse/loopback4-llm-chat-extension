@@ -1,17 +1,16 @@
 import {expect, sinon} from '@loopback/testlab';
-import {LangGraphRunnableConfig} from '@langchain/langgraph';
 import {ChangeType, ClassifyChangeNode} from '../../../../components';
 import {DbQueryState} from '../../../../components/db-query/state';
-import {LLMProvider} from '../../../../types';
+import {LlmService} from '../../../../services/llm.service';
+import {createMockLLM, MockLLM} from '../../../test-helper';
 
 describe('ClassifyChangeNode Unit', function () {
   let node: ClassifyChangeNode;
-  let llmStub: sinon.SinonStub;
+  let llm: MockLLM;
 
   beforeEach(() => {
-    llmStub = sinon.stub();
-    const llm = llmStub as unknown as LLMProvider;
-    node = new ClassifyChangeNode(llm);
+    llm = createMockLLM();
+    node = new ClassifyChangeNode(new LlmService(), llm.model);
   });
 
   afterEach(() => {
@@ -26,16 +25,14 @@ describe('ClassifyChangeNode Unit', function () {
       sampleSqlPrompt: undefined,
     } as unknown as DbQueryState;
 
-    const result = await node.execute(state, {} as LangGraphRunnableConfig);
+    const result = await node.execute(state, {});
 
     expect(result).to.deepEqual({});
-    sinon.assert.notCalled(llmStub);
+    expect(llm.calls).to.equal(0);
   });
 
   it('should classify as Minor for small changes', async () => {
-    llmStub.resolves({
-      content: 'minor',
-    });
+    llm.setText('minor');
 
     const state = {
       prompt: 'Get users with age > 25',
@@ -44,16 +41,14 @@ describe('ClassifyChangeNode Unit', function () {
       sampleSqlPrompt: 'Get users with age > 20',
     } as unknown as DbQueryState;
 
-    const result = await node.execute(state, {} as LangGraphRunnableConfig);
+    const result = await node.execute(state, {});
 
     expect(result.changeType).to.equal(ChangeType.Minor);
-    sinon.assert.calledOnce(llmStub);
+    expect(llm.calls).to.equal(1);
   });
 
   it('should classify as Major for structural changes', async () => {
-    llmStub.resolves({
-      content: 'major',
-    });
+    llm.setText('major');
 
     const state = {
       prompt: 'Get users with their orders and total amount',
@@ -62,16 +57,14 @@ describe('ClassifyChangeNode Unit', function () {
       sampleSqlPrompt: 'Get all users',
     } as unknown as DbQueryState;
 
-    const result = await node.execute(state, {} as LangGraphRunnableConfig);
+    const result = await node.execute(state, {});
 
     expect(result.changeType).to.equal(ChangeType.Major);
-    sinon.assert.calledOnce(llmStub);
+    expect(llm.calls).to.equal(1);
   });
 
   it('should classify as Rewrite for fundamentally different queries', async () => {
-    llmStub.resolves({
-      content: 'rewrite',
-    });
+    llm.setText('rewrite');
 
     const state = {
       prompt: 'Get monthly revenue breakdown by product category',
@@ -80,16 +73,14 @@ describe('ClassifyChangeNode Unit', function () {
       sampleSqlPrompt: 'Get all users',
     } as unknown as DbQueryState;
 
-    const result = await node.execute(state, {} as LangGraphRunnableConfig);
+    const result = await node.execute(state, {});
 
     expect(result.changeType).to.equal(ChangeType.Rewrite);
-    sinon.assert.calledOnce(llmStub);
+    expect(llm.calls).to.equal(1);
   });
 
   it('should default to Major for unrecognized LLM responses', async () => {
-    llmStub.resolves({
-      content: 'something unexpected',
-    });
+    llm.setText('something unexpected');
 
     const state = {
       prompt: 'Get users',
@@ -98,15 +89,13 @@ describe('ClassifyChangeNode Unit', function () {
       sampleSqlPrompt: 'Get all users',
     } as unknown as DbQueryState;
 
-    const result = await node.execute(state, {} as LangGraphRunnableConfig);
+    const result = await node.execute(state, {});
 
     expect(result.changeType).to.equal(ChangeType.Major);
   });
 
   it('should pass original and new descriptions to the LLM', async () => {
-    llmStub.resolves({
-      content: 'minor',
-    });
+    llm.setText('minor');
 
     const state = {
       prompt: 'Get users with age > 30',
@@ -115,17 +104,15 @@ describe('ClassifyChangeNode Unit', function () {
       sampleSqlPrompt: 'Get users with age > 20',
     } as unknown as DbQueryState;
 
-    await node.execute(state, {} as LangGraphRunnableConfig);
+    await node.execute(state, {});
 
-    const prompt = llmStub.firstCall.args[0];
-    expect(prompt.value).to.containEql('Get users with age > 20');
-    expect(prompt.value).to.containEql('Get users with age > 30');
+    const prompt = llm.prompts[0];
+    expect(prompt).to.containEql('Get users with age > 20');
+    expect(prompt).to.containEql('Get users with age > 30');
   });
 
   it('should handle empty sampleSqlPrompt gracefully', async () => {
-    llmStub.resolves({
-      content: 'major',
-    });
+    llm.setText('major');
 
     const state = {
       prompt: 'Get all users',
@@ -134,16 +121,14 @@ describe('ClassifyChangeNode Unit', function () {
       sampleSqlPrompt: undefined,
     } as unknown as DbQueryState;
 
-    const result = await node.execute(state, {} as LangGraphRunnableConfig);
+    const result = await node.execute(state, {});
 
     expect(result.changeType).to.equal(ChangeType.Major);
-    sinon.assert.calledOnce(llmStub);
+    expect(llm.calls).to.equal(1);
   });
 
   it('should handle LLM response with extra whitespace and casing', async () => {
-    llmStub.resolves({
-      content: '  Minor  \n',
-    });
+    llm.setText('  Minor  \n');
 
     const state = {
       prompt: 'Get users with age > 25',
@@ -152,7 +137,7 @@ describe('ClassifyChangeNode Unit', function () {
       sampleSqlPrompt: 'Get users with age > 20',
     } as unknown as DbQueryState;
 
-    const result = await node.execute(state, {} as LangGraphRunnableConfig);
+    const result = await node.execute(state, {});
 
     expect(result.changeType).to.equal(ChangeType.Minor);
   });

@@ -1,172 +1,250 @@
-import {END, START, StateGraph} from '@langchain/langgraph';
-import {BaseGraph} from '../../graphs';
+import {createWorkflow} from '@mastra/core/workflows';
+import {z} from 'zod';
+import {BaseGraph, passthroughSchema} from '../../graphs';
 import {MAX_ATTEMPTS} from './constant';
 import {DbQueryNodes} from './nodes.enum';
 import {DbQueryGraphStateAnnotation, DbQueryState} from './state';
 import {EvaluationResult, GenerationError} from './types';
 
 export class DbQueryGraph extends BaseGraph<DbQueryState> {
-  async build() {
-    const graph = new StateGraph(DbQueryGraphStateAnnotation);
-    await this._addNodes(graph);
-    this._addEdges(graph);
-    return graph.compile();
+  protected stateSchema =
+    DbQueryGraphStateAnnotation as unknown as z.ZodType<DbQueryState>;
+
+  build() {
+    const {
+      isImprovement,
+      getColumns,
+      generateChecklist,
+      failed,
+      saveDataset,
+      fixQuery,
+      getTables,
+      discover,
+      generateSql,
+      preValidation,
+      validate,
+      postValidation,
+      noop,
+    } = this._buildSteps();
+
+    // --- regeneration from freshly reselected tables (ReselectTables edge) ---
+    const reselectTables = createWorkflow({
+      id: 'db_query_reselect_tables',
+      inputSchema: passthroughSchema,
+      outputSchema: passthroughSchema,
+      stateSchema: this.stateSchema,
+    })
+      .then(getTables)
+      .then(getColumns)
+      .then(generateChecklist)
+      .then(generateSql)
+      .branch([
+        [
+          async ({state}) =>
+            (state as DbQueryState).status === GenerationError.Failed,
+          failed,
+        ],
+        [
+          async ({state}) =>
+            (state as DbQueryState).status !== GenerationError.Failed,
+          noop,
+        ],
+      ])
+      .commit();
+
+    // --- FixQuery, then re-route on failure (FixQuery conditional edge) ---
+    const fixQueryFlow = createWorkflow({
+      id: 'db_query_fix_query',
+      inputSchema: passthroughSchema,
+      outputSchema: passthroughSchema,
+      stateSchema: this.stateSchema,
+    })
+      .then(fixQuery)
+      .branch([
+        [
+          async ({state}) =>
+            (state as DbQueryState).status === GenerationError.Failed,
+          failed,
+        ],
+        [
+          async ({state}) =>
+            (state as DbQueryState).status !== GenerationError.Failed,
+          noop,
+        ],
+      ])
+      .commit();
+
+    // --- one validation iteration + routing (PostValidation conditional edges) ---
+    const validationIteration = createWorkflow({
+      id: 'db_query_validation_iteration',
+      inputSchema: passthroughSchema,
+      outputSchema: passthroughSchema,
+      stateSchema: this.stateSchema,
+    })
+      .then(preValidation)
+      .then(validate)
+      .then(postValidation)
+      .branch([
+        [
+          async ({state}) =>
+            ((state as DbQueryState).feedbacks ?? []).length >= MAX_ATTEMPTS,
+          failed,
+        ],
+        [
+          async ({state}) =>
+            ((state as DbQueryState).feedbacks ?? []).length < MAX_ATTEMPTS &&
+            (state as DbQueryState).status === EvaluationResult.TableError,
+          reselectTables,
+        ],
+        [
+          async ({state}) =>
+            ((state as DbQueryState).feedbacks ?? []).length < MAX_ATTEMPTS &&
+            (state as DbQueryState).status === EvaluationResult.QueryError,
+          fixQueryFlow,
+        ],
+        [
+          async ({state}) =>
+            ((state as DbQueryState).feedbacks ?? []).length < MAX_ATTEMPTS &&
+            (state as DbQueryState).status === EvaluationResult.Pass,
+          saveDataset,
+        ],
+        [
+          async ({state}) => {
+            const s = state as DbQueryState;
+            const attempts = (s.feedbacks ?? []).length;
+            return (
+              attempts < MAX_ATTEMPTS &&
+              s.status !== EvaluationResult.TableError &&
+              s.status !== EvaluationResult.QueryError &&
+              s.status !== EvaluationResult.Pass
+            );
+          },
+          failed,
+        ],
+      ])
+      .commit();
+
+    // --- the Continue branch: generate SQL, then validate/fix in a loop ---
+    const generateAndValidate = createWorkflow({
+      id: 'db_query_generate_and_validate',
+      inputSchema: passthroughSchema,
+      outputSchema: passthroughSchema,
+      stateSchema: this.stateSchema,
+    })
+      .then(getColumns)
+      .then(generateChecklist)
+      .then(generateSql)
+      .branch([
+        [
+          async ({state}) =>
+            (state as DbQueryState).status === GenerationError.Failed,
+          failed,
+        ],
+        [
+          async ({state}) =>
+            (state as DbQueryState).status !== GenerationError.Failed,
+          // Validate the generated SQL, looping through fix/reselect until a
+          // dataset is saved or generation is marked failed (bounded by
+          // MAX_ATTEMPTS via the feedbacks channel).
+          createWorkflow({
+            id: 'db_query_validation_loop',
+            inputSchema: passthroughSchema,
+            outputSchema: passthroughSchema,
+            stateSchema: this.stateSchema,
+          })
+            .dountil(validationIteration, async ({state}) => {
+              const s = state as DbQueryState;
+              return s.done === true || s.status === GenerationError.Failed;
+            })
+            .commit(),
+        ],
+      ])
+      .commit();
+
+    // --- top level ---
+    return (
+      createWorkflow({
+        id: 'db_query_graph',
+        inputSchema: passthroughSchema,
+        outputSchema: passthroughSchema,
+        stateSchema: this.stateSchema,
+      })
+        .then(isImprovement)
+        // Parallel fan-out: cache check, table selection, template check, classify.
+        .then(discover)
+        .branch([
+          [
+            async ({state}) => !!(state as DbQueryState).fromTemplate,
+            saveDataset,
+          ],
+          [
+            async ({state}) => {
+              const s = state as DbQueryState;
+              return !s.fromTemplate && !!s.fromCache;
+            },
+            noop,
+          ],
+          [
+            async ({state}) => {
+              const s = state as DbQueryState;
+              return (
+                !s.fromTemplate &&
+                !s.fromCache &&
+                s.status === GenerationError.Failed
+              );
+            },
+            failed,
+          ],
+          [
+            async ({state}) => {
+              const s = state as DbQueryState;
+              return (
+                !s.fromTemplate &&
+                !s.fromCache &&
+                s.status !== GenerationError.Failed
+              );
+            },
+            generateAndValidate,
+          ],
+        ])
+        .commit()
+    );
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private async _addNodes(graph: any) {
-    graph
-      .addNode(
-        DbQueryNodes.GetTables,
-        await this._getNodeFn(DbQueryNodes.GetTables),
-      )
-      .addNode(
-        DbQueryNodes.GetColumns,
-        await this._getNodeFn(DbQueryNodes.GetColumns),
-      )
-      .addNode(
+  /** Creates all leaf/parallel/merge steps the workflow chains together. */
+  private _buildSteps() {
+    return {
+      // --- leaf steps (DI-resolved nodes) ---
+      isImprovement: this._toStep(DbQueryNodes.IsImprovement),
+      getColumns: this._toStep(DbQueryNodes.GetColumns),
+      generateChecklist: this._toStep(DbQueryNodes.GenerateChecklist),
+      failed: this._toStep(DbQueryNodes.Failed),
+      saveDataset: this._toStep(DbQueryNodes.SaveDataset),
+      fixQuery: this._toStep(DbQueryNodes.FixQuery),
+      getTables: this._toStep(DbQueryNodes.GetTables),
+      // --- parallel fan-outs (superstep + reducer fan-in) ---
+      discover: this._toParallelStep(DbQueryNodes.PostCacheAndTables, [
         DbQueryNodes.CheckCache,
-        await this._getNodeFn(DbQueryNodes.CheckCache),
-      )
-      .addNode(
+        DbQueryNodes.GetTables,
         DbQueryNodes.CheckTemplates,
-        await this._getNodeFn(DbQueryNodes.CheckTemplates),
-      )
-      .addNode(
-        DbQueryNodes.GenerateChecklist,
-        await this._getNodeFn(DbQueryNodes.GenerateChecklist),
-      )
-      .addNode(
-        DbQueryNodes.GenerateDescription,
-        await this._getNodeFn(DbQueryNodes.GenerateDescription),
-      )
-      .addNode(
-        DbQueryNodes.VerifyChecklist,
-        await this._getNodeFn(DbQueryNodes.VerifyChecklist),
-      )
-      .addNode(
-        DbQueryNodes.SqlGeneration,
-        await this._getNodeFn(DbQueryNodes.SqlGeneration),
-      )
-      .addNode(
-        DbQueryNodes.SyntacticValidator,
-        await this._getNodeFn(DbQueryNodes.SyntacticValidator),
-      )
-      .addNode(
-        DbQueryNodes.SemanticValidator,
-        await this._getNodeFn(DbQueryNodes.SemanticValidator),
-      )
-      .addNode(
-        DbQueryNodes.IsImprovement,
-        await this._getNodeFn(DbQueryNodes.IsImprovement),
-      )
-      .addNode(DbQueryNodes.Failed, await this._getNodeFn(DbQueryNodes.Failed))
-      .addNode(
-        DbQueryNodes.SaveDataset,
-        await this._getNodeFn(DbQueryNodes.SaveDataset),
-      )
-      .addNode(
         DbQueryNodes.ClassifyChange,
-        await this._getNodeFn(DbQueryNodes.ClassifyChange),
-      )
-      .addNode(
-        DbQueryNodes.FixQuery,
-        await this._getNodeFn(DbQueryNodes.FixQuery),
-      )
-      // Pass-through routing nodes
-      .addNode(DbQueryNodes.PostCacheAndTables, async () => ({}))
-      .addNode(DbQueryNodes.PreValidation, async () => ({}))
-      // PostValidation: merges syntactic + semantic results into status/feedbacks
-      .addNode(DbQueryNodes.PostValidation, async (state: DbQueryState) =>
-        this._mergeValidationResults(state),
-      );
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private _addEdges(graph: any) {
-    graph
-      // Parallel fan-out: cache check, table selection, template check, and classify change
-      .addEdge(START, DbQueryNodes.IsImprovement)
-      .addEdge(DbQueryNodes.IsImprovement, DbQueryNodes.CheckCache)
-      .addEdge(DbQueryNodes.IsImprovement, DbQueryNodes.GetTables)
-      .addEdge(DbQueryNodes.IsImprovement, DbQueryNodes.CheckTemplates)
-      .addEdge(DbQueryNodes.IsImprovement, DbQueryNodes.ClassifyChange)
-      .addEdge(DbQueryNodes.CheckCache, DbQueryNodes.PostCacheAndTables)
-      .addEdge(DbQueryNodes.GetTables, DbQueryNodes.PostCacheAndTables)
-      .addEdge(DbQueryNodes.CheckTemplates, DbQueryNodes.PostCacheAndTables)
-      .addEdge(DbQueryNodes.ClassifyChange, DbQueryNodes.PostCacheAndTables)
-      .addConditionalEdges(
-        DbQueryNodes.PostCacheAndTables,
-        (state: DbQueryState) => {
-          if (state.fromTemplate) return 'FromTemplate';
-          if (state.fromCache) return 'AsIs';
-          if (state.status === GenerationError.Failed) return 'Failed';
-          return 'Continue';
-        },
-        {
-          FromTemplate: DbQueryNodes.SaveDataset,
-          AsIs: END,
-          Failed: DbQueryNodes.Failed,
-          Continue: DbQueryNodes.GetColumns,
-        },
-      )
-      // GetColumns → GenerateChecklist (no-op when disabled via config)
-      .addEdge(DbQueryNodes.GetColumns, DbQueryNodes.GenerateChecklist)
-      .addEdge(DbQueryNodes.GenerateChecklist, DbQueryNodes.SqlGeneration)
-      .addEdge(DbQueryNodes.GenerateChecklist, DbQueryNodes.VerifyChecklist)
-      // Both fan-in to PreValidation
-      .addEdge(DbQueryNodes.VerifyChecklist, DbQueryNodes.PreValidation)
-      // SqlGeneration routes to validation or failure
-      .addConditionalEdges(
+      ]),
+      generateSql: this._toParallelStep('db_query_generate_sql', [
         DbQueryNodes.SqlGeneration,
-        (state: DbQueryState) => {
-          if (state.status === GenerationError.Failed) return 'Failed';
-          return 'Validate';
-        },
-        {
-          Validate: DbQueryNodes.PreValidation,
-          Failed: DbQueryNodes.Failed,
-        },
-      )
-      // Parallel fan-out: validators and description generation run concurrently
-      .addEdge(DbQueryNodes.PreValidation, DbQueryNodes.SyntacticValidator)
-      .addEdge(DbQueryNodes.PreValidation, DbQueryNodes.SemanticValidator)
-      .addEdge(DbQueryNodes.PreValidation, DbQueryNodes.GenerateDescription)
-      // Fan-in at PostValidation
-      .addEdge(DbQueryNodes.SyntacticValidator, DbQueryNodes.PostValidation)
-      .addEdge(DbQueryNodes.SemanticValidator, DbQueryNodes.PostValidation)
-      .addEdge(DbQueryNodes.GenerateDescription, DbQueryNodes.PostValidation)
-      .addConditionalEdges(
+        DbQueryNodes.VerifyChecklist,
+      ]),
+      preValidation: this._toFnStep(DbQueryNodes.PreValidation, () => ({})),
+      validate: this._toParallelStep('db_query_validate', [
+        DbQueryNodes.SyntacticValidator,
+        DbQueryNodes.SemanticValidator,
+        DbQueryNodes.GenerateDescription,
+      ]),
+      postValidation: this._toFnStep(
         DbQueryNodes.PostValidation,
-        (state: DbQueryState) => {
-          const validatorErrors = state.feedbacks ?? [];
-          if (validatorErrors.length >= MAX_ATTEMPTS) return 'Failed';
-          if (state.status === EvaluationResult.TableError)
-            return 'ReselectTables';
-          if (state.status === EvaluationResult.QueryError) return 'FixSQL';
-          if (state.status === EvaluationResult.Pass) return 'Accepted';
-          return 'Failed';
-        },
-        {
-          Accepted: DbQueryNodes.SaveDataset,
-          FixSQL: DbQueryNodes.FixQuery,
-          ReselectTables: DbQueryNodes.GetTables,
-          Failed: DbQueryNodes.Failed,
-        },
-      )
-      // FixQuery routes back to validation or failure
-      .addConditionalEdges(
-        DbQueryNodes.FixQuery,
-        (state: DbQueryState) => {
-          if (state.status === GenerationError.Failed) return 'Failed';
-          return 'Validate';
-        },
-        {
-          Validate: DbQueryNodes.PreValidation,
-          Failed: DbQueryNodes.Failed,
-        },
-      )
-      .addEdge(DbQueryNodes.SaveDataset, END);
+        (state: DbQueryState) => this._mergeValidationResults(state),
+      ),
+      noop: this._toFnStep('db_query_noop', () => ({})),
+    };
   }
 
   private _mergeValidationResults(state: DbQueryState) {

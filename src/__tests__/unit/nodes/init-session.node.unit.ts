@@ -58,7 +58,7 @@ describe(`InitSessionNode Unit`, function () {
       },
     );
     const systemMessage = result.messages?.find(
-      msg => msg.getType() === 'system',
+      msg => msg.role === 'system',
     )?.content;
     if (typeof systemMessage !== 'string') {
       throw new Error('System message is not a string');
@@ -83,7 +83,7 @@ describe(`InitSessionNode Unit`, function () {
       },
     );
     const systemMessage = result.messages?.find(
-      msg => msg.getType() === 'system',
+      msg => msg.role === 'system',
     )?.content;
     if (typeof systemMessage !== 'string') {
       throw new Error('System message is not a string');

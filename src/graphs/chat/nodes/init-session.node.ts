@@ -1,12 +1,11 @@
-import {HumanMessage, SystemMessage} from '@langchain/core/messages';
-import {LangGraphRunnableConfig} from '@langchain/langgraph';
 import {inject, service} from '@loopback/core';
 import {graphNode} from '../../../decorators';
 import {AiIntegrationBindings} from '../../../keys';
 import {Message} from '../../../models';
 import {LLMStreamEventType} from '../../event.types';
+import {humanMessage, systemMessage} from '../../messages';
 import {ChatState} from '../../state';
-import {IGraphNode, SavedMessage} from '../../types';
+import {IGraphNode, RunnableConfig, SavedMessage} from '../../types';
 import {ChatStore} from '../chat.store';
 import {ChatNodes} from '../nodes.enum';
 const debug = require('debug')('ai-integration:chat:init-session.node');
@@ -18,10 +17,7 @@ export class InitSessionNode implements IGraphNode<ChatState> {
     @inject(AiIntegrationBindings.SystemContext, {optional: true})
     private readonly systemContext?: string[],
   ) {}
-  async execute(
-    state: ChatState,
-    config: LangGraphRunnableConfig,
-  ): Promise<ChatState> {
+  async execute(state: ChatState, config: RunnableConfig): Promise<ChatState> {
     const chat = await this.chatStore.init(state.prompt, state.id);
     if (!state.id) {
       debug(`New session created with ID: ${chat.id}`);
@@ -32,9 +28,7 @@ export class InitSessionNode implements IGraphNode<ChatState> {
         },
       });
     }
-    const userMessage = new HumanMessage({
-      content: state.prompt,
-    });
+    const userMessage = humanMessage(state.prompt);
     const savedUserMessage = await this.chatStore.addHumanMessage(
       chat.id,
       userMessage,
@@ -44,8 +38,8 @@ export class InitSessionNode implements IGraphNode<ChatState> {
       id: chat.id,
       userMessage: savedUserMessage,
       messages: [
-        new SystemMessage({
-          content: [
+        systemMessage(
+          [
             `You are a helpful AI assistant. You MUST always use one of the available tools to handle the user's request. Never respond with just text on the first message — always call the closest matching tool, even if you are unsure. The tool will reject the request if it is not suitable.`,
             `If you are not sure about the result, you can ask the user to review the result and provide feedback.`,
             `Only use a single tool in a single message, but you can use multiple tools over subsequent messages if it could help with the user's requirements.`,
@@ -57,7 +51,7 @@ export class InitSessionNode implements IGraphNode<ChatState> {
             `Current date is ${new Date().toDateString()}`,
             ...(this.systemContext ?? []),
           ].join('\n'),
-        }),
+        ),
         ...(await this._formatMessage(chat.messages)),
       ],
     };

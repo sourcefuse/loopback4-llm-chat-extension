@@ -1,7 +1,8 @@
-import {RunnableSequence} from '@langchain/core/runnables';
-import {BindingScope, inject, injectable} from '@loopback/core';
+import {BindingScope, inject, injectable, service} from '@loopback/core';
 import {AnyObject} from '@loopback/repository';
 import {AiIntegrationBindings} from '../../../../keys';
+import {EmbeddingService} from '../../../../services/embedding.service';
+import {LlmService} from '../../../../services/llm.service';
 import {EmbeddingProvider, LLMProvider} from '../../../../types';
 import {stripThinkingTokens} from '../../../../utils';
 import {DbQueryAIExtensionBindings} from '../../keys';
@@ -34,6 +35,10 @@ export class DbKnowledgeGraphService implements KnowledgeGraph<
   private maxClusterSize: number; // Max size of clusters to consider for concept extraction
 
   constructor(
+    @service(LlmService)
+    private readonly llmService: LlmService,
+    @service(EmbeddingService)
+    private readonly embedder: EmbeddingService,
     @inject(AiIntegrationBindings.CheapLLM)
     private readonly llm: LLMProvider,
     @inject(AiIntegrationBindings.EmbeddingModel)
@@ -264,12 +269,14 @@ export class DbKnowledgeGraphService implements KnowledgeGraph<
   }
 
   private async generateEmbedding(text: string): Promise<number[]> {
-    return this.embeddingModel.embedDocuments([text]).then(embeddings => {
-      if (embeddings.length === 0 || !embeddings[0]) {
-        throw new Error('Failed to generate embedding');
-      }
-      return embeddings[0];
-    });
+    return this.embedder
+      .embedTexts(this.embeddingModel, [text])
+      .then(embeddings => {
+        if (embeddings.length === 0 || !embeddings[0]) {
+          throw new Error('Failed to generate embedding');
+        }
+        return embeddings[0];
+      });
   }
 
   // Smart concept extraction using clustering
@@ -405,8 +412,11 @@ The output should be JUST a valid JSON and no other markdown or formatting text.
 Focus on the core business concept or data domain. AGAIN, ensure the output is a valid JSON object with no additional text or formatting that can be parsed directly.`;
 
     try {
-      const chain = RunnableSequence.from([this.llm, stripThinkingTokens]);
-      const response = await chain.invoke([{role: 'user', content: prompt}]);
+      const response = stripThinkingTokens(
+        await this.llmService.invoke(this.llm, [
+          {role: 'user', content: prompt},
+        ]),
+      );
 
       debug(`Extracted concept for cluster ${clusterIndex}:`, response);
       const concept = JSON.parse(response);

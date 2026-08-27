@@ -2,7 +2,6 @@ import {juggler} from '@loopback/repository';
 import {
   createStubInstance,
   expect,
-  sinon,
   StubbedInstanceWithSinonAccessor,
 } from '@loopback/testlab';
 import {
@@ -13,7 +12,8 @@ import {
   SqliteConnector,
   TableSearchService,
 } from '../../../../components';
-import {LLMProvider} from '../../../../types';
+import {LlmService} from '../../../../services/llm.service';
+import {createMockLLM, MockLLM} from '../../../test-helper';
 import {
   Currency,
   Employee,
@@ -25,16 +25,15 @@ import {IAuthUserWithPermissions} from 'loopback4-authorization';
 
 describe('GetTablesNode Unit', function () {
   let node: GetTablesNode;
-  let smartllmStub: sinon.SinonStub;
-  let dumbllmStub: sinon.SinonStub;
+  let smartLlm: MockLLM;
+  let dumbLlm: MockLLM;
   let schemaHelper: DbSchemaHelperService;
   let schemaStore: SchemaStore;
   let tableSearchStub: StubbedInstanceWithSinonAccessor<TableSearchService>;
 
   beforeEach(async () => {
-    smartllmStub = sinon.stub();
-    dumbllmStub = sinon.stub();
-    const llm = dumbllmStub as unknown as LLMProvider;
+    smartLlm = createMockLLM();
+    dumbLlm = createMockLLM();
 
     schemaHelper = new DbSchemaHelperService(
       new SqliteConnector(
@@ -51,8 +50,9 @@ describe('GetTablesNode Unit', function () {
     schemaStore = new SchemaStore();
     tableSearchStub = createStubInstance(TableSearchService);
     node = new GetTablesNode(
-      llm,
-      dumbllmStub as unknown as LLMProvider,
+      new LlmService(),
+      dumbLlm.model,
+      dumbLlm.model,
       {
         models: [],
       },
@@ -79,13 +79,11 @@ describe('GetTablesNode Unit', function () {
       schema: originalSchema,
     } as unknown as DbQueryState;
 
-    dumbllmStub.resolves({
-      content: 'employees',
-    });
+    dumbLlm.setText('employees');
 
     const result = await node.execute(state, {});
 
-    expect(dumbllmStub.getCalls()[0].args[0].value.trim()).equal(
+    expect(dumbLlm.prompts[0].trim()).equal(
       `<instructions>
 You are an AI assistant that extracts table names that are relevant to the users query that will be used to generate an SQL query later.
 - Consider not just the user query but also the context and the table descriptions while selecting the tables.
@@ -134,8 +132,9 @@ failed attempt: reason for failure
 
   it('should return state with minimal schema based on prompt and table search with smart llm', async () => {
     node = new GetTablesNode(
-      dumbllmStub as unknown as LLMProvider,
-      smartllmStub as unknown as LLMProvider,
+      new LlmService(),
+      dumbLlm.model,
+      smartLlm.model,
       {
         models: [],
         nodes: {
@@ -165,13 +164,11 @@ failed attempt: reason for failure
       schema: originalSchema,
     } as unknown as DbQueryState;
 
-    smartllmStub.resolves({
-      content: 'employees',
-    });
+    smartLlm.setText('employees');
 
     const result = await node.execute(state, {});
 
-    expect(smartllmStub.getCalls()[0].args[0].value.trim()).equal(
+    expect(smartLlm.prompts[0].trim()).equal(
       `<instructions>
 You are an AI assistant that extracts table names that are relevant to the users query that will be used to generate an SQL query later.
 - Consider not just the user query but also the context and the table descriptions while selecting the tables.
@@ -234,9 +231,7 @@ failed attempt: reason for failure
       schema: originalSchema,
     } as unknown as DbQueryState;
 
-    dumbllmStub.resolves({
-      content: 'employees',
-    });
+    dumbLlm.setText('employees');
 
     await expect(node.execute(state, {})).to.be.rejectedWith(
       'No tables found in the provided database schema. Please ensure the schema is valid.',
@@ -259,16 +254,13 @@ failed attempt: reason for failure
       schema: originalSchema,
     } as unknown as DbQueryState;
 
-    dumbllmStub.onFirstCall().resolves({
-      content: 'non_existing_table',
-    });
-    dumbllmStub.onSecondCall().resolves({
-      content: 'employees',
-    });
+    // First selection returns an invalid table so the node retries; the
+    // second returns a valid one. Replaces onFirstCall/onSecondCall.
+    dumbLlm.setTextSequence(['non_existing_table', 'employees']);
 
     const result = await node.execute(state, {});
 
-    expect(dumbllmStub.callCount).to.equal(2);
+    expect(dumbLlm.calls).to.equal(2);
     expect(result.schema).to.deepEqual(
       schemaStore.filteredSchema(['employees']),
     );

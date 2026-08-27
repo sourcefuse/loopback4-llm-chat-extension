@@ -1,4 +1,3 @@
-import {HumanMessage} from '@langchain/core/messages';
 import {HttpErrors} from '@loopback/rest';
 import {
   createStubInstance,
@@ -6,14 +5,19 @@ import {
   sinon,
   StubbedInstanceWithSinonAccessor,
 } from '@loopback/testlab';
-import {ChatState, ChatStore, SummariseFileNode} from '../../../graphs';
+import {
+  ChatState,
+  ChatStore,
+  humanMessage,
+  SummariseFileNode,
+} from '../../../graphs';
 import {Message} from '../../../models';
-import {LLMProvider} from '../../../types';
-import {buildFileStub} from '../../test-helper';
+import {LlmService} from '../../../services/llm.service';
+import {buildFileStub, createMockLLM, MockLLM} from '../../test-helper';
 
 describe(`SummariseFileNode Unit`, function () {
   let node: SummariseFileNode;
-  let llmStub: sinon.SinonStub;
+  let llm: MockLLM;
   let chatStore: StubbedInstanceWithSinonAccessor<ChatStore>;
   let writerStub: sinon.SinonStub;
   const dummyState: ChatState = {
@@ -26,10 +30,10 @@ describe(`SummariseFileNode Unit`, function () {
   };
 
   beforeEach(() => {
-    llmStub = sinon.stub();
+    llm = createMockLLM();
     writerStub = sinon.stub();
     chatStore = createStubInstance(ChatStore);
-    node = new SummariseFileNode(llmStub as unknown as LLMProvider, chatStore);
+    node = new SummariseFileNode(new LlmService(), llm.model, chatStore);
   });
 
   it('should throw an error if no chat ID is found in state', async () => {
@@ -59,11 +63,7 @@ describe(`SummariseFileNode Unit`, function () {
     expect(result).to.deepEqual({
       ...dummyState,
       files: [],
-      messages: [
-        new HumanMessage({
-          content: 'test prompt',
-        }),
-      ],
+      messages: [humanMessage('test prompt')],
     });
   });
 
@@ -81,17 +81,13 @@ describe(`SummariseFileNode Unit`, function () {
 
     expect(result).to.deepEqual({
       ...dummyState,
-      messages: [
-        new HumanMessage({
-          content: 'test prompt',
-        }),
-      ],
+      messages: [humanMessage('test prompt')],
       files: [],
     });
   });
 
   it('should the state with no file and a human message if 1 file is provided', async () => {
-    llmStub.resolves({content: 'This is a summary of the file.'});
+    llm.setText('This is a summary of the file.');
     const file = buildFileStub();
     const result = await node.execute(
       {
@@ -108,15 +104,15 @@ describe(`SummariseFileNode Unit`, function () {
       files: [],
       prompt: `test prompt\nsummary of file - ${file.originalname}:\nThis is a summary of the file.`,
       messages: [
-        new HumanMessage({
-          content: `test prompt\nsummary of file - ${file.originalname}:\nThis is a summary of the file.`,
-        }),
+        humanMessage(
+          `test prompt\nsummary of file - ${file.originalname}:\nThis is a summary of the file.`,
+        ),
       ],
     });
   });
 
   it('should return the state with 1 file and no human message if 2 files are provided', async () => {
-    llmStub.resolves({content: 'This is a summary of the file.'});
+    llm.setText('This is a summary of the file.');
     const file1 = buildFileStub();
     const file2 = buildFileStub();
     const result = await node.execute(

@@ -1,10 +1,12 @@
-import {AIMessage} from '@langchain/core/messages';
-import {PromptTemplate} from '@langchain/core/prompts';
-import {RunnableSequence} from '@langchain/core/runnables';
-import {LangGraphRunnableConfig} from '@langchain/langgraph';
 import {inject, service} from '@loopback/core';
 import {graphNode} from '../../../decorators';
-import {IGraphNode, LLMStreamEventType} from '../../../graphs';
+import {
+  ModelMessage,
+  IGraphNode,
+  LLMStreamEventType,
+  RunnableConfig,
+} from '../../../graphs';
+import {LlmService} from '../../../services/llm.service';
 import {AiIntegrationBindings} from '../../../keys';
 import {LLMProvider} from '../../../types';
 import {stripThinkingTokens} from '../../../utils';
@@ -17,6 +19,8 @@ import {DbQueryConfig} from '../types';
 @graphNode(DbQueryNodes.VerifyChecklist)
 export class VerifyChecklistNode implements IGraphNode<DbQueryState> {
   constructor(
+    @service(LlmService)
+    private readonly llmService: LlmService,
     @inject(AiIntegrationBindings.SmartLLM)
     private readonly smartLlm: LLMProvider,
     @inject(DbQueryAIExtensionBindings.Config)
@@ -92,7 +96,7 @@ If no rules are relevant:
 
   async execute(
     state: DbQueryState,
-    config: LangGraphRunnableConfig,
+    config: RunnableConfig,
   ): Promise<DbQueryState> {
     const empty = {} as DbQueryState;
 
@@ -123,7 +127,7 @@ If no rules are relevant:
       data: 'Verifying validation checklist with chain-of-thought.',
     });
 
-    const output = await this.invokeVerification(state, allChecks);
+    const output = await this.invokeVerification(state, allChecks, config);
     const verifiedIndexes = this.parseVerifiedIndexes(output, allChecks.length);
 
     if (verifiedIndexes.length === 0) {
@@ -142,30 +146,36 @@ If no rules are relevant:
   private async invokeVerification(
     state: DbQueryState,
     allChecks: string[],
-  ): Promise<AIMessage> {
+    config: RunnableConfig,
+  ): Promise<ModelMessage> {
     const indexedChecks = allChecks
       .map((check, i) => `${i + 1}. ${check}`)
       .join('\n');
 
     const useEvaluation =
       this.config.nodes?.verifyChecklistNode?.evaluation ?? false;
-    const promptTemplate = PromptTemplate.fromTemplate(
+    const template =
       this.basePrompt +
-        (useEvaluation
-          ? this.evaluationOutputInstructions
-          : this.simpleOutputInstructions),
-    );
+      (useEvaluation
+        ? this.evaluationOutputInstructions
+        : this.simpleOutputInstructions);
 
-    const chain = RunnableSequence.from([promptTemplate, this.llm]);
-    return chain.invoke({
-      prompt: state.prompt,
-      tables: Object.keys(state.schema?.tables ?? {}).join(', '),
-      schema: this.schemaHelper.asString(state.schema),
-      indexedChecks,
-    });
+    return this.llmService.invoke(
+      this.llm,
+      this.llmService.render(template, {
+        prompt: state.prompt,
+        tables: Object.keys(state.schema?.tables ?? {}).join(', '),
+        schema: this.schemaHelper.asString(state.schema),
+        indexedChecks,
+      }),
+      {config},
+    );
   }
 
-  private parseVerifiedIndexes(output: AIMessage, maxIndex: number): number[] {
+  private parseVerifiedIndexes(
+    output: ModelMessage,
+    maxIndex: number,
+  ): number[] {
     const response = stripThinkingTokens(output).trim();
     const resultMatch = /<result>(.*?)<\/result>/s.exec(response);
     const indexStr = resultMatch ? resultMatch[1].trim() : response;

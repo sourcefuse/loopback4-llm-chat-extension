@@ -72,7 +72,8 @@ describe('GenerationController', () => {
     );
     const lastToolStatus = toolStatuses[toolStatuses.length - 1];
 
-    const datasetId = lastToolStatus.data.data?.['datasetId'];
+    const datasetId = (lastToolStatus.data as {data?: Record<string, string>})
+      ?.data?.['datasetId'] as string;
     expect(datasetId).to.be.String();
 
     const datasetData = await datasetStore.getData(datasetId);

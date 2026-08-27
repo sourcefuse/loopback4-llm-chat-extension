@@ -1,7 +1,6 @@
-import {AnthropicInput, ChatAnthropic} from '@langchain/anthropic';
 import {Provider, ValueOrPromise} from '@loopback/core';
-import {LLMProvider} from '../../../../types';
-import {BaseChatModelParams} from '@langchain/core/language_models/chat_models';
+import {createAnthropic} from '@ai-sdk/anthropic';
+import {LLMProvider, ModelDefaultSettings} from '../../../../types';
 
 export class Claude implements Provider<LLMProvider> {
   value(): ValueOrPromise<LLMProvider> {
@@ -10,20 +9,30 @@ export class Claude implements Provider<LLMProvider> {
         'CLAUDE_MODEL and CLAUDE_API_KEY environment variables must be set',
       );
     }
-    const config: AnthropicInput & BaseChatModelParams = {
-      model: process.env.CLAUDE_MODEL!,
+    const provider = createAnthropic({
       apiKey: process.env.CLAUDE_API_KEY,
-    };
+    });
+    const model = provider(process.env.CLAUDE_MODEL) as LLMProvider;
+    const defaultSettings: ModelDefaultSettings = {};
+    if (process.env.CLAUDE_TEMPERATURE) {
+      defaultSettings.temperature = Number.parseFloat(
+        process.env.CLAUDE_TEMPERATURE,
+      );
+    }
     if (process.env.CLAUDE_THINKING === 'true') {
-      config.thinking = {
-        // eslint-disable-next-line @typescript-eslint/naming-convention
-        budget_tokens: parseInt(process.env.CLAUDE_THINKING_BUDGET ?? '1024'),
-        type: process.env.CLAUDE_THINKING === 'true' ? 'enabled' : 'disabled',
+      defaultSettings.providerOptions = {
+        anthropic: {
+          thinking: {
+            type: 'enabled',
+            budgetTokens: Number.parseInt(
+              process.env.CLAUDE_THINKING_BUDGET ?? '1024',
+              10,
+            ),
+          },
+        },
       };
     }
-    if (process.env.CLAUDE_TEMPERATURE) {
-      config.temperature = parseInt(process.env.CLAUDE_TEMPERATURE);
-    }
-    return new ChatAnthropic(config);
+    model.defaultSettings = defaultSettings;
+    return model;
   }
 }

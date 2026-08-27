@@ -13,9 +13,8 @@ export function dbQueryToolTests(cases: DbQueryGraphTestCase[]) {
       graphBuilder: DbQueryGraph,
       datasetExecuter: (id: string) => Promise<AnyObject[]>,
     ) => {
-      const graph = await graphBuilder.build();
       const id = randomUUID();
-      const state = await graph.invoke({
+      const state = await graphBuilder.invoke({
         prompt: testCase.prompt,
         id,
         schema,

@@ -1,5 +1,6 @@
-import {END, START, StateGraph} from '@langchain/langgraph';
-import {BaseGraph} from '../../graphs';
+import {createWorkflow} from '@mastra/core/workflows';
+import {z} from 'zod';
+import {BaseGraph, passthroughSchema} from '../../graphs';
 import {
   VisualizationGraphState,
   VisualizationGraphStateAnnotation,
@@ -7,57 +8,64 @@ import {
 import {VisualizationGraphNodes} from './nodes.enum';
 
 export class VisualizationGraph extends BaseGraph<VisualizationGraphState> {
-  async build() {
-    const graph = new StateGraph(VisualizationGraphStateAnnotation);
-    graph
-      .addNode(
-        VisualizationGraphNodes.CallQueryGeneration,
-        await this._getNodeFn(VisualizationGraphNodes.CallQueryGeneration),
-      )
-      .addNode(
-        VisualizationGraphNodes.GetDatasetData,
-        await this._getNodeFn(VisualizationGraphNodes.GetDatasetData),
-      )
-      .addNode(
-        VisualizationGraphNodes.SelectVisualisation,
-        await this._getNodeFn(VisualizationGraphNodes.SelectVisualisation),
-      )
-      .addNode(
-        VisualizationGraphNodes.RenderVisualization,
-        await this._getNodeFn(VisualizationGraphNodes.RenderVisualization),
-      )
-      .addEdge(START, VisualizationGraphNodes.SelectVisualisation)
-      .addConditionalEdges(
-        VisualizationGraphNodes.SelectVisualisation,
-        state => {
-          if (state.error) {
-            return 'Error';
-          }
-          return 'Success';
-        },
-        {
-          Error: END,
-          Success: VisualizationGraphNodes.CallQueryGeneration,
-        },
-      )
-      .addConditionalEdges(
-        VisualizationGraphNodes.CallQueryGeneration,
-        state => {
-          if (state.error) {
-            return 'Error';
-          }
-          return 'Success';
-        },
-        {
-          Error: END,
-          Success: VisualizationGraphNodes.GetDatasetData,
-        },
-      )
-      .addEdge(
-        VisualizationGraphNodes.GetDatasetData,
-        VisualizationGraphNodes.RenderVisualization,
-      )
-      .addEdge(VisualizationGraphNodes.RenderVisualization, END);
-    return graph.compile();
+  protected stateSchema =
+    VisualizationGraphStateAnnotation as unknown as z.ZodType<VisualizationGraphState>;
+
+  build() {
+    const selectVisualisation = this._toStep(
+      VisualizationGraphNodes.SelectVisualisation,
+    );
+    const callQueryGeneration = this._toStep(
+      VisualizationGraphNodes.CallQueryGeneration,
+    );
+    const getDatasetData = this._toStep(VisualizationGraphNodes.GetDatasetData);
+    const renderVisualization = this._toStep(
+      VisualizationGraphNodes.RenderVisualization,
+    );
+    const noop = this._toFnStep('visualization_noop', () => ({}));
+
+    // GetDatasetData → RenderVisualization (the success tail).
+    const renderFlow = createWorkflow({
+      id: 'visualization_render_flow',
+      inputSchema: passthroughSchema,
+      outputSchema: passthroughSchema,
+      stateSchema: this.stateSchema,
+    })
+      .then(getDatasetData)
+      .then(renderVisualization)
+      .commit();
+
+    // CallQueryGeneration → (error ? END : render tail).
+    const queryFlow = createWorkflow({
+      id: 'visualization_query_flow',
+      inputSchema: passthroughSchema,
+      outputSchema: passthroughSchema,
+      stateSchema: this.stateSchema,
+    })
+      .then(callQueryGeneration)
+      .branch([
+        [async ({state}) => !!(state as VisualizationGraphState).error, noop],
+        [
+          async ({state}) => !(state as VisualizationGraphState).error,
+          renderFlow,
+        ],
+      ])
+      .commit();
+
+    return createWorkflow({
+      id: 'visualization_graph',
+      inputSchema: passthroughSchema,
+      outputSchema: passthroughSchema,
+      stateSchema: this.stateSchema,
+    })
+      .then(selectVisualisation)
+      .branch([
+        [async ({state}) => !!(state as VisualizationGraphState).error, noop],
+        [
+          async ({state}) => !(state as VisualizationGraphState).error,
+          queryFlow,
+        ],
+      ])
+      .commit();
   }
 }

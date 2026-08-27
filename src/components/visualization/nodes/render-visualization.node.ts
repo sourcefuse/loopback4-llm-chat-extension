@@ -1,8 +1,12 @@
 import {graphNode} from '../../../decorators';
-import {IGraphNode, LLMStreamEventType, ToolStatus} from '../../../graphs';
+import {
+  IGraphNode,
+  LLMStreamEventType,
+  RunnableConfig,
+  ToolStatus,
+} from '../../../graphs';
 import {VisualizationGraphState} from '../state';
 import {VisualizationGraphNodes} from '../nodes.enum';
-import {LangGraphRunnableConfig} from '@langchain/langgraph';
 import {POST_DATASET_TAG} from '../../db-query';
 
 @graphNode(VisualizationGraphNodes.RenderVisualization, {
@@ -13,7 +17,7 @@ export class RenderVisualizationNode implements IGraphNode<VisualizationGraphSta
 
   async execute(
     state: VisualizationGraphState,
-    config: LangGraphRunnableConfig,
+    config: RunnableConfig,
   ): Promise<VisualizationGraphState> {
     const visualizer = state.visualizer;
     if (!visualizer || !state.sql || !state.queryDescription) {

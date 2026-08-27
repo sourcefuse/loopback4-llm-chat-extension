@@ -14,6 +14,7 @@ import {
 } from '../../../../components';
 import {DataSet} from '../../../../components/db-query/models';
 import {LLMProvider} from '../../../../types';
+import {LlmService} from '../../../../services/llm.service';
 import {buildDatasetStoreStub} from '../../../test-helper';
 
 describe('SaveDataSetNode Unit', function () {
@@ -28,6 +29,7 @@ describe('SaveDataSetNode Unit', function () {
     store = buildDatasetStoreStub();
     helper = createStubInstance(DbSchemaHelperService);
     node = new SaveDataSetNode(
+      new LlmService(),
       llm,
       store,
       {models: []},
@@ -69,6 +71,7 @@ describe('SaveDataSetNode Unit', function () {
 
   it('should return state with dataset id and result array if readAccessForAI is true', async () => {
     node = new SaveDataSetNode(
+      new LlmService(),
       llmStub as unknown as LLMProvider,
       store,
       {models: [], readAccessForAI: true, maxRowsForAI: 50},
@@ -111,6 +114,7 @@ describe('SaveDataSetNode Unit', function () {
   it('should throw error if user does not have tenantId', async () => {
     const llm = llmStub as unknown as LLMProvider;
     node = new SaveDataSetNode(
+      new LlmService(),
       llm,
       store,
       {models: []},
@@ -140,6 +144,7 @@ describe('SaveDataSetNode Unit', function () {
   it('should throw error if sql is not present in state', async () => {
     const llm = llmStub as unknown as LLMProvider;
     node = new SaveDataSetNode(
+      new LlmService(),
       llm,
       store,
       {models: []},

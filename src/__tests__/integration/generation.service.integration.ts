@@ -1,4 +1,3 @@
-import {IterableReadableStream} from '@langchain/core/utils/stream';
 import {Request, Response} from '@loopback/rest';
 import {
   createStubInstance,
@@ -7,7 +6,7 @@ import {
   StubbedInstanceWithSinonAccessor,
 } from '@loopback/testlab';
 import {PassThrough} from 'stream';
-import {ChatGraph, LLMStreamEvent} from '../../graphs';
+import {ChatGraph} from '../../graphs';
 import {GenerationService} from '../../services';
 import {HttpTransport, SSETransport} from '../../transports';
 
@@ -35,7 +34,9 @@ describe(`GenerationService Integration`, () => {
     it('should handle generation request and return response', async () => {
       const dummyStream = new PassThrough({objectMode: true});
       graph.stubs.execute.callsFake(async () => {
-        return dummyStream as unknown as IterableReadableStream<LLMStreamEvent>;
+        return dummyStream as unknown as Awaited<
+          ReturnType<ChatGraph['execute']>
+        >;
       });
       dummyStream.push({
         type: 'text',
@@ -88,7 +89,9 @@ describe(`GenerationService Integration`, () => {
     it('should handle error gracyfully', async () => {
       const dummyStream = new PassThrough({objectMode: true});
       graph.stubs.execute.callsFake(async () => {
-        return dummyStream as unknown as IterableReadableStream<LLMStreamEvent>;
+        return dummyStream as unknown as Awaited<
+          ReturnType<ChatGraph['execute']>
+        >;
       });
       dummyStream.push({
         type: 'text',
@@ -155,7 +158,9 @@ describe(`GenerationService Integration`, () => {
     it('should handle generation request and return response', async () => {
       const dummyStream = new PassThrough({objectMode: true});
       graph.stubs.execute.callsFake(async () => {
-        return dummyStream as unknown as IterableReadableStream<LLMStreamEvent>;
+        return dummyStream as unknown as Awaited<
+          ReturnType<ChatGraph['execute']>
+        >;
       });
       dummyStream.push({
         type: 'text',
@@ -202,7 +207,9 @@ describe(`GenerationService Integration`, () => {
     it('should handle error gracyfully', async () => {
       const dummyStream = new PassThrough({objectMode: true});
       graph.stubs.execute.callsFake(async () => {
-        return dummyStream as unknown as IterableReadableStream<LLMStreamEvent>;
+        return dummyStream as unknown as Awaited<
+          ReturnType<ChatGraph['execute']>
+        >;
       });
       dummyStream.push({
         type: 'text',

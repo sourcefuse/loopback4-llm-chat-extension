@@ -1,4 +1,4 @@
-import {expect, sinon} from '@loopback/testlab';
+import {expect} from '@loopback/testlab';
 import {IAuthUserWithPermissions} from 'loopback4-authorization';
 import {
   CheckPermissionsNode,
@@ -6,16 +6,16 @@ import {
   Errors,
   PermissionHelper,
 } from '../../../../components';
-import {LLMProvider} from '../../../../types';
+import {LlmService} from '../../../../services/llm.service';
+import {createMockLLM, MockLLM} from '../../../test-helper';
 import {Currency, Employee, ExchangeRate} from '../../../fixtures/models';
 
 describe('CheckPermissionsNode Unit', function () {
   let node: CheckPermissionsNode;
-  let llmStub: sinon.SinonStub;
+  let llm: MockLLM;
 
   beforeEach(() => {
-    llmStub = sinon.stub();
-    const llm = llmStub as unknown as LLMProvider;
+    llm = createMockLLM();
     const permissionHelper = new PermissionHelper(
       {
         models: [
@@ -39,7 +39,11 @@ describe('CheckPermissionsNode Unit', function () {
         permissions: ['1'],
       } as unknown as IAuthUserWithPermissions,
     );
-    node = new CheckPermissionsNode(llm, permissionHelper);
+    node = new CheckPermissionsNode(
+      new LlmService(),
+      llm.model,
+      permissionHelper,
+    );
   });
 
   it('should return state as it is if no permission is missing', async () => {
@@ -55,10 +59,9 @@ describe('CheckPermissionsNode Unit', function () {
   });
 
   it('should permission error status when a permission is missing', async () => {
-    llmStub.resolves({
-      content:
-        'You do not have permissions to access the required tables and cannot proceed with the request. Please provide a new request.',
-    });
+    llm.setText(
+      'You do not have permissions to access the required tables and cannot proceed with the request. Please provide a new request.',
+    );
     const state = {
       schema: {
         tables: {

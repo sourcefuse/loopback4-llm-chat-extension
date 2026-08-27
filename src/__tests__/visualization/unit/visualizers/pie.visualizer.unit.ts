@@ -1,26 +1,17 @@
-import {expect, sinon} from '@loopback/testlab';
-import {PieVisualizer} from '../../../../components/visualization/visualizers/pie.visualizer';
-import {LLMProvider} from '../../../../types';
+import {expect} from '@loopback/testlab';
 import {fail} from 'assert';
+import {PieVisualizer} from '../../../../components/visualization/visualizers/pie.visualizer';
 import {VisualizationGraphState} from '../../../../components';
+import {LlmService} from '../../../../services/llm.service';
+import {createMockLLM, MockLLM} from '../../../test-helper';
 
 describe('PieVisualizer Unit', function () {
   let visualizer: PieVisualizer;
-  let llmProvider: sinon.SinonStubbedInstance<LLMProvider>;
-  let withStructuredOutputStub: sinon.SinonStub;
+  let llm: MockLLM;
 
   beforeEach(() => {
-    // Create stub for LLM provider
-    withStructuredOutputStub = sinon.stub();
-    llmProvider = {
-      withStructuredOutput: withStructuredOutputStub,
-    } as sinon.SinonStubbedInstance<LLMProvider>;
-
-    visualizer = new PieVisualizer(llmProvider);
-  });
-
-  afterEach(() => {
-    sinon.restore();
+    llm = createMockLLM();
+    visualizer = new PieVisualizer(new LlmService(), llm.model);
   });
 
   it('should have correct name and description', () => {
@@ -136,8 +127,9 @@ describe('PieVisualizer Unit', function () {
       valueColumn: 'budget_allocation',
     };
 
-    const mockInvoke = sinon.stub().resolves(mockLLMResponse);
-    withStructuredOutputStub.returns(mockInvoke);
+    // The visualizer now calls the AI SDK `generateObject`; the fake model
+    // returns the structured config as JSON text which `generateObject` parses.
+    llm.setText(JSON.stringify(mockLLMResponse));
 
     const validState = {
       prompt: 'Show me a pie chart of budget allocation by department',
@@ -149,22 +141,16 @@ describe('PieVisualizer Unit', function () {
     const config = await visualizer.getConfig(validState);
 
     expect(config).to.deepEqual(mockLLMResponse);
-    expect(
-      withStructuredOutputStub.calledOnceWith(visualizer.schema),
-    ).to.be.true();
-    expect(mockInvoke.calledOnce).to.be.true();
+    expect(llm.calls).to.equal(1);
 
-    // Check that the mock was called with a StringPromptValue containing our data
-    const invokeArgs = mockInvoke.getCall(0).args[0];
-    expect(invokeArgs).to.have.property('value');
+    // Check that the rendered prompt contained our data
+    const promptText = llm.prompts[0];
     // Escape special regex characters in SQL
     const escapedSQL =
       validState.sql?.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') ?? '';
-    expect(invokeArgs.value).to.match(new RegExp(escapedSQL));
-    expect(invokeArgs.value).to.match(
-      new RegExp(validState.queryDescription ?? ''),
-    );
-    expect(invokeArgs.value).to.match(new RegExp(validState.prompt));
+    expect(promptText).to.match(new RegExp(escapedSQL));
+    expect(promptText).to.match(new RegExp(validState.queryDescription ?? ''));
+    expect(promptText).to.match(new RegExp(validState.prompt));
   });
 
   it('should handle LLM response with percentage data', async () => {
@@ -173,8 +159,7 @@ describe('PieVisualizer Unit', function () {
       valueColumn: 'sales_percentage',
     };
 
-    const mockInvoke = sinon.stub().resolves(mockLLMResponse);
-    withStructuredOutputStub.returns(mockInvoke);
+    llm.setText(JSON.stringify(mockLLMResponse));
 
     const validState = {
       prompt: 'Show me sales distribution by product category as percentages',
@@ -192,8 +177,7 @@ describe('PieVisualizer Unit', function () {
 
   it('should handle LLM errors gracefully', async () => {
     const mockError = new Error('LLM processing failed');
-    const mockInvoke = sinon.stub().rejects(mockError);
-    withStructuredOutputStub.returns(mockInvoke);
+    llm.rejectWith(mockError);
 
     const validState = {
       prompt: 'test prompt',
@@ -206,15 +190,14 @@ describe('PieVisualizer Unit', function () {
       await visualizer.getConfig(validState);
       fail('Should have thrown an error');
     } catch (error) {
-      expect(error).to.equal(mockError);
+      expect(error).to.have.property('message', 'LLM processing failed');
     }
   });
 
   it('should contain proper prompt template structure', () => {
-    const promptTemplate = visualizer.renderPrompt;
-    expect(promptTemplate).to.be.ok();
+    const templateText = visualizer.renderPrompt;
+    expect(templateText).to.be.ok();
 
-    const templateText = promptTemplate.template;
     expect(templateText).to.match(/pie chart/);
     expect(templateText).to.match(/\{sql\}/);
     expect(templateText).to.match(/\{description\}/);
@@ -225,12 +208,14 @@ describe('PieVisualizer Unit', function () {
   it('should validate that schema describes columns correctly', () => {
     const schema = visualizer.schema;
 
-    // Access the schema shape to check descriptions
-    const shape = schema._def.shape();
+    // Access the schema shape to check descriptions (zod v4 public API).
+    const shape = (
+      schema as unknown as {shape: Record<string, {description?: string}>}
+    ).shape;
 
-    expect(shape.labelColumn._def.description).to.match(/labels/);
-    expect(shape.labelColumn._def.description).to.match(/pie chart/);
-    expect(shape.valueColumn._def.description).to.match(/values/);
-    expect(shape.valueColumn._def.description).to.match(/pie chart/);
+    expect(shape.labelColumn.description).to.match(/labels/);
+    expect(shape.labelColumn.description).to.match(/pie chart/);
+    expect(shape.valueColumn.description).to.match(/values/);
+    expect(shape.valueColumn.description).to.match(/pie chart/);
   });
 });
